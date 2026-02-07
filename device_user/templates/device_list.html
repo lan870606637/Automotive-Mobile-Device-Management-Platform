@@ -1,0 +1,284 @@
+{% extends "base.html" %}
+
+{% block title %}{% if no_cabinet %}无柜号设备{% elif device_type == 'car' %}车机{% elif device_type == 'phone' %}手机{% else %}全部设备{% endif %}列表 - 设备管理系统{% endblock %}
+
+{% set active_nav = 'devices' %}
+
+{% block content %}
+<div class="device-list-page">
+    <!-- 页面头部 -->
+    <div class="page-header">
+        <a href="{{ url_for('home') }}" class="back-btn">‹</a>
+        <h1>
+            {% if no_cabinet %}
+            📦 无柜号设备
+            {% elif device_type == 'car' %}
+            🚗 车机设备
+            {% elif device_type == 'phone' %}
+            📱 手机设备
+            {% else %}
+            📦 全部设备
+            {% endif %}
+        </h1>
+    </div>
+    
+    <!-- 搜索栏 -->
+    <div class="search-bar">
+        <div class="search-input-wrap">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="searchInput" class="search-input" placeholder="搜索设备名、型号..." onkeyup="handleSearch(event)">
+            <button class="clear-btn" onclick="clearSearch()" style="display:none;">✕</button>
+        </div>
+        <button class="btn-search" onclick="doSearch()">搜索</button>
+    </div>
+    
+    <!-- 筛选标签 -->
+    <div class="filter-tabs">
+        <a href="{{ url_for('device_list') }}" class="tab {% if not device_type and not no_cabinet %}active{% endif %}">全部</a>
+        <a href="{{ url_for('device_list', type='car') }}" class="tab {% if device_type == 'car' %}active{% endif %}">车机</a>
+        <a href="{{ url_for('device_list', type='phone') }}" class="tab {% if device_type == 'phone' %}active{% endif %}">手机</a>
+        <a href="{{ url_for('device_list', no_cabinet='1') }}" class="tab {% if no_cabinet %}active{% endif %}">无柜号</a>
+    </div>
+    
+    <!-- 设备列表 -->
+    <div class="device-list-content" id="deviceList">
+        {% if devices %}
+        <div class="device-grid">
+            {% for device in devices %}
+            <a href="{% if device.no_cabinet or device.is_circulating %}{{ url_for('device_detail_simple', device_id=device.id) }}{% else %}{{ url_for('device_detail', device_id=device.id) }}{% endif %}" class="device-card {% if device.status == '报废' %}scrapped{% endif %}">
+                <div class="card-header">
+                    <span class="device-icon-large">
+                        {% if device.type == '车机' %}🚗{% else %}📱{% endif %}
+                    </span>
+                    {% if device.no_cabinet %}
+                    <span class="status-badge status-no-cabinet">无柜号</span>
+                    {% elif device.is_circulating %}
+                    <span class="status-badge status-circulating">流通</span>
+                    {% else %}
+                    <span class="status-badge 
+                        {% if device.status == '在库' %}status-available
+                        {% elif device.status == '借出' %}status-borrowed
+                        {% elif device.status == '已寄出' %}status-shipped
+                        {% elif device.status == '已损坏' %}status-damaged
+                        {% elif device.status == '丢失' %}status-lost
+                        {% elif device.status == '报废' %}status-scrapped
+                        {% endif %}">
+                        {{ device.status }}
+                    </span>
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    <h4 class="device-name">{{ device.name }}</h4>
+                    <p class="device-remark">{{ device.remark }}</p>
+                </div>
+                <div class="card-footer">
+                    <span class="device-type">{{ device.type }}</span>
+                    <span class="arrow">{% if device.status == '报废' %}已报废{% else %}查看详情 ›{% endif %}</span>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+        
+        <!-- 分页控件 -->
+        {% if total_pages > 1 %}
+        <div class="pagination">
+            {% if page > 1 %}
+            <a href="{{ url_for('device_list', type=device_type, no_cabinet='1' if no_cabinet else '', page=page-1) }}" class="page-btn">‹ 上一页</a>
+            {% else %}
+            <span class="page-btn disabled">‹ 上一页</span>
+            {% endif %}
+            
+            <span class="page-info">{{ page }} / {{ total_pages }} 页 (共{{ total }}台)</span>
+            
+            {% if page < total_pages %}
+            <a href="{{ url_for('device_list', type=device_type, no_cabinet='1' if no_cabinet else '', page=page+1) }}" class="page-btn">下一页 ›</a>
+            {% else %}
+            <span class="page-btn disabled">下一页 ›</span>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">🔍</div>
+            <p>暂无设备</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+let searchTimeout;
+let searchResults = [];
+let searchPage = 1;
+const searchPerPage = 12;
+
+function handleSearch(event) {
+    const input = document.getElementById('searchInput');
+    const clearBtn = document.querySelector('.clear-btn');
+    
+    clearBtn.style.display = input.value ? 'block' : 'none';
+    
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        if (input.value.length >= 1) {
+            doSearch();
+        }
+    }, 500);
+}
+
+function clearSearch() {
+    const input = document.getElementById('searchInput');
+    input.value = '';
+    document.querySelector('.clear-btn').style.display = 'none';
+    location.reload();
+}
+
+function doSearch() {
+    const keyword = document.getElementById('searchInput').value.trim();
+    if (!keyword) return;
+    
+    fetch(`/api/search?keyword=${encodeURIComponent(keyword)}`)
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                searchResults = data.devices;
+                searchPage = 1;
+                renderDevicesWithPagination(searchResults, searchPage);
+            }
+        })
+        .catch(err => {
+            showToast('搜索失败，请重试');
+        });
+}
+
+function renderDevicesWithPagination(devices, page) {
+    const container = document.getElementById('deviceList');
+    
+    if (devices.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-icon">🔍</div>
+                <p>未找到匹配的设备</p>
+            </div>
+        `;
+        return;
+    }
+    
+    // 分页计算
+    const total = devices.length;
+    const totalPages = Math.ceil(total / searchPerPage);
+    page = Math.max(1, Math.min(page, totalPages));
+    const start = (page - 1) * searchPerPage;
+    const end = start + searchPerPage;
+    const paginatedDevices = devices.slice(start, end);
+    
+    let html = '<div class="device-grid">';
+    paginatedDevices.forEach(device => {
+        const icon = device.type === '车机' ? '🚗' : '📱';
+        let statusClass = 'status-borrowed';
+        let statusText = device.status;
+        if (device.no_cabinet) {
+            statusClass = 'status-no-cabinet';
+            statusText = '无柜号';
+        } else if (device.is_circulating) {
+            statusClass = 'status-circulating';
+            statusText = '流通';
+        } else if (device.status === '在库') {
+            statusClass = 'status-available';
+        } else if (device.status === '已损坏') {
+            statusClass = 'status-damaged';
+        } else if (device.status === '丢失') {
+            statusClass = 'status-lost';
+        } else if (device.status === '报废') {
+            statusClass = 'status-scrapped';
+        }
+        
+        const scrappedClass = device.is_scrapped ? 'scrapped' : '';
+        const arrowText = device.is_scrapped ? '已报废' : '查看详情 ›';
+        
+        // 无柜号或流通设备跳转到简单详情页
+        const isSimpleDetail = device.no_cabinet || device.is_circulating;
+        const href = device.is_scrapped 
+            ? 'javascript:showToast(\'设备已报废，请联系管理员\')' 
+            : (isSimpleDetail 
+                ? `/device/${device.id}/simple` 
+                : `/device/${device.id}`);
+        
+        html += `
+            <a href="${href}" class="device-card ${scrappedClass}">
+                <div class="card-header">
+                    <span class="device-icon-large">${icon}</span>
+                    <span class="status-badge ${statusClass}">${statusText}</span>
+                </div>
+                <div class="card-body">
+                    <h4 class="device-name">${device.name}</h4>
+                    <p class="device-remark">${device.remark}</p>
+                </div>
+                <div class="card-footer">
+                    <span class="device-type">${device.type}</span>
+                    <span class="arrow">${arrowText}</span>
+                </div>
+            </a>
+        `;
+    });
+    html += '</div>';
+    
+    // 添加搜索分页控件
+    if (totalPages > 1) {
+        html += `
+            <div class="pagination">
+                <button onclick="goToSearchPage(${page - 1})" class="page-btn" ${page <= 1 ? 'disabled' : ''}>‹ 上一页</button>
+                <span class="page-info">${page} / ${totalPages} 页 (共${total}台)</span>
+                <button onclick="goToSearchPage(${page + 1})" class="page-btn" ${page >= totalPages ? 'disabled' : ''}>下一页 ›</button>
+            </div>
+        `;
+    }
+    
+    container.innerHTML = html;
+}
+
+function goToSearchPage(page) {
+    renderDevicesWithPagination(searchResults, page);
+}
+</script>
+
+<style>
+.status-lost { background: #fff1f0 !important; color: #f5222d !important; border: 1px solid #ffccc7 !important; }
+.status-scrapped { background: #f5f5f5 !important; color: #999 !important; border: 1px solid #d9d9d9 !important; }
+.status-no-cabinet { background: #e6f7ff !important; color: #1890ff !important; border: 1px solid #91d5ff !important; }
+.status-circulating { background: #f6ffed !important; color: #52c41a !important; border: 1px solid #b7eb8f !important; }
+.device-card.scrapped { opacity: 0.6; }
+.device-card.scrapped .device-name { text-decoration: line-through; }
+
+/* 分页样式 */
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 15px;
+    margin-top: 30px;
+    padding: 15px;
+}
+.page-btn {
+    padding: 8px 16px;
+    background: #1890ff;
+    color: white;
+    border-radius: 4px;
+    text-decoration: none;
+    font-size: 14px;
+    transition: background 0.3s;
+}
+.page-btn:hover {
+    background: #40a9ff;
+}
+.page-btn.disabled {
+    background: #d9d9d9;
+    color: #999;
+    cursor: not-allowed;
+}
+.page-info {
+    font-size: 14px;
+    color: #666;
+}
+</style>
+{% endblock %}

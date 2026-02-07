@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+
+{% block title %}借用登记 - {{ device.name }}{% endblock %}
+
+{% set show_nav = false %}
+
+{% block content %}
+<div class="form-page">
+    <!-- 页面头部 -->
+    <div class="page-header">
+        <a href="javascript:history.back()" class="back-btn">‹</a>
+        <h1>借用登记</h1>
+    </div>
+    
+    <!-- 设备信息 -->
+    <div class="info-card">
+        <div class="device-mini">
+            <span class="mini-icon">{% if device_type == '车机' %}🚗{% else %}📱{% endif %}</span>
+            <div class="mini-info">
+                <span class="mini-name">{{ device.name }}</span>
+                <span class="mini-type">{{ device_type }}</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 借用表单 -->
+    <div class="form-card">
+        <h3 class="form-title">填写借用信息</h3>
+        
+        <div class="form-group">
+            <label class="form-label">借用人</label>
+            <input type="text" class="form-input" value="{{ user.borrower_name }}" readonly>
+        </div>
+        
+        <div class="form-group">
+            <label class="form-label">手机号</label>
+            <input type="text" class="form-input" value="{{ phone_mask }}" readonly>
+            <span class="form-hint">如需修改请联系管理员</span>
+        </div>
+        
+        <div class="form-group">
+            <label class="form-label">借用原因</label>
+            <div class="radio-group">
+                <label class="radio-item">
+                    <input type="radio" name="reason" value="测试" checked>
+                    <span class="radio-text">测试</span>
+                </label>
+                <label class="radio-item">
+                    <input type="radio" name="reason" value="开发">
+                    <span class="radio-text">开发</span>
+                </label>
+                <label class="radio-item">
+                    <input type="radio" name="reason" value="演示">
+                    <span class="radio-text">演示</span>
+                </label>
+                <label class="radio-item">
+                    <input type="radio" name="reason" value="出差">
+                    <span class="radio-text">出差</span>
+                </label>
+                <label class="radio-item">
+                    <input type="radio" name="reason" value="其他">
+                    <span class="radio-text">其他</span>
+                </label>
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <label class="form-label">详细说明</label>
+            <textarea id="detailReason" class="form-textarea" rows="2" placeholder="请详细说明借用用途..."></textarea>
+        </div>
+        
+        <div class="form-group">
+            <label class="form-label">预计归还日期</label>
+            <input type="date" id="returnDate" class="form-input">
+        </div>
+    </div>
+    
+    <!-- 提示信息 -->
+    <div class="tips-card">
+        <h4>📋 借用须知</h4>
+        <ul>
+            <li>请爱护设备，妥善保管</li>
+            <li>按时归还，逾期请联系管理员</li>
+            <li>如有损坏请及时报备</li>
+        </ul>
+    </div>
+    
+    <!-- 提交按钮 -->
+    <div class="form-actions">
+        <button type="button" class="btn btn-default btn-large" onclick="history.back()">取消</button>
+        <button type="button" class="btn btn-primary btn-large" onclick="submitBorrow()">确认借用</button>
+    </div>
+</div>
+
+<script>
+// 设置默认归还日期为7天后
+document.getElementById('returnDate').value = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+// 借用原因选择联动
+const reasonInputs = document.querySelectorAll('input[name="reason"]');
+const detailReason = document.getElementById('detailReason');
+const reasonDetails = {
+    '测试': '用于功能测试',
+    '开发': '用于开发调试',
+    '演示': '用于产品演示',
+    '出差': '用于出差使用',
+    '其他': ''
+};
+
+reasonInputs.forEach(input => {
+    input.addEventListener('change', () => {
+        detailReason.value = reasonDetails[input.value] || '';
+    });
+});
+detailReason.value = reasonDetails['测试'];
+
+function submitBorrow() {
+    const reasonRadio = document.querySelector('input[name="reason"]:checked');
+    const detailReason = document.getElementById('detailReason').value.trim();
+    const returnDate = document.getElementById('returnDate').value;
+    
+    const fullReason = reasonRadio.value + (detailReason ? ' - ' + detailReason : '');
+    
+    const btn = document.querySelector('.btn-primary');
+    btn.disabled = true;
+    btn.textContent = '提交中...';
+    
+    fetch('/api/borrow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            device_id: '{{ device.id }}',
+            reason: fullReason,
+            expected_return_date: returnDate
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast('借用成功！');
+            setTimeout(() => {
+                window.location.href = '/device/{{ device.id }}';
+            }, 1500);
+        } else {
+            showToast(data.message || '借用失败');
+            btn.disabled = false;
+            btn.textContent = '确认借用';
+        }
+    })
+    .catch(() => {
+        showToast('提交失败，请重试');
+        btn.disabled = false;
+        btn.textContent = '确认借用';
+    });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}我的借用记录 - 设备管理系统{% endblock %}
+
+{% set active_nav = 'records' %}
+
+{% block content %}
+<div class="records-page">
+    <!-- 页面头部 -->
+    <div class="page-header">
+        <a href="{{ url_for('home') }}" class="back-btn">‹</a>
+        <h1>我的借用记录</h1>
+    </div>
+    
+    <!-- 统计卡片 -->
+    <div class="stats-card">
+        <div class="stat-item">
+            <span class="stat-number">{{ records|length }}</span>
+            <span class="stat-label">总记录</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-number">{{ records|selectattr('operation_type', 'equalto', '借出')|list|length }}</span>
+            <span class="stat-label">借用次数</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-number">{{ records|selectattr('operation_type', 'equalto', '归还')|list|length }}</span>
+            <span class="stat-label">归还次数</span>
+        </div>
+    </div>
+    
+    <!-- 记录列表 -->
+    <div class="records-list">
+        {% if records %}
+        <div class="timeline">
+            {% for record in records %}
+            <div class="timeline-item">
+                <div class="timeline-dot {% if '借出' in record.operation_type %}dot-borrow{% else %}dot-return{% endif %}"></div>
+                <div class="timeline-content">
+                    <div class="record-header">
+                        <span class="record-device">{{ record.device_name }}</span>
+                        <span class="record-type-badge {% if '借出' in record.operation_type %}badge-borrow{% else %}badge-return{% endif %}">
+                            {{ record.operation_type }}
+                        </span>
+                    </div>
+                    <div class="record-info">
+                        <span class="info-tag">{{ record.device_type }}</span>
+                        <span class="info-tag">{{ record.borrower }}</span>
+                    </div>
+                    {% if record.reason and record.reason != 'nan' %}
+                    <div class="record-reason">
+                        <span>💬 {{ record.reason }}</span>
+                    </div>
+                    {% endif %}
+                    {% if record.remark and record.remark != 'nan' %}
+                    <div class="record-remark">
+                        <span>📝 {{ record.remark }}</span>
+                    </div>
+                    {% endif %}
+                    <div class="record-time">
+                        {{ record.operation_time }}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">📋</div>
+            <p>暂无借用记录</p>
+            <a href="{{ url_for('device_list') }}" class="btn btn-primary btn-small">去借设备</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

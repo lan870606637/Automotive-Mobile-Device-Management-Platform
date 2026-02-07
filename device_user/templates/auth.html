@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}微信授权 - 设备管理系统{% endblock %}
+
+{% set show_nav = false %}
+
+{% block content %}
+<div class="auth-page">
+    <div class="auth-logo">
+        <div class="logo-icon">📱</div>
+        <h1>车机与手机设备管理系统</h1>
+        <p>设备借用 · 归还 · 管理</p>
+    </div>
+    
+    <div class="auth-content">
+        <div class="auth-info">
+            <p>欢迎使用本系统</p>
+            <p class="sub-text">授权后即可借用和管理设备</p>
+        </div>
+        
+        <button class="btn btn-primary btn-large" onclick="handleAuth()">
+            <span class="wx-icon">💬</span>
+            微信一键登录
+        </button>
+        
+        <p class="auth-tips">
+            点击登录即表示您同意<br>
+            <a href="#">《用户协议》</a> 和 <a href="#">《隐私政策》</a>
+        </p>
+    </div>
+    
+    <div class="auth-footer">
+        <p>技术支持 © 2024</p>
+    </div>
+</div>
+
+<script>
+function handleAuth() {
+    // 实际使用时跳转到微信授权页面
+    // window.location.href = 'https://open.weixin.qq.com/connect/oauth2/authorize...';
+    
+    // 开发环境模拟授权
+    showToast('正在登录...');
+    setTimeout(() => {
+        window.location.href = '/auth?code=001';
+    }, 1000);
+}
+</script>
+{% endblock %}

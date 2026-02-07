@@ -1,0 +1,805 @@
+{% extends "base.html" %}
+
+{% block title %}{{ device.name }} - 设备详情{% endblock %}
+
+{% set active_nav = 'devices' %}
+
+{% block content %}
+<div class="device-detail-page">
+    <!-- 页面头部 -->
+    <div class="page-header">
+        <a href="javascript:history.back()" class="back-btn">‹</a>
+        <h1>设备详情</h1>
+    </div>
+    
+    <!-- 设备基本信息 -->
+    <div class="detail-card">
+        <div class="device-header">
+            <span class="device-icon-large">
+                {% if device_type == '车机' %}🚗{% else %}📱{% endif %}
+            </span>
+            <div class="device-title">
+                <h2>{{ device.name }}</h2>
+                <span class="status-badge 
+                    {% if device.status.value == '在库' %}status-available
+                    {% elif device.status.value == '借出' %}status-borrowed
+                    {% elif device.status.value == '已寄出' %}status-shipped
+                    {% elif device.status.value == '已损坏' %}status-damaged
+                    {% elif device.status.value == '丢失' %}status-lost
+                    {% elif device.status.value == '报废' %}status-scrapped
+                    {% endif %}">
+                    {{ device.status.value }}
+                </span>
+            </div>
+        </div>
+        
+        <div class="info-list">
+            <div class="info-item">
+                <span class="info-label">设备类型</span>
+                <span class="info-value">{{ device_type }}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">型号</span>
+                <span class="info-value">{{ device.model or '-' }}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">备注</span>
+                <span class="info-value">{{ device.remark or '-' }}</span>
+            </div>
+            {% if device.status.value == '丢失' %}
+            <div class="info-item" style="color: #f5222d;">
+                <span class="info-label">丢失时间</span>
+                <span class="info-value">{{ device.lost_time.strftime('%Y-%m-%d %H:%M') }}</span>
+            </div>
+            {% endif %}
+            {% if device.status.value == '已损坏' %}
+            <div class="info-item" style="color: #f5222d;">
+                <span class="info-label">损坏原因</span>
+                <span class="info-value">{{ device.damage_reason }}</span>
+            </div>
+            <div class="info-item" style="color: #f5222d;">
+                <span class="info-label">损坏时间</span>
+                <span class="info-value">{{ device.damage_time.strftime('%Y-%m-%d %H:%M') }}</span>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    {% if device.status.value == '已寄出' or device.status.value == '已损坏' or device.status.value == '报废' %}
+    <!-- 设备已寄出、已损坏或报废 -->
+    <div class="action-section">
+        {% if device.status.value == '报废' %}
+        <button class="btn btn-primary btn-large btn-block" disabled>设备已报废</button>
+        {% else %}
+        <button class="btn btn-primary btn-large btn-block" disabled>
+            {% if device.status.value == '已寄出' %}设备已寄出{% else %}设备已损坏{% endif %}
+        </button>
+        {% endif %}
+        {% if device.status.value == '已损坏' %}
+        <div style="margin-top: 15px;">
+            <button onclick="showDamageOptions('{{ device.id }}')" class="btn btn-warning btn-large btn-block">我已修好</button>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="info-list" style="margin-top: 20px;">
+        <div class="info-item">
+            <span class="info-label">📍 {% if device_type == '手机' %}保管人{% else %}柜号{% endif %}</span>
+            <span class="info-value">{{ device.cabinet_number }}</span>
+        </div>
+    </div>
+
+    <!-- 借用记录 -->
+    <div class="records-section">
+        <h3 class="section-title">借用记录</h3>
+        {% if records %}
+        <div class="record-list">
+            {% for record in records %}
+            <div class="record-item">
+                <div class="record-main">
+                    <span class="record-type
+                        {% if '借出' in record.operation_type %}type-borrow
+                        {% elif '归还' in record.operation_type %}type-return
+                        {% elif '丢失' in record.operation_type or '损坏' in record.operation_type or '未找到' in record.operation_type %}type-lost
+                        {% else %}type-transfer{% endif %}">
+                        {{ record.operation_type }}
+                    </span>
+                    <span class="record-user">
+                        {{ record.borrower }}
+                        {% if record.entry_source == '管理员录入' %}
+                        <span class="admin-badge">管</span>
+                        {% endif %}
+                    </span>
+                </div>
+                <div class="record-time">{{ record.operation_time }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="no-data">暂无记录</p>
+        {% endif %}
+    </div>
+
+    {% elif device.status.value == '丢失' %}
+    <!-- 设备丢失状态 -->
+    <div class="action-section">
+        <button class="btn btn-primary btn-large btn-block" disabled>设备已丢失</button>
+        <div style="margin-top: 15px;">
+            <button onclick="showLostOptions('{{ device.id }}')" class="btn btn-success btn-large btn-block">我已找到</button>
+        </div>
+    </div>
+
+    <!-- 借用记录 -->
+    <div class="records-section">
+        <h3 class="section-title">借用记录</h3>
+        {% if records %}
+        <div class="record-list">
+            {% for record in records %}
+            <div class="record-item">
+                <div class="record-main">
+                    <span class="record-type
+                        {% if '借出' in record.operation_type %}type-borrow
+                        {% elif '归还' in record.operation_type %}type-return
+                        {% elif '丢失' in record.operation_type or '损坏' in record.operation_type or '未找到' in record.operation_type %}type-lost
+                        {% else %}type-transfer{% endif %}">
+                        {{ record.operation_type }}
+                    </span>
+                    <span class="record-user">
+                        {{ record.borrower }}
+                        {% if record.entry_source == '管理员录入' %}
+                        <span class="admin-badge">管</span>
+                        {% endif %}
+                    </span>
+                </div>
+                <div class="record-time">{{ record.operation_time }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="no-data">暂无记录</p>
+        {% endif %}
+    </div>
+
+    {% elif device.status.value == '在库' %}
+    <!-- 情况A：设备在库 -->
+    {% if is_custodian %}
+    <div class="action-section">
+        <a href="{{ url_for('transfer_page', device_id=device.id) }}" class="btn btn-info btn-large btn-block">
+            转借他人
+        </a>
+    </div>
+    {% else %}
+    <div class="action-section">
+        <a href="{{ url_for('borrow_page', device_id=device.id) }}" class="btn btn-primary btn-large btn-block">
+            我要借用
+        </a>
+    </div>
+    {% endif %}
+    
+    <!-- 登记后查看区域 -->
+    <div class="hidden-info-section">
+        <div class="section-header">
+            <span class="lock-icon">🔒</span>
+            <span>登记后查看</span>
+        </div>
+        <div class="hidden-content">
+            <p>• {% if device_type == '手机' %}保管人{% else %}柜号{% endif %}：***</p>
+            <p>• 借用记录：***</p>
+            <p class="tip">借用成功后可查看完整信息</p>
+        </div>
+    </div>
+    
+    {% else %}
+    <!-- 设备借出中 -->
+    <div class="borrow-info-card">
+        <h3 class="card-title">
+            {% if is_borrower %}
+            <span class="you-badge">您正在借用此设备</span>
+            {% else %}
+            当前借用信息
+            {% endif %}
+        </h3>
+        
+        <div class="info-list">
+            {% if is_borrower %}
+            <div class="info-item highlight">
+                <span class="info-label">📍 {% if device_type == '手机' %}保管人{% else %}柜号{% endif %}</span>
+                <span class="info-value">{{ device.cabinet_number }}</span>
+            </div>
+            {% endif %}
+            
+            <div class="info-item">
+                <span class="info-label">借用人</span>
+                <span class="info-value">{{ device.borrower }}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">借用时间</span>
+                <span class="info-value">{{ device.borrow_time.strftime('%Y-%m-%d %H:%M') }}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">借用原因</span>
+                <span class="info-value">{{ device.reason or '-' }}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">录入者</span>
+                <span class="info-value">{{ device.entry_source }}</span>
+            </div>
+            {% if device.expected_return_date %}
+            <div class="info-item">
+                <span class="info-label">预计归还</span>
+                <span class="info-value">{{ device.expected_return_date.strftime('%Y-%m-%d') }}</span>
+            </div>
+            {% endif %}
+            
+            {% if is_overdue %}
+            <div class="info-item overdue-warning">
+                <span class="info-label">⚠️ 超时提醒</span>
+                <span class="info-value" style="color: #f5222d; font-weight: bold;">已超时 {{ overdue_days }} 天</span>
+            </div>
+            {% endif %}
+        </div>
+        
+        {% if is_borrower %}
+        <div class="action-section">
+            <a href="{{ url_for('return_page', device_id=device.id) }}" class="btn btn-warning btn-large btn-block">
+                立即归还
+            </a>
+            <a href="{{ url_for('transfer_page', device_id=device.id) }}" class="btn btn-info btn-large btn-block" style="margin-top: 10px;">
+                转借他人
+            </a>
+            <div style="display: flex; justify-content: space-between; margin-top: 10px; gap: 10px;">
+                <button onclick="showReportLost('{{ device.id }}')" class="btn" style="flex: 1; padding: 6px 0; font-size: 12px; background: #8c8c8c; color: white;">
+                    丢失报备
+                </button>
+                <button onclick="showReportDamage('{{ device.id }}')" class="btn" style="flex: 1; padding: 6px 0; font-size: 12px; background: #fa8c16; color: white;">
+                    损坏报备
+                </button>
+            </div>
+            {% if device.previous_borrower %}
+            <div style="margin-top: 10px; padding: 10px; background: #fff7e6; border-radius: 4px; font-size: 12px; color: #666;">
+                上一个借用人：{{ device.previous_borrower }}
+            </div>
+            <button onclick="confirmNotFound('{{ device.id }}')" class="btn btn-large btn-block" style="margin-top: 10px; background: #ff4d4f; color: white; border: none;">
+                未找到
+            </button>
+            {% else %}
+            <button onclick="confirmNotFoundDirect('{{ device.id }}')" class="btn btn-large btn-block" style="margin-top: 10px; background: #ff4d4f; color: white; border: none;">
+                未找到
+            </button>
+            {% endif %}
+        </div>
+        {% elif is_custodian %}
+        <div class="action-section">
+            <button onclick="confirmReturnByCustodian('{{ device.id }}', '{{ device.borrower }}', '{{ device.name }}')" class="btn btn-warning btn-large btn-block">
+                收回借用
+            </button>
+            {% if device_type == '手机' %}
+            <button onclick="showTransferCustodian('{{ device.id }}')" class="btn btn-info btn-large btn-block" style="margin-top: 10px;">
+                转让保管人
+            </button>
+            {% endif %}
+        </div>
+        {% elif device.status.value == '借出' and not is_borrower %}
+        <div class="action-section">
+            <button class="btn btn-primary btn-large btn-block" disabled>设备已借出</button>
+            <button onclick="confirmTransferToMe('{{ device.id }}', '{{ device.borrower }}', '{{ device.name }}')" class="btn btn-info btn-large btn-block" style="margin-top: 10px;">
+                转给自己
+            </button>
+        </div>
+        {% endif %}
+    </div>
+    
+    <!-- 借用记录 -->
+    <div class="records-section">
+        <h3 class="section-title">借用记录</h3>
+        {% if records %}
+        <div class="record-list">
+            {% for record in records %}
+            <div class="record-item">
+                <div class="record-main">
+                    <span class="record-type 
+                        {% if '借出' in record.operation_type %}type-borrow
+                        {% elif '归还' in record.operation_type %}type-return
+                        {% elif '丢失' in record.operation_type or '损坏' in record.operation_type or '未找到' in record.operation_type %}type-lost
+                        {% else %}type-transfer{% endif %}">
+                        {{ record.operation_type }}
+                    </span>
+                    <span class="record-user">
+                        {{ record.borrower }}
+                        {% if record.entry_source == '管理员录入' %}
+                        <span class="admin-badge">管</span>
+                        {% endif %}
+                    </span>
+                </div>
+                <div class="record-time">{{ record.operation_time }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="no-data">暂无记录</p>
+        {% endif %}
+    </div>
+    {% endif %}
+    
+    <!-- 查看记录 -->
+    <div class="records-section">
+        <h3 class="section-title">查看记录</h3>
+        {% if view_records %}
+        <div class="record-list">
+            {% for vr in view_records %}
+            <div class="record-item">
+                <div class="record-main">
+                    <span class="record-type type-view">查看</span>
+                    <span class="record-user">{{ vr.viewer }}</span>
+                </div>
+                <div class="record-time">{{ vr.view_time }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="no-data">暂无查看记录</p>
+        {% endif %}
+    </div>
+    
+    <!-- 用户备注 -->
+    <div class="remarks-section">
+        <h3 class="section-title">
+            用户备注
+            <a href="{{ url_for('add_remark_page', device_id=device.id) }}" class="add-btn">+ 添加</a>
+        </h3>
+        
+        {% if remarks %}
+        <div class="remark-list">
+            {% for remark in remarks %}
+            <div class="remark-item">
+                <div class="remark-content">{{ remark.content }}</div>
+                <div class="remark-meta">
+                    <span class="remark-creator">{{ remark.creator }}</span>
+                    <span class="remark-time">{{ remark.create_time }}</span>
+                    {% if remark.is_creator %}
+                    <div class="remark-actions">
+                        <a href="{{ url_for('edit_remark_page', remark_id=remark.id) }}" class="action-link">编辑</a>
+                        <a href="javascript:void(0)" onclick="deleteRemark('{{ remark.id }}')" class="action-link delete">删除</a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-remarks">
+            <p>暂无备注</p>
+            <a href="{{ url_for('add_remark_page', device_id=device.id) }}" class="link">添加第一条备注</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 丢失报备弹窗 -->
+<div id="reportLostModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <h3>丢失报备</h3>
+        <p>确定要报备此设备丢失吗？</p>
+        <p style="color: #999; font-size: 14px;">丢失时间：{{ now if now else '当前时间' }}</p>
+        <div class="modal-actions">
+            <button onclick="closeModal('reportLostModal')" class="btn btn-default">取消</button>
+            <button onclick="submitReportLost()" class="btn btn-danger">确认报备</button>
+        </div>
+    </div>
+</div>
+
+<!-- 损坏报备弹窗 -->
+<div id="reportDamageModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <h3>损坏报备</h3>
+        <textarea id="damageReason" placeholder="请填写损坏原因" rows="3" style="width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px;"></textarea>
+        <div class="modal-actions">
+            <button onclick="closeModal('reportDamageModal')" class="btn btn-default">取消</button>
+            <button onclick="submitReportDamage()" class="btn btn-danger" style="background: #fa8c16;">确认报备</button>
+        </div>
+    </div>
+</div>
+
+<!-- 我已找到弹窗 -->
+<div id="foundModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <h3>设备已找到</h3>
+        <p>请选择后续操作：</p>
+        <div class="modal-actions" style="flex-direction: column; gap: 10px;">
+            <button onclick="submitFound('keep')" class="btn btn-primary btn-block">转给自己</button>
+            <button onclick="submitFound('return')" class="btn btn-warning btn-block" id="foundReturnBtn">归还入库</button>
+            <button onclick="showTransferSelect('found')" class="btn btn-info btn-block">转给别人</button>
+            <button onclick="closeModal('foundModal')" class="btn btn-default btn-block">取消</button>
+        </div>
+    </div>
+</div>
+
+<!-- 我已修好弹窗 -->
+<div id="repairedModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <h3>设备已修好</h3>
+        <p>请选择后续操作：</p>
+        <div class="modal-actions" style="flex-direction: column; gap: 10px;">
+            <button onclick="submitRepaired('keep')" class="btn btn-primary btn-block">转给自己</button>
+            <button onclick="submitRepaired('return')" class="btn btn-warning btn-block" id="repairedReturnBtn">归还入库</button>
+            <button onclick="showTransferSelect('repaired')" class="btn btn-info btn-block">转给别人</button>
+            <button onclick="closeModal('repairedModal')" class="btn btn-default btn-block">取消</button>
+        </div>
+    </div>
+</div>
+
+<!-- 转给别人选择弹窗 -->
+<div id="transferSelectModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <h3>选择转借人</h3>
+        <select id="transferToUser" style="width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px;">
+            <option value="">请选择</option>
+        </select>
+        <div class="modal-actions">
+            <button onclick="closeModal('transferSelectModal')" class="btn btn-default">取消</button>
+            <button onclick="submitTransfer()" class="btn btn-primary">确认</button>
+        </div>
+    </div>
+</div>
+
+<!-- 转让保管人弹窗 -->
+<div id="transferCustodianModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <h3>转让保管人</h3>
+        <select id="newCustodian" style="width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px;">
+            <option value="">请选择新保管人</option>
+        </select>
+        <div class="modal-actions">
+            <button onclick="closeModal('transferCustodianModal')" class="btn btn-default">取消</button>
+            <button onclick="submitTransferCustodian()" class="btn btn-primary">确认转让</button>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentDeviceId = '';
+let currentAction = '';
+let currentDeviceType = '{{ device_type }}';
+
+function closeModal(modalId) {
+    document.getElementById(modalId).style.display = 'none';
+}
+
+function showReportLost(deviceId) {
+    currentDeviceId = deviceId;
+    document.getElementById('reportLostModal').style.display = 'flex';
+}
+
+function submitReportLost() {
+    fetch('/api/report-lost', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device_id: currentDeviceId })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast('丢失报备成功');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '报备失败');
+        }
+    })
+    .catch(() => showToast('报备失败，请重试'));
+    closeModal('reportLostModal');
+}
+
+function showReportDamage(deviceId) {
+    currentDeviceId = deviceId;
+    document.getElementById('reportDamageModal').style.display = 'flex';
+}
+
+function submitReportDamage() {
+    const reason = document.getElementById('damageReason').value.trim();
+    if (!reason) {
+        showToast('请填写损坏原因');
+        return;
+    }
+    fetch('/api/report-damage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device_id: currentDeviceId, damage_reason: reason })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast('损坏报备成功');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '报备失败');
+        }
+    })
+    .catch(() => showToast('报备失败，请重试'));
+    closeModal('reportDamageModal');
+}
+
+function showLostOptions(deviceId) {
+    currentDeviceId = deviceId;
+    currentAction = 'found';
+    // 根据设备类型设置按钮文字
+    const returnBtn = document.getElementById('foundReturnBtn');
+    if (returnBtn) {
+        returnBtn.textContent = currentDeviceType === '手机' ? '转给保管人' : '归还入库';
+    }
+    document.getElementById('foundModal').style.display = 'flex';
+}
+
+function showDamageOptions(deviceId) {
+    currentDeviceId = deviceId;
+    currentAction = 'repaired';
+    // 根据设备类型设置按钮文字
+    const returnBtn = document.getElementById('repairedReturnBtn');
+    if (returnBtn) {
+        returnBtn.textContent = currentDeviceType === '手机' ? '转给保管人' : '归还入库';
+    }
+    document.getElementById('repairedModal').style.display = 'flex';
+}
+
+function showTransferSelect(action) {
+    currentAction = action;
+    closeModal(action === 'found' ? 'foundModal' : 'repairedModal');
+    // 加载用户列表
+    const select = document.getElementById('transferToUser');
+    select.innerHTML = '<option value="">加载中...</option>';
+    document.getElementById('transferSelectModal').style.display = 'flex';
+    
+    fetch('/api/users')
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                select.innerHTML = '<option value="">请选择</option>';
+                data.users.forEach(u => {
+                    const option = document.createElement('option');
+                    option.value = u.borrower_name;
+                    option.textContent = u.borrower_name + ' (' + u.phone.substring(0, 3) + '****' + u.phone.substring(7) + ')';
+                    select.appendChild(option);
+                });
+            }
+        })
+        .catch(() => {
+            select.innerHTML = '<option value="">加载失败</option>';
+        });
+}
+
+function submitFound(action) {
+    const data = { device_id: currentDeviceId, action: action };
+    if (action === 'transfer') {
+        const transferTo = document.getElementById('transferToUser').value;
+        if (!transferTo) { showToast('请选择转借人'); return; }
+        data.transfer_to = transferTo;
+    }
+    fetch('/api/found-device', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast('操作成功');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '操作失败');
+        }
+    })
+    .catch(() => showToast('操作失败，请重试'));
+    closeModal('foundModal');
+    closeModal('transferSelectModal');
+}
+
+function submitRepaired(action) {
+    const data = { device_id: currentDeviceId, action: action };
+    if (action === 'transfer') {
+        const transferTo = document.getElementById('transferToUser').value;
+        if (!transferTo) { showToast('请选择转借人'); return; }
+        data.transfer_to = transferTo;
+    }
+    fetch('/api/repair-device', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast('操作成功');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '操作失败');
+        }
+    })
+    .catch(() => showToast('操作失败，请重试'));
+    closeModal('repairedModal');
+    closeModal('transferSelectModal');
+}
+
+function submitTransfer() {
+    if (currentAction === 'found') {
+        submitFound('transfer');
+    } else {
+        submitRepaired('transfer');
+    }
+}
+
+function confirmNotFound(deviceId) {
+    if (!confirm('确定要退回此设备吗？将转回给上一个借用人。')) {
+        return;
+    }
+    fetch('/api/not-found', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device_id: deviceId })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast('操作成功');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '操作失败');
+        }
+    })
+    .catch(() => showToast('操作失败，请重试'));
+}
+
+function confirmNotFoundDirect(deviceId) {
+    if (!confirm('确定设备未找到吗？将记录借用人未找到，设备转为丢失状态。')) {
+        return;
+    }
+    fetch('/api/not-found-direct', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device_id: deviceId })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast('已记录：借用人未找到，设备已转为丢失');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '操作失败');
+        }
+    })
+    .catch(() => showToast('操作失败，请重试'));
+}
+
+function showTransferCustodian(deviceId) {
+    currentDeviceId = deviceId;
+    const select = document.getElementById('newCustodian');
+    select.innerHTML = '<option value="">加载中...</option>';
+    document.getElementById('transferCustodianModal').style.display = 'flex';
+    
+    fetch('/api/users')
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                select.innerHTML = '<option value="">请选择新保管人</option>';
+                data.users.forEach(u => {
+                    const option = document.createElement('option');
+                    option.value = u.borrower_name;
+                    option.textContent = u.borrower_name;
+                    select.appendChild(option);
+                });
+            }
+        })
+        .catch(() => {
+            select.innerHTML = '<option value="">加载失败</option>';
+        });
+}
+
+function submitTransferCustodian() {
+    const newCustodian = document.getElementById('newCustodian').value;
+    if (!newCustodian) {
+        showToast('请选择新保管人');
+        return;
+    }
+    fetch('/api/transfer-custodian', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device_id: currentDeviceId, new_custodian: newCustodian })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast('保管人转让成功');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '转让失败');
+        }
+    })
+    .catch(() => showToast('转让失败，请重试'));
+    closeModal('transferCustodianModal');
+}
+
+function deleteRemark(remarkId) {
+    if (!confirm('确定要删除这条备注吗？')) {
+        return;
+    }
+    fetch('/api/remark/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ remark_id: remarkId })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast('删除成功');
+            location.reload();
+        } else {
+            showToast(data.message || '删除失败');
+        }
+    })
+    .catch(() => showToast('删除失败，请重试'));
+}
+
+function confirmTransferToMe(deviceId, currentBorrower, deviceName) {
+    if (!confirm(`确定要将 ${deviceName} 从 ${currentBorrower} 转借到自己名下吗？`)) {
+        return;
+    }
+    showToast('正在处理...');
+    fetch('/api/transfer-to-me', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device_id: deviceId })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast('转借成功');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '转借失败');
+        }
+    })
+    .catch(() => showToast('转借失败，请重试'));
+}
+
+function confirmReturnByCustodian(deviceId, currentBorrower, deviceName) {
+    if (!confirm(`确定要收回 ${deviceName} 吗？当前借用人为 ${currentBorrower}`)) {
+        return;
+    }
+    showToast('正在处理...');
+    fetch('/api/return-by-custodian', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device_id: deviceId })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast('收回成功');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '收回失败');
+        }
+    })
+    .catch(() => showToast('收回失败，请重试'));
+}
+</script>
+
+<style>
+.status-lost { background: #fff1f0 !important; color: #f5222d !important; border: 1px solid #ffccc7 !important; }
+.status-scrapped { background: #f5f5f5 !important; color: #999 !important; border: 1px solid #d9d9d9 !important; }
+.type-lost { background: #fff1f0; color: #f5222d; }
+.type-view { background: #e6f7ff; color: #1890ff; }
+.modal {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center;
+    z-index: 1000;
+}
+.modal-content {
+    background: white; padding: 20px; border-radius: 8px; width: 90%; max-width: 350px;
+}
+.modal-content h3 { margin: 0 0 15px 0; }
+.modal-actions {
+    display: flex; justify-content: flex-end; gap: 10px; margin-top: 15px;
+}
+.modal-actions button { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; }
+.btn-block { width: 100%; padding: 12px; font-size: 16px; }
+</style>
+{% endblock %}

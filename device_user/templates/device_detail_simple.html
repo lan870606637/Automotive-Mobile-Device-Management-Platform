@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+
+{% block title %}{{ device.name }} - 设备详情{% endblock %}
+
+{% set active_nav = 'devices' %}
+
+{% block content %}
+<div class="device-detail-page">
+    <!-- 页面头部 -->
+    <div class="page-header">
+        <a href="javascript:history.back()" class="back-btn">‹</a>
+        <h1>设备详情</h1>
+    </div>
+    
+    <!-- 设备基本信息 -->
+    <div class="detail-card">
+        <div class="device-header">
+            <span class="device-icon-large">
+                {% if device_type == '车机' %}🚗{% else %}📱{% endif %}
+            </span>
+            <div class="device-title">
+                <h2>{{ device.name }}</h2>
+                {% if is_circulating %}
+                <span class="status-badge" style="background: #f6ffed; color: #52c41a; border: 1px solid #b7eb8f;">
+                    流通设备
+                </span>
+                {% else %}
+                <span class="status-badge status-available">
+                    无柜号设备
+                </span>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="info-list">
+            <div class="info-item">
+                <span class="info-label">设备类型</span>
+                <span class="info-value">{{ device_type }}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">型号</span>
+                <span class="info-value">{{ device.model or '-' }}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">柜号</span>
+                <span class="info-value cabinet-status {% if is_circulating %}status-circulating{% else %}status-empty{% endif %}">
+                    {{ '流通' if is_circulating else '无' }}
+                </span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">备注</span>
+                <span class="info-value">{{ device.remark or '-' }}</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 提示信息 -->
+    <div class="action-section">
+        <div class="info-box device-status-box {{ 'status-circulating-box' if is_circulating else 'status-empty-box' }}">
+            <p class="status-title">{{ '🔄 此设备为流通设备' if is_circulating else '⚠️ 此设备暂无柜号信息' }}</p>
+            <p class="status-hint">暂不支持借用操作</p>
+        </div>
+    </div>
+    
+    <!-- 查看记录 -->
+    <div class="records-section">
+        <h3 class="section-title">查看记录</h3>
+        {% if view_records %}
+        <div class="record-list">
+            {% for vr in view_records %}
+            <div class="record-item">
+                <div class="record-main">
+                    <span class="record-type type-view">查看</span>
+                    <span class="record-user">{{ vr.viewer }}</span>
+                </div>
+                <div class="record-time">{{ vr.view_time }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="no-data">暂无查看记录</p>
+        {% endif %}
+    </div>
+    
+    <!-- 用户备注 -->
+    <div class="remarks-section">
+        <h3 class="section-title">
+            用户备注
+            <a href="{{ url_for('add_remark_page', device_id=device.id) }}" class="add-btn">+ 添加</a>
+        </h3>
+        
+        {% if remarks %}
+        <div class="remark-list">
+            {% for remark in remarks %}
+            <div class="remark-item">
+                <div class="remark-content">{{ remark.content }}</div>
+                <div class="remark-meta">
+                    <span class="remark-creator">{{ remark.creator }}</span>
+                    <span class="remark-time">{{ remark.create_time }}</span>
+                    {% if remark.is_creator %}
+                    <div class="remark-actions">
+                        <a href="{{ url_for('edit_remark_page', remark_id=remark.id) }}" class="action-link">编辑</a>
+                        <a href="javascript:void(0)" onclick="deleteRemark('{{ remark.id }}')" class="action-link delete">删除</a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-remarks">
+            <p>暂无备注</p>
+            <a href="{{ url_for('add_remark_page', device_id=device.id) }}" class="link">添加第一条备注</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+function deleteRemark(remarkId) {
+    if (!confirm('确定要删除这条备注吗？')) {
+        return;
+    }
+    fetch('/api/remark/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ remark_id: remarkId })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast('删除成功');
+            location.reload();
+        } else {
+            showToast(data.message || '删除失败');
+        }
+    })
+    .catch(() => showToast('删除失败，请重试'));
+}
+</script>
+
+<style>
+/* 柜号状态样式 */
+.cabinet-status.status-circulating {
+    color: #52c41a;
+    font-weight: 500;
+}
+.cabinet-status.status-empty {
+    color: #999;
+}
+
+/* 设备状态提示框样式 */
+.device-status-box {
+    padding: 15px;
+    border-radius: 8px;
+    text-align: center;
+}
+.device-status-box .status-title {
+    margin: 0;
+}
+.device-status-box .status-hint {
+    font-size: 12px;
+    margin: 5px 0 0;
+}
+
+/* 流通设备提示框 */
+.status-circulating-box {
+    background: #f6ffed;
+    border: 1px solid #b7eb8f;
+}
+.status-circulating-box .status-title {
+    color: #52c41a;
+}
+.status-circulating-box .status-hint {
+    color: #666;
+}
+
+/* 无柜号设备提示框 */
+.status-empty-box {
+    background: #f5f5f5;
+}
+.status-empty-box .status-title {
+    color: #666;
+}
+.status-empty-box .status-hint {
+    color: #999;
+}
+</style>
+{% endblock %}
