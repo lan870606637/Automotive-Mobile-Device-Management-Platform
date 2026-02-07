@@ -248,7 +248,7 @@
                 <a href="{{ url_for('transfer_page', device_id=device.id) }}" class="btn btn-info btn-large" style="flex: 1;">
                     转借他人
                 </a>
-                <button onclick="showRenewModal('{{ device.id }}', '{{ device.expected_return_date.strftime('%Y-%m-%d') if device.expected_return_date else '' }}')" class="btn btn-success btn-large" style="flex: 1;">
+                <button onclick="showRenewModal('{{ device.id }}', '{{ device.expected_return_date.strftime('%Y-%m-%d') if device.expected_return_date else '' }}')" class="btn btn-primary btn-large" style="flex: 1; background: #52c41a; border-color: #52c41a;">
                     借用续期
                 </button>
             </div>
