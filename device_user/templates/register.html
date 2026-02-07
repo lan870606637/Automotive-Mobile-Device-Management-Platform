@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}用户注册 - 设备管理系统{% endblock %}
+
+{% set show_nav = false %}
+
+{% block content %}
+<div class="auth-page">
+    <div class="auth-logo">
+        <div class="logo-icon">📱</div>
+        <h1>车载测试设备管理系统</h1>
+        <p>设备借用 · 归还 · 管理</p>
+    </div>
+    
+    <div class="login-container">
+        <div class="auth-content login-form-section" style="width: 100%; max-width: 400px; margin: 0 auto;">
+            <h3>📝 用户注册</h3>
+            <form method="POST" action="{{ url_for('register') }}">
+                <div class="form-group">
+                    <label for="borrower_name">用户名</label>
+                    <input type="text" id="borrower_name" name="borrower_name" class="form-control" placeholder="请输入用户名" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="phone">手机号</label>
+                    <input type="tel" id="phone" name="phone" class="form-control" placeholder="请输入手机号" required pattern="[0-9]{11}">
+                </div>
+                
+                <div class="form-group">
+                    <label for="password">密码</label>
+                    <input type="password" id="password" name="password" class="form-control" placeholder="请输入密码" required minlength="6">
+                </div>
+                
+                <div class="form-group">
+                    <label for="confirm_password">确认密码</label>
+                    <input type="password" id="confirm_password" name="confirm_password" class="form-control" placeholder="请再次输入密码" required minlength="6">
+                </div>
+                
+                {% if error %}
+                <div class="alert alert-error">{{ error }}</div>
+                {% endif %}
+                
+                {% if success %}
+                <div class="alert alert-success">{{ success }}</div>
+                {% endif %}
+                
+                <button type="submit" class="btn btn-primary btn-large" style="width: 100%; margin-top: 20px;">
+                    注册
+                </button>
+                
+                <div style="text-align: center; margin-top: 20px;">
+                    <a href="{{ url_for('login') }}" style="color: #1890ff; text-decoration: none;">已有账号？去登录</a>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <div class="auth-footer">
+        <p>技术支持 © 2024</p>
+    </div>
+</div>
+{% endblock %}

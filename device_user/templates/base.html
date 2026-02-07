@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>{% block title %}车机与手机设备管理系统{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+    
+    <!-- 底部导航 -->
+    {% if show_nav is not defined or show_nav %}
+    <nav class="bottom-nav">
+        <a href="{{ url_for('home') }}" class="nav-item {% if active_nav == 'home' %}active{% endif %}">
+            <span class="nav-icon">🏠</span>
+            <span class="nav-text">首页</span>
+        </a>
+        <a href="{{ url_for('device_list', type='car') }}" class="nav-item {% if active_nav == 'devices' %}active{% endif %}">
+            <span class="nav-icon">📱</span>
+            <span class="nav-text">设备</span>
+        </a>
+        <a href="{{ url_for('my_records') }}" class="nav-item {% if active_nav == 'records' %}active{% endif %}">
+            <span class="nav-icon">📋</span>
+            <span class="nav-text">记录</span>
+        </a>
+    </nav>
+    {% endif %}
+    
+    <!-- 提示消息 -->
+    <div id="toast" class="toast"></div>
+    
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

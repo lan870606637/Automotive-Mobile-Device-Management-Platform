@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block title %}提示 - 设备管理系统{% endblock %}
+
+{% set show_nav = false %}
+
+{% block content %}
+<div class="error-page">
+    <div class="error-content">
+        <div class="error-icon">⚠️</div>
+        <h2>{{ message or '操作失败' }}</h2>
+        <p>请检查网络连接或联系管理员</p>
+        <div class="error-actions">
+            <a href="javascript:history.back()" class="btn btn-default">返回上页</a>
+            <a href="{{ url_for('home') }}" class="btn btn-primary">返回首页</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}设置借用人名称 - 设备管理系统{% endblock %}
+
+{% set show_nav = false %}
+
+{% block content %}
+<div class="auth-page">
+    <div class="auth-logo">
+        <div class="logo-icon">👤</div>
+        <h1>设置借用人名称</h1>
+        <p>首次登录，请设置您的名称</p>
+    </div>
+    
+    <div class="auth-content">
+        <form method="POST" action="{{ url_for('set_borrower_name') }}">
+            <div class="form-group">
+                <label for="borrower_name">借用人名称 *</label>
+                <input type="text" id="borrower_name" name="borrower_name" class="form-control" placeholder="请输入英文名或中文名" required>
+                <small class="form-text">必填，将用于设备借用记录显示，设置后不可修改</small>
+            </div>
+            
+            {% if error %}
+            <div class="alert alert-error">{{ error }}</div>
+            {% endif %}
+            
+            <button type="submit" class="btn btn-primary btn-large" style="width: 100%; margin-top: 20px;">
+                保存并进入系统
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}
