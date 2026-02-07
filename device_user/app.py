@@ -381,6 +381,7 @@ def device_detail(device_id):
             'borrower': record.borrower,
             'operation_time': record.operation_time.strftime('%Y-%m-%d %H:%M:%S'),
             'entry_source': record.entry_source,
+            'reason': record.reason,
         })
     
     # 获取查看记录

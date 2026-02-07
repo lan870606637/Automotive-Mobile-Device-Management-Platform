@@ -101,6 +101,7 @@
                         {% if '借出' in record.operation_type %}type-borrow
                         {% elif '归还' in record.operation_type %}type-return
                         {% elif '丢失' in record.operation_type or '损坏' in record.operation_type or '未找到' in record.operation_type %}type-lost
+                        {% elif '续期' in record.operation_type %}type-renew
                         {% else %}type-transfer{% endif %}">
                         {{ record.operation_type }}
                     </span>
@@ -108,6 +109,9 @@
                         {{ record.borrower }}
                         {% if record.entry_source == '管理员录入' %}
                         <span class="admin-badge">管</span>
+                        {% endif %}
+                        {% if record.reason and record.reason != 'nan' %}
+                        <button class="reason-btn" onclick="showReason(this, '{{ record.reason|replace("'", "\\'") }}', event)" title="查看详情">?</button>
                         {% endif %}
                     </span>
                 </div>
@@ -141,6 +145,7 @@
                         {% if '借出' in record.operation_type %}type-borrow
                         {% elif '归还' in record.operation_type %}type-return
                         {% elif '丢失' in record.operation_type or '损坏' in record.operation_type or '未找到' in record.operation_type %}type-lost
+                        {% elif '续期' in record.operation_type %}type-renew
                         {% else %}type-transfer{% endif %}">
                         {{ record.operation_type }}
                     </span>
@@ -148,6 +153,9 @@
                         {{ record.borrower }}
                         {% if record.entry_source == '管理员录入' %}
                         <span class="admin-badge">管</span>
+                        {% endif %}
+                        {% if record.reason and record.reason != 'nan' %}
+                        <button class="reason-btn" onclick="showReason(this, '{{ record.reason|replace("'", "\\'") }}', event)" title="查看详情">?</button>
                         {% endif %}
                     </span>
                 </div>
@@ -306,6 +314,7 @@
                         {% if '借出' in record.operation_type %}type-borrow
                         {% elif '归还' in record.operation_type %}type-return
                         {% elif '丢失' in record.operation_type or '损坏' in record.operation_type or '未找到' in record.operation_type %}type-lost
+                        {% elif '续期' in record.operation_type %}type-renew
                         {% else %}type-transfer{% endif %}">
                         {{ record.operation_type }}
                     </span>
@@ -313,6 +322,9 @@
                         {{ record.borrower }}
                         {% if record.entry_source == '管理员录入' %}
                         <span class="admin-badge">管</span>
+                        {% endif %}
+                        {% if record.reason and record.reason != 'nan' %}
+                        <button class="reason-btn" onclick="showReason(this, '{{ record.reason|replace("'", "\\'") }}', event)" title="查看详情">?</button>
                         {% endif %}
                     </span>
                 </div>
@@ -461,6 +473,12 @@
     </div>
 </div>
 
+<!-- 气泡提示 -->
+<div id="reasonTooltip" class="reason-tooltip" style="display: none;">
+    <div class="reason-tooltip-content"></div>
+    <div class="reason-tooltip-arrow"></div>
+</div>
+
 <!-- 借用续期弹窗 -->
 <div id="renewModal" class="modal" style="display: none;">
     <div class="modal-content">
@@ -481,6 +499,78 @@ let currentDeviceType = '{{ device_type }}';
 
 function closeModal(modalId) {
     document.getElementById(modalId).style.display = 'none';
+}
+
+// 隐藏气泡提示
+function hideReasonTooltip() {
+    const tooltip = document.getElementById('reasonTooltip');
+    if (tooltip) {
+        tooltip.style.display = 'none';
+    }
+}
+
+// 显示气泡提示
+function showReason(btn, reason, event) {
+    // 先关闭其他可能打开的气泡
+    hideReasonTooltip();
+    
+    const tooltip = document.getElementById('reasonTooltip');
+    const content = tooltip.querySelector('.reason-tooltip-content');
+    const arrow = tooltip.querySelector('.reason-tooltip-arrow');
+    
+    content.textContent = reason;
+    tooltip.style.display = 'block';
+    
+    // 先重置箭头样式
+    arrow.style.borderTop = '6px solid #333';
+    arrow.style.borderBottom = 'none';
+    arrow.style.top = 'auto';
+    arrow.style.bottom = '-6px';
+    
+    // 计算位置
+    const btnRect = btn.getBoundingClientRect();
+    const tooltipRect = tooltip.getBoundingClientRect();
+    
+    // 水平居中
+    let left = btnRect.left + btnRect.width / 2 - tooltipRect.width / 2;
+    // 在按钮上方
+    let top = btnRect.top - tooltipRect.height - 8;
+    
+    // 边界检查
+    if (left < 10) left = 10;
+    if (left + tooltipRect.width > window.innerWidth - 10) {
+        left = window.innerWidth - tooltipRect.width - 10;
+    }
+    
+    // 如果上方空间不够，显示在下方
+    if (top < 10) {
+        top = btnRect.bottom + 8;
+        arrow.style.borderTop = 'none';
+        arrow.style.borderBottom = '6px solid #333';
+        arrow.style.top = '-6px';
+        arrow.style.bottom = 'auto';
+    }
+    
+    tooltip.style.left = left + 'px';
+    tooltip.style.top = top + pageYOffset + 'px';
+    
+    // 阻止事件冒泡，防止立即关闭
+    if (event) {
+        event.stopPropagation();
+    }
+    
+    // 点击其他地方关闭
+    const closeTooltip = function(e) {
+        if (!tooltip.contains(e.target) && e.target !== btn) {
+            hideReasonTooltip();
+            document.removeEventListener('click', closeTooltip);
+        }
+    };
+    
+    // 延迟添加监听器，避免当前点击事件触发关闭
+    setTimeout(() => {
+        document.addEventListener('click', closeTooltip);
+    }, 10);
 }
 
 function showReportLost(deviceId) {
@@ -861,6 +951,58 @@ function confirmReturnByCustodian(deviceId, currentBorrower, deviceName) {
 .status-scrapped { background: #f5f5f5 !important; color: #999 !important; border: 1px solid #d9d9d9 !important; }
 .type-lost { background: #fff1f0; color: #f5222d; }
 .type-view { background: #e6f7ff; color: #1890ff; }
+.type-renew { background: #f6ffed; color: #52c41a; border: 1px solid #b7eb8f; }
+
+/* 查看批注按钮 - 问号帮助按钮 */
+.reason-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #1890ff;
+    color: white;
+    font-size: 12px;
+    font-weight: bold;
+    cursor: pointer;
+    margin-left: 6px;
+    border: none;
+    padding: 0;
+    line-height: 1;
+    vertical-align: middle;
+}
+.reason-btn:hover {
+    background: #40a9ff;
+}
+
+/* 气泡提示 */
+.reason-tooltip {
+    position: absolute;
+    z-index: 1000;
+    max-width: 280px;
+}
+.reason-tooltip-content {
+    background: #333;
+    color: #fff;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.5;
+    word-break: break-all;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.reason-tooltip-arrow {
+    position: absolute;
+    bottom: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 6px solid #333;
+}
 .modal {
     position: fixed; top: 0; left: 0; width: 100%; height: 100%;
     background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center;
