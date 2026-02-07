@@ -1495,6 +1495,71 @@ def api_transfer_custodian():
     return jsonify({'success': True, 'message': '保管人转让成功'})
 
 
+@app.route('/api/renew', methods=['POST'])
+@login_required
+def api_renew():
+    """借用续期API"""
+    user = get_current_user()
+    data = request.json
+    
+    device_id = data.get('device_id')
+    new_return_date = data.get('new_return_date', '').strip()
+    
+    if not device_id:
+        return jsonify({'success': False, 'message': '设备ID不能为空'})
+    
+    if not new_return_date:
+        return jsonify({'success': False, 'message': '请选择续期日期'})
+    
+    device = api_client.get_device_by_id(device_id)
+    if not device:
+        return jsonify({'success': False, 'message': '设备不存在'})
+    
+    if device.status != DeviceStatus.BORROWED:
+        return jsonify({'success': False, 'message': '只有借出状态的设备可以续期'})
+    
+    # 只有当前借用人可以续期
+    if device.borrower != user['borrower_name']:
+        return jsonify({'success': False, 'message': '只有借用人可以续期'})
+    
+    # 验证新日期是否有效（不能早于今天）
+    try:
+        new_date = datetime.strptime(new_return_date, '%Y-%m-%d').date()
+        today = datetime.now().date()
+        if new_date < today:
+            return jsonify({'success': False, 'message': '续期日期不能早于今天'})
+    except ValueError:
+        return jsonify({'success': False, 'message': '日期格式不正确'})
+    
+    # 保存旧的预计归还日期用于记录
+    old_return_date = device.expected_return_date.strftime('%Y-%m-%d') if device.expected_return_date else '无'
+    
+    # 更新预计归还日期
+    device.expected_return_date = datetime.strptime(new_return_date, '%Y-%m-%d')
+    api_client.update_device(device)
+    
+    # 添加续期记录
+    record = Record(
+        id=str(uuid.uuid4()),
+        device_id=device.id,
+        device_name=device.name,
+        device_type='车机' if isinstance(device, CarMachine) else '手机',
+        operation_type=OperationType.RENEW,
+        operator=user['borrower_name'],
+        operation_time=datetime.now(),
+        borrower=user['borrower_name'],
+        phone=user['phone'],
+        reason=f'借用续期：{old_return_date} → {new_return_date}',
+        remark='',
+        entry_source=EntrySource.USER.value
+    )
+    api_client._records.append(record)
+    api_client.add_operation_log(f"借用续期: {user['borrower_name']}, 新归还日期: {new_return_date}", device.name)
+    api_client._save_data()
+    
+    return jsonify({'success': True, 'message': f'续期成功，新的预计归还日期：{new_return_date}'})
+
+
 # ==================== 错误处理 ====================
 
 @app.errorhandler(404)

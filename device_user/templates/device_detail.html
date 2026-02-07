@@ -244,9 +244,14 @@
             <a href="{{ url_for('return_page', device_id=device.id) }}" class="btn btn-warning btn-large btn-block">
                 立即归还
             </a>
-            <a href="{{ url_for('transfer_page', device_id=device.id) }}" class="btn btn-info btn-large btn-block" style="margin-top: 10px;">
-                转借他人
-            </a>
+            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                <a href="{{ url_for('transfer_page', device_id=device.id) }}" class="btn btn-info btn-large" style="flex: 1;">
+                    转借他人
+                </a>
+                <button onclick="showRenewModal('{{ device.id }}', '{{ device.expected_return_date.strftime('%Y-%m-%d') if device.expected_return_date else '' }}')" class="btn btn-success btn-large" style="flex: 1;">
+                    借用续期
+                </button>
+            </div>
             <div style="display: flex; justify-content: space-between; margin-top: 10px; gap: 10px;">
                 <button onclick="showReportLost('{{ device.id }}')" class="btn" style="flex: 1; padding: 6px 0; font-size: 12px; background: #8c8c8c; color: white;">
                     丢失报备
@@ -452,6 +457,19 @@
         <div class="modal-actions">
             <button onclick="closeModal('transferCustodianModal')" class="btn btn-default">取消</button>
             <button onclick="submitTransferCustodian()" class="btn btn-primary">确认转让</button>
+        </div>
+    </div>
+</div>
+
+<!-- 借用续期弹窗 -->
+<div id="renewModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <h3>借用续期</h3>
+        <p style="color: #666; font-size: 14px; margin-bottom: 10px;">请选择新的预计归还日期（只能往后选择）：</p>
+        <input type="date" id="renewDate" style="width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; font-size: 16px;">
+        <div class="modal-actions">
+            <button onclick="closeModal('renewModal')" class="btn btn-default">取消</button>
+            <button onclick="submitRenew()" class="btn btn-success">确认续期</button>
         </div>
     </div>
 </div>
@@ -757,6 +775,62 @@ function confirmTransferToMe(deviceId, currentBorrower, deviceName) {
         }
     })
     .catch(() => showToast('转借失败，请重试'));
+}
+
+let currentExpectedReturnDate = '';
+
+function showRenewModal(deviceId, expectedDate) {
+    currentDeviceId = deviceId;
+    currentExpectedReturnDate = expectedDate;
+    const dateInput = document.getElementById('renewDate');
+    
+    // 设置最小日期为当前日期（只能往后选择）
+    const today = new Date().toISOString().split('T')[0];
+    dateInput.min = today;
+    
+    // 如果有当前预计归还日期，默认设置为该日期
+    if (expectedDate) {
+        dateInput.value = expectedDate;
+    } else {
+        dateInput.value = today;
+    }
+    
+    document.getElementById('renewModal').style.display = 'flex';
+}
+
+function submitRenew() {
+    const newDate = document.getElementById('renewDate').value;
+    if (!newDate) {
+        showToast('请选择续期日期');
+        return;
+    }
+    
+    // 验证日期是否大于等于今天
+    const today = new Date().toISOString().split('T')[0];
+    if (newDate < today) {
+        showToast('续期日期不能早于今天');
+        return;
+    }
+    
+    fetch('/api/renew', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            device_id: currentDeviceId,
+            new_return_date: newDate
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast('续期成功');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '续期失败');
+        }
+    })
+    .catch(() => showToast('续期失败，请重试'));
+    closeModal('renewModal');
 }
 
 function confirmReturnByCustodian(deviceId, currentBorrower, deviceName) {

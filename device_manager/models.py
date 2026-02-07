@@ -37,6 +37,7 @@ class OperationType(Enum):
     REPAIRED = "修复"
     CUSTODIAN_CHANGE = "保管人变更"
     NOT_FOUND = "借用人未找到"
+    RENEW = "借用续期"
 
 
 class EntrySource(Enum):
