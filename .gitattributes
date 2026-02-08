@@ -1,0 +1,3 @@
+# Excel files are binary
+*.xlsx binary
+*.xls binary

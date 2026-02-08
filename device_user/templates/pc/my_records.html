@@ -1,0 +1,114 @@
+{% extends "pc/base_pc.html" %}
+
+{% block title %}我的借用记录 - 设备管理系统{% endblock %}
+
+{% set active_nav = 'records' %}
+
+{% block content %}
+<h1 class="page-title">📋 我的借用记录</h1>
+
+<!-- 统计卡片 -->
+<div class="stats-grid" style="grid-template-columns: repeat(3, 1fr);">
+    <div class="stat-card">
+        <div class="stat-header">
+            <span class="stat-icon blue">📊</span>
+            <span class="stat-label">总记录</span>
+        </div>
+        <div class="stat-value">{{ total_records }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-header">
+            <span class="stat-icon orange">📤</span>
+            <span class="stat-label">借用次数</span>
+        </div>
+        <div class="stat-value">{{ borrow_count }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-header">
+            <span class="stat-icon green">✅</span>
+            <span class="stat-label">归还次数</span>
+        </div>
+        <div class="stat-value">{{ return_count }}</div>
+    </div>
+</div>
+
+<!-- 记录列表 -->
+<div class="card">
+    <div class="card-header">
+        <span class="card-title">📋 记录明细</span>
+    </div>
+    <div class="card-body">
+        {% if records %}
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>时间</th>
+                    <th>设备名称</th>
+                    <th>类型</th>
+                    <th>操作</th>
+                    <th>借用人</th>
+                    <th>原因/备注</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for record in records %}
+                <tr>
+                    <td style="font-size: 13px; color: #8c8c8c;">{{ record.operation_time }}</td>
+                    <td>
+                        <span style="font-size: 16px; margin-right: 4px;">{% if record.device_type == '车机' %}🚗{% else %}📱{% endif %}</span>
+                        <span style="font-weight: 500;">{{ record.device_name }}</span>
+                    </td>
+                    <td>{{ record.device_type }}</td>
+                    <td>
+                        <span class="status-tag
+                            {% if '借出' in record.operation_type %}status-borrowed
+                            {% elif '归还' in record.operation_type %}status-available
+                            {% elif '丢失' in record.operation_type or '损坏' in record.operation_type or '未找到' in record.operation_type %}status-lost
+                            {% elif '续期' in record.operation_type %}status-no-cabinet
+                            {% else %}status-borrowed{% endif %}">
+                            {{ record.operation_type }}
+                        </span>
+                    </td>
+                    <td>{{ record.borrower }}</td>
+                    <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        {% if record.reason and record.reason != 'nan' %}
+                        <button class="btn btn-sm" style="padding: 2px 8px; font-size: 12px;" onclick="showReasonTooltip(this, '{{ record.reason|replace("'", "\\'") }}')" title="查看详情">查看原因</button>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">📋</div>
+            <p class="empty-title">暂无借用记录</p>
+            <a href="{{ url_for('pc_device_list') }}" class="btn btn-primary">去借设备</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 原因提示气泡 -->
+<div id="reasonTooltip" style="position: fixed; background: #333; color: #fff; padding: 12px 16px; border-radius: 8px; font-size: 13px; max-width: 280px; z-index: 3000; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.15);"></div>
+
+<script>
+function showReasonTooltip(btn, reason) {
+    const tooltip = document.getElementById('reasonTooltip');
+    if (!tooltip) return;
+    tooltip.textContent = reason;
+    const rect = btn.getBoundingClientRect();
+    tooltip.style.left = rect.left + 'px';
+    tooltip.style.top = (rect.bottom + 8) + 'px';
+    tooltip.style.display = 'block';
+    setTimeout(() => {
+        document.addEventListener('click', function hide() {
+            tooltip.style.display = 'none';
+            document.removeEventListener('click', hide);
+        });
+    }, 100);
+}
+</script>
+{% endblock %}

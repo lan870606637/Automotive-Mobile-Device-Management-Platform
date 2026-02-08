@@ -1,0 +1,133 @@
+{% extends "pc/base_pc.html" %}
+
+{% block title %}设备列表 - 设备管理系统{% endblock %}
+
+{% set active_nav = 'devices' %}
+
+{% block content %}
+<h1 class="page-title">
+    {% if no_cabinet %}
+    📦 无柜号设备
+    {% elif device_type == 'car' %}
+    🚗 车机设备
+    {% elif device_type == 'phone' %}
+    📱 手机设备
+    {% else %}
+    📦 全部设备
+    {% endif %}
+</h1>
+
+<!-- 搜索和筛选 -->
+<div class="search-bar">
+    <div class="search-input-wrap">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="searchInput" class="search-input" placeholder="搜索设备名、型号..." onkeyup="handleSearch(event)">
+    </div>
+</div>
+
+<div class="filter-tabs">
+    <a href="{{ url_for('pc_device_list') }}" class="filter-tab {% if not device_type and not no_cabinet %}active{% endif %}">全部</a>
+    <a href="{{ url_for('pc_device_list', type='car') }}" class="filter-tab {% if device_type == 'car' %}active{% endif %}">车机</a>
+    <a href="{{ url_for('pc_device_list', type='phone') }}" class="filter-tab {% if device_type == 'phone' %}active{% endif %}">手机</a>
+    <a href="{{ url_for('pc_device_list', no_cabinet='1') }}" class="filter-tab {% if no_cabinet %}active{% endif %}">无柜号</a>
+</div>
+
+<!-- 设备列表 -->
+<div class="card">
+    <div class="card-body">
+        {% if devices %}
+        <table class="data-table device-list-table" id="deviceTable">
+            <thead>
+                <tr>
+                    <th>设备名称</th>
+                    <th>类型</th>
+                    <th>状态</th>
+                    <th>备注</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for device in devices %}
+                <tr {% if device.status == '报废' %}class="disabled"{% endif %}>
+                    <td>
+                        <span class="device-icon">{% if device.type == '车机' %}🚗{% else %}📱{% endif %}</span>
+                        {% if device.status == '报废' %}
+                        <span class="device-name">{{ device.name }}</span>
+                        {% else %}
+                        <a href="{% if device.no_cabinet or device.is_circulating %}{{ url_for('pc_device_detail_simple', device_id=device.id) }}{% else %}{{ url_for('pc_device_detail', device_id=device.id) }}{% endif %}" class="device-name" style="color: #1890ff; font-weight: 500;">{{ device.name }}</a>
+                        {% endif %}
+                    </td>
+                    <td class="device-type">{{ device.type }}</td>
+                    <td>
+                        {% if device.no_cabinet %}
+                        <span class="status-tag status-no-cabinet">无柜号</span>
+                        {% elif device.is_circulating %}
+                        <span class="status-tag status-circulating">流通</span>
+                        {% else %}
+                        <span class="status-tag 
+                            {% if device.status == '在库' %}status-available
+                            {% elif device.status == '借出' %}status-borrowed
+                            {% elif device.status == '已寄出' %}status-shipped
+                            {% elif device.status == '已损坏' %}status-damaged
+                            {% elif device.status == '丢失' %}status-lost
+                            {% elif device.status == '报废' %}status-scrapped
+                            {% endif %}">
+                            {{ device.status }}
+                        </span>
+                        {% endif %}
+                    </td>
+                    <td style="color: #8c8c8c; font-size: 13px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ device.remark or '-' }}</td>
+                    <td>
+                        {% if device.status == '报废' %}
+                        <button class="btn btn-default btn-sm" disabled>已报废</button>
+                        {% else %}
+                        <a href="{% if device.no_cabinet or device.is_circulating %}{{ url_for('pc_device_detail_simple', device_id=device.id) }}{% else %}{{ url_for('pc_device_detail', device_id=device.id) }}{% endif %}" class="btn btn-primary btn-sm">查看详情</a>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- 分页 -->
+        {% if total_pages > 1 %}
+        <div class="pagination">
+            <a href="{{ url_for('pc_device_list', type=device_type, no_cabinet='1' if no_cabinet else '', page=page-1) }}" class="page-btn" {% if page <= 1 %}style="pointer-events: none; opacity: 0.5;"{% endif %}>‹ 上一页</a>
+            <span class="page-info">{{ page }} / {{ total_pages }} 页 (共{{ total }}台)</span>
+            <a href="{{ url_for('pc_device_list', type=device_type, no_cabinet='1' if no_cabinet else '', page=page+1) }}" class="page-btn" {% if page >= total_pages %}style="pointer-events: none; opacity: 0.5;"{% endif %}>下一页 ›</a>
+        </div>
+        {% endif %}
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">🔍</div>
+            <p class="empty-title">暂无设备</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let searchTimeout;
+function handleSearch(event) {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        const keyword = event.target.value.trim().toLowerCase();
+        const rows = document.querySelectorAll('#deviceTable tbody tr');
+        
+        rows.forEach(row => {
+            const name = row.querySelector('.device-name').textContent.toLowerCase();
+            const type = row.querySelector('.device-type').textContent.toLowerCase();
+            const remark = row.cells[3].textContent.toLowerCase();
+            
+            if (!keyword || name.includes(keyword) || type.includes(keyword) || remark.includes(keyword)) {
+                row.style.display = '';
+            } else {
+                row.style.display = 'none';
+            }
+        });
+    }, 300);
+}
+</script>
+{% endblock %}

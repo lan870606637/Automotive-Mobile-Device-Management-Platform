@@ -1,0 +1,120 @@
+{% extends "pc/base_pc.html" %}
+
+{% block title %}仪表盘 - 设备管理系统{% endblock %}
+
+{% set active_nav = 'dashboard' %}
+
+{% block content %}
+<h1 class="page-title">📊 仪表盘</h1>
+
+<!-- 统计卡片 -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-header">
+            <span class="stat-icon blue">📦</span>
+            <span class="stat-label">设备总数</span>
+        </div>
+        <div class="stat-value">{{ total_devices }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-header">
+            <span class="stat-icon green">✅</span>
+            <span class="stat-label">在库设备</span>
+        </div>
+        <div class="stat-value">{{ available_devices }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-header">
+            <span class="stat-icon orange">📤</span>
+            <span class="stat-label">借出设备</span>
+        </div>
+        <div class="stat-value">{{ borrowed_devices_count }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-header">
+            <span class="stat-icon red">⚠️</span>
+            <span class="stat-label">我的借用</span>
+        </div>
+        <div class="stat-value">{{ my_borrowed_count }}</div>
+    </div>
+</div>
+
+<!-- 我的借用设备 -->
+<div class="card">
+    <div class="card-header">
+        <span class="card-title">📱 我的借用设备</span>
+        <a href="{{ url_for('pc_device_list') }}" class="btn btn-default btn-sm">查看全部</a>
+    </div>
+    <div class="card-body">
+        {% if my_borrowed_devices %}
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>设备名称</th>
+                    <th>类型</th>
+                    <th>借用时间</th>
+                    <th>预计归还</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for device in my_borrowed_devices %}
+                <tr {% if device.is_overdue %}style="background: #fff1f0;"{% endif %}>
+                    <td>
+                        <span class="device-icon">{% if device.type == '车机' %}🚗{% else %}📱{% endif %}</span>
+                        <span class="device-name">{{ device.name }}</span>
+                    </td>
+                    <td class="device-type">{{ device.type }}</td>
+                    <td>{{ device.borrow_time }}</td>
+                    <td {% if device.is_overdue %}style="color: #ff4d4f; font-weight: 500;"{% endif %}>
+                        {% if device.is_overdue %}
+                        ⚠️ 逾期 {{ device.overdue_days }} 天
+                        {% else %}
+                        {{ device.expected_return_date or '-' }}
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if device.is_overdue %}
+                        <span class="status-tag status-lost">已逾期</span>
+                        {% else %}
+                        <span class="status-tag status-borrowed">借用中</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="{{ url_for('pc_device_detail', device_id=device.id) }}" class="btn btn-primary btn-sm">查看详情</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">📭</div>
+            <p class="empty-title">您当前没有借用设备</p>
+            <a href="{{ url_for('pc_device_list') }}" class="btn btn-primary">去借设备</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 快捷入口 -->
+<div class="card">
+    <div class="card-header">
+        <span class="card-title">⚡ 快捷操作</span>
+    </div>
+    <div class="card-body">
+        <div style="display: flex; gap: 16px;">
+            <a href="{{ url_for('pc_device_list', type='car') }}" class="btn btn-primary btn-lg" style="flex: 1;">
+                <span>🚗</span> 借用车机
+            </a>
+            <a href="{{ url_for('pc_device_list', type='phone') }}" class="btn btn-primary btn-lg" style="flex: 1;">
+                <span>📱</span> 借用手机
+            </a>
+            <a href="{{ url_for('pc_my_records') }}" class="btn btn-default btn-lg" style="flex: 1;">
+                <span>📋</span> 查看记录
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
