@@ -382,7 +382,16 @@ def device_detail(device_id):
         api_client.add_view_record(device_id, user['borrower_name'])
     
     # 获取设备备注
-    remarks = api_client.get_remarks(device_id)
+    raw_remarks = api_client.get_remarks(device_id)
+    remark_list = []
+    for remark in raw_remarks:
+        remark_list.append({
+            'id': remark.id,
+            'content': remark.content,
+            'creator': remark.creator,
+            'create_time': remark.create_time.strftime('%Y-%m-%d %H:%M'),
+            'is_creator': remark.creator == user['borrower_name']
+        })
     
     # 获取设备操作记录
     device_records = api_client.get_device_records(device_id, limit=10)
@@ -399,14 +408,17 @@ def device_detail(device_id):
     # 检查是否可以借用（设备在库且用户没有借用超过限制）
     can_borrow = (device.status == DeviceStatus.IN_STOCK)
     
-    # 检查是否逾期
+    # 检查是否逾期（超过1小时算逾期）
     is_overdue = False
     overdue_days = 0
+    overdue_hours = 0
     if device.expected_return_date and device.borrower:
         from datetime import datetime
-        if datetime.now().date() > device.expected_return_date.date():
+        time_diff = datetime.now() - device.expected_return_date
+        if time_diff.total_seconds() > 3600:  # 超过1小时算逾期
             is_overdue = True
-            overdue_days = (datetime.now().date() - device.expected_return_date.date()).days
+            overdue_hours = int(time_diff.total_seconds() // 3600)
+            overdue_days = int(time_diff.total_seconds() // (24 * 3600))
     
     # 检查用户借用数量
     user_borrowed_count = 0
@@ -610,25 +622,53 @@ def my_records():
 @login_required
 def pc_dashboard():
     """PC端首页/仪表盘"""
+    from datetime import datetime
     user = get_current_user()
-    
+
+    # 重新加载数据以获取最新Excel数据
+    api_client.reload_data()
+
     # 获取统计数据
     all_devices = api_client.get_all_devices()
     total_devices = len(all_devices)
     available_devices = len([d for d in all_devices if d.status == DeviceStatus.IN_STOCK])
     borrowed_devices_count = len([d for d in all_devices if d.status == DeviceStatus.BORROWED])
-    
-    # 获取当前用户借用的设备
-    my_borrowed_devices = [d for d in all_devices if d.borrower == user['borrower_name']]
+
+    # 获取当前用户借用的设备，并计算剩余/逾期时间
+    raw_borrowed_devices = [d for d in all_devices if d.borrower == user['borrower_name']]
+    my_borrowed_devices = []
+    for device in raw_borrowed_devices:
+        device.is_overdue = False
+        device.overdue_days = 0
+        device.overdue_hours = 0
+        device.remaining_days = 0
+        device.remaining_hours = 0
+
+        if device.expected_return_date:
+            time_diff = device.expected_return_date - datetime.now()
+            total_seconds = time_diff.total_seconds()
+
+            if total_seconds < 0:
+                # 已逾期
+                device.is_overdue = True
+                device.overdue_hours = int(abs(total_seconds) // 3600)
+                device.overdue_days = int(abs(total_seconds) // (24 * 3600))
+            else:
+                # 剩余时间
+                device.remaining_hours = int(total_seconds // 3600)
+                device.remaining_days = int(total_seconds // (24 * 3600))
+
+        my_borrowed_devices.append(device)
+
     my_borrowed_count = len(my_borrowed_devices)
-    
+
     # 获取最近记录
     recent_records = []
     all_records = api_client.get_records()
     for record in all_records[:10]:
         if user['borrower_name'] in record.borrower or record.operator == user['borrower_name']:
             recent_records.append(record)
-    
+
     return render_template('pc/dashboard.html',
                          user=user,
                          total_devices=total_devices,
@@ -643,10 +683,13 @@ def pc_dashboard():
 @login_required
 def pc_device_list():
     """PC端设备列表页面"""
+    # 重新加载数据以获取最新Excel数据
+    api_client.reload_data()
+
     device_type = request.args.get('type', 'all')
     status = request.args.get('status', 'all')
     search = request.args.get('search', '').strip()
-    
+
     # 获取设备
     if device_type == 'car':
         devices = api_client.get_all_devices('车机')
@@ -697,48 +740,81 @@ def pc_device_list():
 def pc_device_detail(device_id):
     """PC端设备详情页面"""
     user = get_current_user()
+    # 重新加载数据以获取最新Excel数据
+    api_client.reload_data()
     device = api_client.get_device_by_id(device_id)
-    
+
     if not device:
         return render_template('error.html', message='设备不存在'), 404
-    
+
     # 添加查看记录
     if user['borrower_name']:
         api_client.add_view_record(device_id, user['borrower_name'])
     
     # 获取设备备注
-    remarks = api_client.get_remarks(device_id)
-    
-    # 获取设备操作记录
-    device_records = api_client.get_device_records(device_id, limit=20)
-    
+    raw_remarks = api_client.get_remarks(device_id)
+    remark_list = []
+    for remark in raw_remarks:
+        remark_list.append({
+            'id': remark.id,
+            'content': remark.content,
+            'creator': remark.creator,
+            'create_time': remark.create_time.strftime('%Y-%m-%d %H:%M'),
+            'is_creator': remark.creator == user['borrower_name']
+        })
+
+    # 获取设备借用记录
+    raw_records = api_client.get_device_records(device_id, limit=20)
+    record_list = []
+    for record in raw_records:
+        record_list.append({
+            'operation_type': record.operation_type.value,
+            'borrower': record.borrower,
+            'operation_time': record.operation_time.strftime('%Y-%m-%d %H:%M:%S'),
+            'entry_source': record.entry_source,
+            'reason': record.reason
+        })
+
+    # 获取查看记录
+    raw_view_records = api_client.get_view_records(device_id, limit=20)
+    view_record_list = []
+    for vr in raw_view_records:
+        view_record_list.append({
+            'viewer': vr.viewer,
+            'view_time': vr.view_time.strftime('%Y-%m-%d %H:%M:%S')
+        })
+
     # 检查当前用户是否借用了该设备
     is_borrowed_by_me = (device.borrower == user['borrower_name'])
-    
+
     # 检查当前用户是否是保管人（管理员）
     is_custodian = user.get('is_admin', False)
-    
+
     # 检查是否可以借用
     can_borrow = (device.status == DeviceStatus.IN_STOCK)
-    
+
     # 获取设备类型
     device_type = '车机' if isinstance(device, CarMachine) else '手机'
-    
+
     return render_template('pc/device_detail.html',
                          device=device,
                          device_type=device_type,
-                         remarks=remarks,
-                         device_records=device_records,
+                         remarks=remark_list,
+                         records=record_list,
+                         view_records=view_record_list,
                          is_borrower=is_borrowed_by_me,
                          is_custodian=is_custodian,
                          can_borrow=can_borrow,
-                         user=user)
+                         user=user,
+                         now=datetime.now().strftime('%Y-%m-%d %H:%M'))
 
 
 @app.route('/pc/device/<device_id>/simple')
 @login_required
 def pc_device_detail_simple(device_id):
     """PC端设备详情页面（简化版）- 用于借还确认"""
+    # 重新加载数据以获取最新Excel数据
+    api_client.reload_data()
     device = api_client.get_device_by_id(device_id)
     
     if not device:
@@ -756,8 +832,11 @@ def pc_device_detail_simple(device_id):
 @login_required
 def pc_records():
     """PC端个人记录页面"""
+    # 重新加载数据以获取最新Excel数据
+    api_client.reload_data()
+
     user = get_current_user()
-    
+
     # 获取当前用户的记录
     my_records_list = []
     all_records = api_client.get_records()
@@ -796,6 +875,9 @@ def pc_records():
 @login_required
 def pc_all_records():
     """PC端所有记录页面"""
+    # 重新加载数据以获取最新Excel数据
+    api_client.reload_data()
+
     # 获取所有记录
     all_records_list = api_client.get_records()
     
@@ -1437,9 +1519,9 @@ def api_found_device():
     # 更新设备状态
     device.status = DeviceStatus.BORROWED
     device.lost_time = None
-    
+
     api_client.update_device(device)
-    
+
     # 添加记录
     record = Record(
         id=str(uuid.uuid4()),
@@ -1494,9 +1576,9 @@ def api_repair_device():
         device.expected_return_date = None
         device.damage_reason = ''
         device.damage_time = None
-        
+
         api_client.update_device(device)
-        
+
         record = Record(
             id=str(uuid.uuid4()),
             device_id=device.id,
@@ -1516,7 +1598,7 @@ def api_repair_device():
         device.status = DeviceStatus.BORROWED
         device.damage_reason = ''
         device.damage_time = None
-        
+
         api_client.update_device(device)
         
         record = Record(

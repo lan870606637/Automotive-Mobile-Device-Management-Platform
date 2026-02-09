@@ -54,28 +54,46 @@
                     <th>类型</th>
                     <th>借用时间</th>
                     <th>预计归还</th>
+                    <th>剩余时间</th>
                     <th>状态</th>
                     <th>操作</th>
                 </tr>
             </thead>
             <tbody>
                 {% for device in my_borrowed_devices %}
-                <tr {% if device.is_overdue %}style="background: #fff1f0;"{% endif %}>
+                <tr {% if device.is_overdue and device.status.value not in ['丢失', '已损坏'] %}style="background: #fff1f0;"{% endif %}>
                     <td>
                         <span class="device-icon">{% if device.device_type.value == '车机' %}🚗{% else %}📱{% endif %}</span>
                         <span class="device-name">{{ device.name }}</span>
                     </td>
                     <td class="device-type">{{ device.device_type.value }}</td>
                     <td>{{ device.borrow_time }}</td>
-                    <td {% if device.is_overdue %}style="color: #ff4d4f; font-weight: 500;"{% endif %}>
-                        {% if device.is_overdue %}
-                        ⚠️ 逾期 {{ device.overdue_days }} 天
+                    <td>
+                        {% if device.status.value == '丢失' or device.status.value == '已损坏' %}
+                            -
+                        {% elif device.expected_return_date %}
+                            {{ device.expected_return_date.strftime('%Y-%m-%d %H:%M') }}
                         {% else %}
-                        {{ device.expected_return_date or '-' }}
+                            -
+                        {% endif %}
+                    </td>
+                    <td {% if device.is_overdue and device.status.value not in ['丢失', '已损坏'] %}style="color: #ff4d4f; font-weight: 500;"{% endif %}>
+                        {% if device.status.value == '丢失' %}
+                            -
+                        {% elif device.status.value == '已损坏' %}
+                            -
+                        {% elif device.is_overdue %}
+                        ⚠️ 逾期 {% if device.overdue_hours < 24 %}{{ device.overdue_hours }} 小时{% else %}{{ device.overdue_days }} 天{% endif %}
+                        {% else %}
+                        {% if device.remaining_hours < 24 %}⏰ {{ device.remaining_hours }} 小时{% else %}⏰ {{ device.remaining_days }} 天{% endif %}
                         {% endif %}
                     </td>
                     <td>
-                        {% if device.is_overdue %}
+                        {% if device.status.value == '丢失' %}
+                        <span class="status-tag status-lost">丢失</span>
+                        {% elif device.status.value == '已损坏' %}
+                        <span class="status-tag status-damaged">已损坏</span>
+                        {% elif device.is_overdue %}
                         <span class="status-tag status-lost">已逾期</span>
                         {% else %}
                         <span class="status-tag status-borrowed">借用中</span>

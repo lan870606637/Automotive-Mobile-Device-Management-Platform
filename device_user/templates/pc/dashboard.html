@@ -69,7 +69,7 @@
                     <td>{{ device.borrow_time }}</td>
                     <td {% if device.is_overdue %}style="color: #ff4d4f; font-weight: 500;"{% endif %}>
                         {% if device.is_overdue %}
-                        ⚠️ 逾期 {{ device.overdue_days }} 天
+                        ⚠️ 逾期 {% if device.overdue_hours < 24 %}{{ device.overdue_hours }} 小时{% else %}{{ device.overdue_days }} 天{% endif %}
                         {% else %}
                         {{ device.expected_return_date or '-' }}
                         {% endif %}

@@ -97,16 +97,44 @@ def admin_mobile_dashboard():
     
     # 计算逾期设备
     overdue_devices = 0
+    overdue_devices_list = []
     for device in all_devices:
         if device.status == DeviceStatus.BORROWED and device.expected_return_date:
             try:
                 expect_time = device.expected_return_date
-                if isinstance(expect_time, str):
-                    expect_time = datetime.strptime(expect_time, '%Y-%m-%d')
-                if expect_time < datetime.now():
-                    overdue_devices += 1
-            except:
+                # expected_return_date 已经是 datetime 对象
+                if isinstance(expect_time, datetime):
+                    # 超过1小时算逾期
+                    now = datetime.now()
+                    time_diff = now - expect_time
+                    if time_diff.total_seconds() > 3600:  # 超过1小时算逾期
+                        overdue_days = int(time_diff.total_seconds() // (24 * 3600))
+                        overdue_hours = int(time_diff.total_seconds() // 3600)
+                        overdue_devices += 1
+                        overdue_devices_list.append({
+                            'device_name': device.name,
+                            'device_type': device.device_type.value if hasattr(device.device_type, 'value') else device.device_type,
+                            'borrower': device.borrower or '未知',
+                            'overdue_days': overdue_days,
+                            'overdue_hours': overdue_hours
+                        })
+            except Exception as e:
+                print(f"计算逾期设备出错: {e}")
                 pass
+
+    # 设备类型分布
+    phone_count = len([d for d in all_devices if d.device_type.value == '手机'])
+    car_device_count = len([d for d in all_devices if d.device_type.value == '车机'])
+    
+    # 状态分布百分比
+    if total_devices > 0:
+        available_percent = round(available_devices / total_devices * 100)
+        borrowed_percent = round(borrowed_devices / total_devices * 100)
+        other_percent = 100 - available_percent - borrowed_percent
+    else:
+        available_percent = 0
+        borrowed_percent = 0
+        other_percent = 0
     
     # 获取最近记录
     all_records = api_client.get_records()
@@ -188,16 +216,44 @@ def admin_pc_dashboard():
     
     # 计算逾期设备
     overdue_devices = 0
+    overdue_devices_list = []
     for device in all_devices:
         if device.status == DeviceStatus.BORROWED and device.expected_return_date:
             try:
                 expect_time = device.expected_return_date
-                if isinstance(expect_time, str):
-                    expect_time = datetime.strptime(expect_time, '%Y-%m-%d')
-                if expect_time < datetime.now():
-                    overdue_devices += 1
-            except:
+                # expected_return_date 已经是 datetime 对象
+                if isinstance(expect_time, datetime):
+                    # 超过1小时算逾期
+                    now = datetime.now()
+                    time_diff = now - expect_time
+                    if time_diff.total_seconds() > 3600:  # 超过1小时算逾期
+                        overdue_days = int(time_diff.total_seconds() // (24 * 3600))
+                        overdue_hours = int(time_diff.total_seconds() // 3600)
+                        overdue_devices += 1
+                        overdue_devices_list.append({
+                            'device_name': device.name,
+                            'device_type': device.device_type.value if hasattr(device.device_type, 'value') else device.device_type,
+                            'borrower': device.borrower or '未知',
+                            'overdue_days': overdue_days,
+                            'overdue_hours': overdue_hours
+                        })
+            except Exception as e:
+                print(f"计算逾期设备出错: {e}")
                 pass
+
+    # 设备类型分布
+    phone_count = len([d for d in all_devices if d.device_type.value == '手机'])
+    car_device_count = len([d for d in all_devices if d.device_type.value == '车机'])
+    
+    # 状态分布百分比
+    if total_devices > 0:
+        available_percent = round(available_devices / total_devices * 100)
+        borrowed_percent = round(borrowed_devices / total_devices * 100)
+        other_percent = 100 - available_percent - borrowed_percent
+    else:
+        available_percent = 0
+        borrowed_percent = 0
+        other_percent = 0
     
     # 获取最近记录
     all_records = api_client.get_records()
@@ -219,6 +275,12 @@ def admin_pc_dashboard():
                          damaged_devices=damaged_devices,
                          lost_devices=lost_devices,
                          overdue_devices=overdue_devices,
+                         phone_count=phone_count,
+                         car_device_count=car_device_count,
+                         available_percent=available_percent,
+                         borrowed_percent=borrowed_percent,
+                         other_percent=other_percent,
+                         overdue_devices_list=overdue_devices_list,
                          recent_records=recent_records)
 
 
@@ -373,29 +435,34 @@ def admin_pc_overdue():
         if device.status == DeviceStatus.BORROWED and device.expected_return_date:
             try:
                 expect_time = device.expected_return_date
-                if isinstance(expect_time, str):
-                    expect_time = datetime.strptime(expect_time, '%Y-%m-%d')
-                if expect_time < datetime.now():
-                    # 计算逾期天数
-                    overdue_days = (datetime.now() - expect_time).days
-                    device_type = '手机' if isinstance(device, Phone) else '车机'
-                    if device_type == '手机':
-                        phone_overdue += 1
-                    else:
-                        car_overdue += 1
-                    overdue_devices.append({
-                        'id': device.id,
-                        'device_name': device.name,
-                        'device_type': device_type,
-                        'borrower': device.borrower,
-                        'borrow_time': device.borrow_time.strftime('%Y-%m-%d') if device.borrow_time else '',
-                        'expect_return_time': expect_time.strftime('%Y-%m-%d'),
-                        'overdue_days': overdue_days,
-                        'phone': device.phone
-                    })
-            except:
+                # expected_return_date 已经是 datetime 对象
+                if isinstance(expect_time, datetime):
+                    # 超过1小时算逾期
+                    now = datetime.now()
+                    time_diff = now - expect_time
+                    if time_diff.total_seconds() > 3600:  # 超过1小时算逾期
+                        overdue_days = int(time_diff.total_seconds() // (24 * 3600))
+                        overdue_hours = int(time_diff.total_seconds() // 3600)
+                        device_type = '手机' if isinstance(device, Phone) else '车机'
+                        if device_type == '手机':
+                            phone_overdue += 1
+                        else:
+                            car_overdue += 1
+                        overdue_devices.append({
+                            'id': device.id,
+                            'device_name': device.name,
+                            'device_type': device_type,
+                            'borrower': device.borrower,
+                            'borrow_time': device.borrow_time.strftime('%Y-%m-%d') if device.borrow_time else '',
+                            'expect_return_time': expect_time.strftime('%Y-%m-%d'),
+                            'overdue_days': overdue_days,
+                            'overdue_hours': overdue_hours,
+                            'phone': device.phone
+                        })
+            except Exception as e:
+                print(f"处理逾期设备出错: {e}")
                 pass
-    
+
     # 按逾期天数排序
     overdue_devices.sort(key=lambda x: x['overdue_days'], reverse=True)
     
@@ -431,6 +498,105 @@ def api_admin_login():
         return jsonify({'success': True, 'admin': admin})
     else:
         return jsonify({'success': False, 'message': '用户名或密码错误'})
+
+
+@app.route('/api/admin/users', methods=['GET', 'POST'])
+@admin_required
+def api_admin_users():
+    """用户列表 / 新增用户API (后台管理)"""
+    if request.method == 'GET':
+        users = api_client.get_all_users()
+        users_data = []
+        for user in users:
+            if not user.is_deleted:
+                users_data.append({
+                    'id': user.id,
+                    'name': user.borrower_name,
+                    'weixin_name': user.wechat_name,
+                    'phone': user.phone,
+                    'borrow_count': user.borrow_count,
+                    'is_admin': user.is_admin,
+                    'is_frozen': user.is_frozen,
+                    'register_time': user.create_time.strftime('%Y-%m-%d') if hasattr(user, 'create_time') and user.create_time else '-'
+                })
+        return jsonify(users_data)
+    
+    else:  # POST
+        data = request.get_json()
+        try:
+            user = api_client.create_user(
+                borrower_name=data.get('name'),
+                wechat_name=data.get('weixin_name', ''),
+                phone=data.get('phone', ''),
+                password=data.get('password'),
+                is_admin=data.get('is_admin', False)
+            )
+            return jsonify({'success': True, 'user_id': user.id})
+        except Exception as e:
+            return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/admin/users/<user_id>', methods=['PUT', 'DELETE'])
+@admin_required
+def api_user_detail(user_id):
+    """更新用户 / 删除用户API"""
+    if request.method == 'PUT':
+        data = request.get_json()
+        try:
+            api_client.update_user(user_id, data)
+            return jsonify({'success': True})
+        except Exception as e:
+            return jsonify({'success': False, 'message': str(e)})
+    else:  # DELETE
+        try:
+            api_client.delete_user(user_id)
+            return jsonify({'success': True})
+        except Exception as e:
+            return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/users/<user_id>/freeze', methods=['POST'])
+@admin_required
+def api_user_freeze(user_id):
+    """冻结用户API"""
+    try:
+        api_client.freeze_user(user_id)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/users/<user_id>/unfreeze', methods=['POST'])
+@admin_required
+def api_user_unfreeze(user_id):
+    """解冻用户API"""
+    try:
+        api_client.unfreeze_user(user_id)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/users/<user_id>/set_admin', methods=['POST'])
+@admin_required
+def api_user_set_admin(user_id):
+    """设置用户为管理员API"""
+    try:
+        api_client.set_user_admin(user_id)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/users/<user_id>/remove_admin', methods=['POST'])
+@admin_required
+def api_user_remove_admin(user_id):
+    """取消用户管理员权限API"""
+    try:
+        api_client.cancel_user_admin(user_id)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
 
 
 @app.route('/api/devices', methods=['GET', 'POST'])
@@ -506,7 +672,7 @@ def api_device_detail(device_id):
     elif request.method == 'PUT':
         data = request.get_json()
         try:
-            api_client.update_device(device_id, data)
+            api_client.update_device_by_id(device_id, data)
             return jsonify({'success': True})
         except Exception as e:
             return jsonify({'success': False, 'message': str(e)})
@@ -713,70 +879,6 @@ def api_users():
             return jsonify({'success': True, 'user_id': user.id})
         except Exception as e:
             return jsonify({'success': False, 'message': str(e)})
-
-
-@app.route('/api/users/<user_id>', methods=['PUT', 'DELETE'])
-@admin_required
-def api_user_detail(user_id):
-    """更新用户 / 删除用户API"""
-    if request.method == 'PUT':
-        data = request.get_json()
-        try:
-            api_client.update_user(user_id, data)
-            return jsonify({'success': True})
-        except Exception as e:
-            return jsonify({'success': False, 'message': str(e)})
-    
-    else:  # DELETE
-        try:
-            api_client.delete_user(user_id)
-            return jsonify({'success': True})
-        except Exception as e:
-            return jsonify({'success': False, 'message': str(e)})
-
-
-@app.route('/api/users/<user_id>/freeze', methods=['POST'])
-@admin_required
-def api_user_freeze(user_id):
-    """冻结用户API"""
-    try:
-        api_client.freeze_user(user_id)
-        return jsonify({'success': True})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
-
-
-@app.route('/api/users/<user_id>/unfreeze', methods=['POST'])
-@admin_required
-def api_user_unfreeze(user_id):
-    """解冻用户API"""
-    try:
-        api_client.unfreeze_user(user_id)
-        return jsonify({'success': True})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
-
-
-@app.route('/api/users/<user_id>/set_admin', methods=['POST'])
-@admin_required
-def api_user_set_admin(user_id):
-    """设置管理员API"""
-    try:
-        api_client.set_user_admin_flag(user_id, True)
-        return jsonify({'success': True})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
-
-
-@app.route('/api/users/<user_id>/remove_admin', methods=['POST'])
-@admin_required
-def api_user_remove_admin(user_id):
-    """取消管理员API"""
-    try:
-        api_client.set_user_admin_flag(user_id, False)
-        return jsonify({'success': True})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
 
 
 @app.route('/api/records', methods=['GET'])

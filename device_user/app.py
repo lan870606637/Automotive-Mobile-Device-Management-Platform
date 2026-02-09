@@ -339,14 +339,17 @@ def home():
     borrowed_devices = []
     for device in api_client.get_all_devices():
         if device.borrower == user['borrower_name'] and device.status == DeviceStatus.BORROWED:
-            # 计算逾期天数
+            # 计算逾期（超过1小时算逾期）
             overdue_days = 0
+            overdue_hours = 0
             is_overdue = False
             if device.expected_return_date:
-                if datetime.now().date() > device.expected_return_date.date():
-                    overdue_days = (datetime.now().date() - device.expected_return_date.date()).days
+                time_diff = datetime.now() - device.expected_return_date
+                if time_diff.total_seconds() > 3600:  # 超过1小时算逾期
                     is_overdue = True
-            
+                    overdue_hours = int(time_diff.total_seconds() // 3600)
+                    overdue_days = int(time_diff.total_seconds() // (24 * 3600))
+
             borrowed_devices.append({
                 'id': device.id,
                 'name': device.name,
@@ -354,7 +357,8 @@ def home():
                 'status': device.status.value,
                 'expected_return_date': device.expected_return_date.strftime('%Y-%m-%d') if device.expected_return_date else None,
                 'is_overdue': is_overdue,
-                'overdue_days': overdue_days
+                'overdue_days': overdue_days,
+                'overdue_hours': overdue_hours
             })
     
     return render_template('home.html', 
@@ -476,15 +480,17 @@ def device_detail(device_id):
     is_custodian = device.cabinet_number == user['borrower_name']  # 是否是保管人
     
     # 计算是否超时
+    # 检查是否逾期（超过1小时算逾期）
     is_overdue = False
     overdue_days = 0
+    overdue_hours = 0
     if device.expected_return_date and device.status.value == '借出':
-        from datetime import date
-        today = date.today()
-        if today > device.expected_return_date.date():
+        time_diff = datetime.now() - device.expected_return_date
+        if time_diff.total_seconds() > 3600:  # 超过1小时算逾期
             is_overdue = True
-            overdue_days = (today - device.expected_return_date.date()).days
-    
+            overdue_hours = int(time_diff.total_seconds() // 3600)
+            overdue_days = int(time_diff.total_seconds() // (24 * 3600))
+
     return render_template('device_detail.html',
                          device=device,
                          device_type='车机' if isinstance(device, CarMachine) else '手机',
@@ -492,6 +498,7 @@ def device_detail(device_id):
                          is_custodian=is_custodian,
                          is_overdue=is_overdue,
                          overdue_days=overdue_days,
+                         overdue_hours=overdue_hours,
                          remarks=remark_list,
                          records=record_list,
                          view_records=view_record_list,
@@ -1678,13 +1685,17 @@ def pc_dashboard():
     my_borrowed_devices = []
     for device in all_devices:
         if device.borrower == user['borrower_name'] and device.status == DeviceStatus.BORROWED:
+            # 计算逾期（超过1小时算逾期）
             overdue_days = 0
+            overdue_hours = 0
             is_overdue = False
             if device.expected_return_date:
-                if datetime.now().date() > device.expected_return_date.date():
-                    overdue_days = (datetime.now().date() - device.expected_return_date.date()).days
+                time_diff = datetime.now() - device.expected_return_date
+                if time_diff.total_seconds() > 3600:  # 超过1小时算逾期
                     is_overdue = True
-            
+                    overdue_hours = int(time_diff.total_seconds() // 3600)
+                    overdue_days = int(time_diff.total_seconds() // (24 * 3600))
+
             my_borrowed_devices.append({
                 'id': device.id,
                 'name': device.name,
@@ -1692,9 +1703,10 @@ def pc_dashboard():
                 'borrow_time': device.borrow_time.strftime('%Y-%m-%d %H:%M'),
                 'expected_return_date': device.expected_return_date.strftime('%Y-%m-%d') if device.expected_return_date else None,
                 'is_overdue': is_overdue,
-                'overdue_days': overdue_days
+                'overdue_days': overdue_days,
+                'overdue_hours': overdue_hours
             })
-    
+
     return render_template('pc/dashboard.html',
                          user=user,
                          total_devices=total_devices,
@@ -1813,13 +1825,16 @@ def pc_device_detail(device_id):
     is_borrower = device.borrower == user['borrower_name']
     is_custodian = device.cabinet_number == user['borrower_name']
 
+    # 检查是否逾期（超过1小时算逾期）
     is_overdue = False
     overdue_days = 0
+    overdue_hours = 0
     if device.expected_return_date and device.status.value == '借出':
-        today = date.today()
-        if today > device.expected_return_date.date():
+        time_diff = datetime.now() - device.expected_return_date
+        if time_diff.total_seconds() > 3600:  # 超过1小时算逾期
             is_overdue = True
-            overdue_days = (today - device.expected_return_date.date()).days
+            overdue_hours = int(time_diff.total_seconds() // 3600)
+            overdue_days = int(time_diff.total_seconds() // (24 * 3600))
 
     # 获取所有用户列表（用于转借）
     import json
@@ -1837,6 +1852,7 @@ def pc_device_detail(device_id):
                          is_custodian=is_custodian,
                          is_overdue=is_overdue,
                          overdue_days=overdue_days,
+                         overdue_hours=overdue_hours,
                          remarks=remark_list,
                          records=record_list,
                          view_records=view_record_list,
@@ -2152,17 +2168,21 @@ def admin_pc_dashboard():
         if device.status == DeviceStatus.BORROWED and device.expected_return_date:
             try:
                 expect_time = device.expected_return_date
-                if isinstance(expect_time, str):
-                    expect_time = datetime.strptime(expect_time, '%Y-%m-%d')
-                if expect_time < datetime.now():
-                    overdue_devices += 1
-                    overdue_days = (datetime.now() - expect_time).days
-                    overdue_devices_list.append({
-                        'device_name': device.name,
-                        'device_type': '手机' if device.device_type == DeviceType.PHONE else '车机',
-                        'borrower': device.borrower,
-                        'overdue_days': overdue_days
-                    })
+                # expected_return_date 已经是 datetime 对象
+                if isinstance(expect_time, datetime):
+                    # 超过1小时算逾期
+                    time_diff = datetime.now() - expect_time
+                    if time_diff.total_seconds() > 3600:  # 超过1小时算逾期
+                        overdue_days = int(time_diff.total_seconds() // (24 * 3600))
+                        overdue_hours = int(time_diff.total_seconds() // 3600)
+                        overdue_devices += 1
+                        overdue_devices_list.append({
+                            'device_name': device.name,
+                            'device_type': '手机' if device.device_type == DeviceType.PHONE else '车机',
+                            'borrower': device.borrower,
+                            'overdue_days': overdue_days,
+                            'overdue_hours': overdue_hours
+                        })
             except Exception as e:
                 print(f"计算逾期天数出错: {e}")
                 pass
@@ -2339,16 +2359,18 @@ def admin_pc_overdue():
         if device.status == DeviceStatus.BORROWED and device.expected_return_date:
             try:
                 expect_time = device.expected_return_date
-                if expect_time < datetime.now():
-                    overdue_days = (datetime.now() - expect_time).days
-                    
+                # 超过1小时算逾期
+                time_diff = datetime.now() - expect_time
+                if time_diff.total_seconds() > 3600:  # 超过1小时算逾期
+                    overdue_days = int(time_diff.total_seconds() // (24 * 3600))
+                    overdue_hours = int(time_diff.total_seconds() // 3600)
                     # 获取用户手机号
                     phone = ''
                     for user in api_client.get_users():
                         if user.borrower_name == device.borrower:
                             phone = user.phone
                             break
-                    
+
                     overdue_devices.append({
                         'id': device.id,
                         'device_name': device.name,
@@ -2357,6 +2379,7 @@ def admin_pc_overdue():
                         'borrow_time': device.borrow_time.strftime('%Y-%m-%d %H:%M') if device.borrow_time else None,
                         'expect_return_time': device.expected_return_date.strftime('%Y-%m-%d') if device.expected_return_date else None,
                         'overdue_days': overdue_days,
+                        'overdue_hours': overdue_hours,
                         'phone': phone
                     })
             except:
@@ -2472,7 +2495,7 @@ def api_device_detail(device_id):
     elif request.method == 'PUT':
         data = request.get_json()
         try:
-            api_client.update_device(device_id, data)
+            api_client.update_device_by_id(device_id, data)
             return jsonify({'success': True})
         except Exception as e:
             return jsonify({'success': False, 'message': str(e)})
@@ -2564,16 +2587,18 @@ def api_devices_overdue():
         if device.status == DeviceStatus.BORROWED and device.expected_return_date:
             try:
                 expect_time = device.expected_return_date
-                if expect_time < datetime.now():
-                    overdue_days = (datetime.now() - expect_time).days
-                    
+                # 超过1小时算逾期
+                time_diff = datetime.now() - expect_time
+                if time_diff.total_seconds() > 3600:  # 超过1小时算逾期
+                    overdue_days = int(time_diff.total_seconds() // (24 * 3600))
+                    overdue_hours = int(time_diff.total_seconds() // 3600)
                     # 获取用户手机号
                     phone = ''
                     for user in api_client.get_users():
                         if user.borrower_name == device.borrower:
                             phone = user.phone
                             break
-                    
+
                     overdue_devices.append({
                         'id': device.id,
                         'device_name': device.name,
@@ -2582,6 +2607,7 @@ def api_devices_overdue():
                         'borrow_time': device.borrow_time.strftime('%Y-%m-%d %H:%M') if device.borrow_time else None,
                         'expect_return_time': device.expected_return_date.strftime('%Y-%m-%d') if device.expected_return_date else None,
                         'overdue_days': overdue_days,
+                        'overdue_hours': overdue_hours,
                         'phone': phone
                     })
             except:

@@ -244,7 +244,7 @@
             {% if is_overdue %}
             <div class="info-item overdue-warning">
                 <span class="info-label">⚠️ 超时提醒</span>
-                <span class="info-value" style="color: #f5222d; font-weight: bold;">已超时 {{ overdue_days }} 天</span>
+                <span class="info-value" style="color: #f5222d; font-weight: bold;">已超时 {% if overdue_hours < 24 %}{{ overdue_hours }} 小时{% else %}{{ overdue_days }} 天{% endif %}</span>
             </div>
             {% endif %}
         </div>
@@ -313,12 +313,12 @@
             <div class="record-item">
                 <div class="record-main">
                     <span class="record-type 
-                        {% if '借出' in record.operation_type %}type-borrow
-                        {% elif '归还' in record.operation_type %}type-return
-                        {% elif '丢失' in record.operation_type or '损坏' in record.operation_type or '未找到' in record.operation_type %}type-lost
-                        {% elif '续期' in record.operation_type %}type-renew
+                        {% if record.operation_type.value == '借出' or record.operation_type.value == '强制借出' %}type-borrow
+                        {% elif record.operation_type.value == '归还' or record.operation_type.value == '强制归还' %}type-return
+                        {% elif record.operation_type.value == '丢失报备' or record.operation_type.value == '损坏报备' or record.operation_type.value == '借用人未找到' %}type-lost
+                        {% elif record.operation_type.value == '借用续期' %}type-renew
                         {% else %}type-transfer{% endif %}">
-                        {{ record.operation_type }}
+                        {{ record.operation_type.value }}
                     </span>
                     <span class="record-user">
                         {{ record.borrower }}

@@ -309,7 +309,7 @@
                     <span class="info-label">预计归还</span>
                     <span class="info-value {% if is_overdue %}" style="color: #ff4d4f; font-weight: 500;{% endif %}">
                         {% if is_overdue %}
-                        ⚠️ 已逾期 {{ overdue_days }} 天
+                        ⚠️ 已逾期 {% if overdue_hours < 24 %}{{ overdue_hours }} 小时{% else %}{{ overdue_days }} 天{% endif %}
                         {% else %}
                         {{ device.expected_return_date.strftime('%Y-%m-%d') }}
                         {% endif %}

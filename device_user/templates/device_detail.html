@@ -242,7 +242,7 @@
             {% if is_overdue %}
             <div class="info-item overdue-warning">
                 <span class="info-label">⚠️ 超时提醒</span>
-                <span class="info-value" style="color: #f5222d; font-weight: bold;">已超时 {{ overdue_days }} 天</span>
+                <span class="info-value" style="color: #f5222d; font-weight: bold;">已超时 {% if overdue_hours < 24 %}{{ overdue_hours }} 小时{% else %}{{ overdue_days }} 天{% endif %}</span>
             </div>
             {% endif %}
         </div>

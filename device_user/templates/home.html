@@ -59,7 +59,7 @@
                     {% if device.expected_return_date %}
                     <div class="device-return-date {% if device.is_overdue %}overdue-text{% endif %}">
                         {% if device.is_overdue %}
-                        ⚠️ 逾期 {{ device.overdue_days }} 天
+                        ⚠️ 逾期 {% if device.overdue_hours < 24 %}{{ device.overdue_hours }} 小时{% else %}{{ device.overdue_days }} 天{% endif %}
                         {% else %}
                         📅 预计归还: {{ device.expected_return_date }}
                         {% endif %}

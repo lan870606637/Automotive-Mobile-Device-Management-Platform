@@ -841,12 +841,12 @@ class APIClient:
         self._save_data()
         return device
     
-    def update_device(self, device_id: str, data: dict) -> bool:
-        """更新设备信息"""
+    def update_device_by_id(self, device_id: str, data: dict) -> bool:
+        """通过ID更新设备信息"""
         device = self.get_device(device_id)
         if not device:
             return False
-        
+
         if 'device_name' in data:
             device.name = data['device_name']
         if 'model' in data:
@@ -859,7 +859,7 @@ class APIClient:
             device.remark = data['remarks']
         if 'borrower' in data:
             device.borrower = data['borrower']
-        
+
         self.add_operation_log("编辑设备", device.name)
         self._save_data()
         return True

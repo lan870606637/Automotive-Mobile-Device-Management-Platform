@@ -193,7 +193,7 @@
                                 </div>
                                 <div class="overdue-info">
                                     <span class="overdue-user">👤 {{ device.borrower }}</span>
-                                    <span class="overdue-days">逾期 {{ device.overdue_days }} 天</span>
+                                    <span class="overdue-days">逾期 {% if device.overdue_hours < 24 %}{{ device.overdue_hours }} 小时{% else %}{{ device.overdue_days }} 天{% endif %}</span>
                                 </div>
                             </div>
                             {% endfor %}
