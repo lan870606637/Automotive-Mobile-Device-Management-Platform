@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}添加备注 - {{ device.name }}{% endblock %}
+
+{% set show_nav = false %}
+
+{% block content %}
+<div class="form-page">
+    <!-- 页面头部 -->
+    <div class="page-header">
+        <a href="javascript:history.back()" class="back-btn">‹</a>
+        <h1>添加备注</h1>
+    </div>
+    
+    <!-- 设备信息 -->
+    <div class="info-card">
+        <div class="device-mini">
+            <span class="mini-icon">{% if device_type == '车机' %}🚗{% else %}📱{% endif %}</span>
+            <div class="mini-info">
+                <span class="mini-name">{{ device.name }}</span>
+                <span class="mini-type">{{ device_type }}</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 备注表单 -->
+    <div class="form-card">
+        <h3 class="form-title">填写备注内容</h3>
+        
+        <div class="form-group">
+            <label class="form-label">备注内容</label>
+            <textarea id="remarkContent" class="form-textarea" rows="5" placeholder="请输入备注内容，如设备状态、使用情况等..."></textarea>
+            <span class="form-hint">备注内容将对所有用户可见</span>
+        </div>
+        
+        <div class="form-group">
+            <label class="form-label">快捷备注</label>
+            <div class="quick-tags">
+                <span class="tag" onclick="setRemark('屏幕完好')">屏幕完好</span>
+                <span class="tag" onclick="setRemark('电池正常')">电池正常</span>
+                <span class="tag" onclick="setRemark('充电正常')">充电正常</span>
+                <span class="tag" onclick="setRemark('外观有划痕')">外观有划痕</span>
+                <span class="tag" onclick="setRemark('运行流畅')">运行流畅</span>
+                <span class="tag" onclick="setRemark('需要维修')">需要维修</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 提示信息 -->
+    <div class="tips-card">
+        <h4>💡 提示</h4>
+        <p>添加备注可以帮助其他用户了解设备状态，请如实填写。</p>
+    </div>
+    
+    <!-- 提交按钮 -->
+    <div class="form-actions">
+        <button type="button" class="btn btn-default btn-large" onclick="history.back()">取消</button>
+        <button type="button" class="btn btn-primary btn-large" onclick="submitRemark()">保存备注</button>
+    </div>
+</div>
+
+<script>
+function setRemark(text) {
+    const textarea = document.getElementById('remarkContent');
+    if (textarea.value) {
+        textarea.value += '，' + text;
+    } else {
+        textarea.value = text;
+    }
+}
+
+function submitRemark() {
+    const content = document.getElementById('remarkContent').value.trim();
+    
+    if (!content) {
+        showToast('请输入备注内容');
+        return;
+    }
+    
+    const btn = document.querySelector('.btn-primary');
+    btn.disabled = true;
+    btn.textContent = '保存中...';
+    
+    fetch('/api/remark/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            device_id: '{{ device.id }}',
+            content: content
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast('添加成功！');
+            setTimeout(() => {
+                history.back();
+            }, 1500);
+        } else {
+            showToast(data.message || '添加失败');
+            btn.disabled = false;
+            btn.textContent = '保存备注';
+        }
+    })
+    .catch(() => {
+        showToast('提交失败，请重试');
+        btn.disabled = false;
+        btn.textContent = '保存备注';
+    });
+}
+</script>
+{% endblock %}

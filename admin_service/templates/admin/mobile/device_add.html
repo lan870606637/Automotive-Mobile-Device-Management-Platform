@@ -1,0 +1,158 @@
+<!-- 
+  手机端后台管理 - 设备录入页面
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>设备录入 - 手机后台</title>
+    <link rel="stylesheet" href="/static/admin/admin_mobile.css">
+</head>
+<body>
+    <div class="mobile-admin-container">
+        <!-- 顶部标题栏 -->
+        <header class="mobile-header">
+            <a href="/admin/mobile/dashboard" class="back-btn">←</a>
+            <h1>设备录入</h1>
+            <a href="/admin/mobile/settings" class="settings-btn">⚙️</a>
+        </header>
+
+        <!-- 录入表单 -->
+        <div class="add-device-section">
+            <!-- 设备类型选择 -->
+            <div class="type-selector">
+                <div class="type-option selected" data-type="手机" onclick="selectType(this)">
+                    <span class="type-icon">📱</span>
+                    <span class="type-name">手机</span>
+                </div>
+                <div class="type-option" data-type="车机" onclick="selectType(this)">
+                    <span class="type-icon">🚗</span>
+                    <span class="type-name">车机</span>
+                </div>
+            </div>
+
+            <!-- 表单区域 -->
+            <form id="addDeviceForm" class="form-section">
+                <input type="hidden" id="deviceType" value="手机">
+                
+                <div class="form-row">
+                    <label>设备名称 <span class="required">*</span></label>
+                    <input type="text" id="deviceName" placeholder="请输入设备名称（唯一）" required>
+                </div>
+
+                <div class="form-row">
+                    <label>型号</label>
+                    <input type="text" id="deviceModel" placeholder="如：iPhone 14 Pro Max">
+                </div>
+
+                <div class="form-row">
+                    <label>柜号/保管人 <span class="required">*</span></label>
+                    <input type="text" id="deviceCabinet" placeholder="如：A01 或 张三" required>
+                </div>
+
+                <div class="form-row">
+                    <label>设备状态</label>
+                    <select id="deviceStatus" class="edit-input" style="margin-top:0;">
+                        <option value="在库">在库</option>
+                        <option value="已寄出">已寄出</option>
+                        <option value="维修中">维修中</option>
+                        <option value="已损坏">已损坏</option>
+                        <option value="报废">报废</option>
+                    </select>
+                </div>
+
+                <div class="form-row">
+                    <label>设备备注</label>
+                    <textarea id="deviceRemarks" placeholder="可选：添加设备备注信息..."></textarea>
+                </div>
+
+                <button type="submit" class="btn-submit">💾 保存设备</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 底部导航 -->
+    <nav class="bottom-nav">
+        <a href="/admin/mobile/dashboard" class="nav-item">
+            <span class="nav-icon">🏠</span>
+            <span class="nav-text">首页</span>
+        </a>
+        <a href="/admin/mobile/devices" class="nav-item">
+            <span class="nav-icon">📱</span>
+            <span class="nav-text">查询</span>
+        </a>
+        <a href="/admin/mobile/device/add" class="nav-item active">
+            <span class="nav-icon">➕</span>
+            <span class="nav-text">录入</span>
+        </a>
+    </nav>
+
+    <!-- Toast提示 -->
+    <div id="toast" class="toast"></div>
+
+    <script>
+        // 选择设备类型
+        function selectType(element) {
+            document.querySelectorAll('.type-option').forEach(opt => opt.classList.remove('selected'));
+            element.classList.add('selected');
+            document.getElementById('deviceType').value = element.dataset.type;
+        }
+
+        // 表单提交
+        document.getElementById('addDeviceForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const deviceData = {
+                device_type: document.getElementById('deviceType').value,
+                device_name: document.getElementById('deviceName').value.trim(),
+                model: document.getElementById('deviceModel').value.trim(),
+                cabinet: document.getElementById('deviceCabinet').value.trim(),
+                status: document.getElementById('deviceStatus').value,
+                remarks: document.getElementById('deviceRemarks').value.trim()
+            };
+            
+            if (!deviceData.device_name || !deviceData.cabinet) {
+                showToast('请填写必填项');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/devices', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(deviceData)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showToast('设备录入成功');
+                    // 清空表单
+                    document.getElementById('deviceName').value = '';
+                    document.getElementById('deviceModel').value = '';
+                    document.getElementById('deviceCabinet').value = '';
+                    document.getElementById('deviceRemarks').value = '';
+                    document.getElementById('deviceStatus').value = '在库';
+                } else {
+                    showToast(result.message || '录入失败');
+                }
+            } catch (error) {
+                showToast('网络错误，请重试');
+            }
+        });
+
+        // 显示提示
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 2000);
+        }
+    </script>
+</body>
+</html>

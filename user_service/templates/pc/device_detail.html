@@ -1,0 +1,1143 @@
+{% extends "pc/base_pc.html" %}
+
+{% block title %}{{ device.name }} - 设备详情{% endblock %}
+
+{% set active_nav = 'devices' %}
+
+{% block content %}
+<!-- 页面头部 -->
+<div class="detail-header">
+    <div class="detail-icon">
+        {% if device_type == '车机' %}🚗{% else %}📱{% endif %}
+    </div>
+    <div class="detail-title">
+        <h2>{{ device.name }}</h2>
+        <div class="detail-meta">
+            <span class="status-tag
+                {% if device.status.value == '在库' %}status-available
+                {% elif device.status.value == '借出' %}status-borrowed
+                {% elif device.status.value == '已寄出' %}status-shipped
+                {% elif device.status.value == '已损坏' %}status-damaged
+                {% elif device.status.value == '丢失' %}status-lost
+                {% elif device.status.value == '报废' %}status-scrapped
+                {% endif %}">
+                {{ device.status.value }}
+            </span>
+            <span>{{ device_type }}</span>
+        </div>
+    </div>
+</div>
+
+<!-- 设备详情和操作 -->
+<div class="detail-grid">
+    <!-- 左侧：设备信息 + 操作按钮 + 用户备注 -->
+    <div class="detail-main">
+        <!-- 设备信息 -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">📋 设备信息</span>
+            </div>
+            <div class="card-body">
+                <div class="info-row">
+                    <span class="info-label">设备类型</span>
+                    <span class="info-value">{{ device_type }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">型号</span>
+                    <span class="info-value">{{ device.model or '-' }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">备注</span>
+                    <span class="info-value">{{ device.remark or '-' }}</span>
+                </div>
+                {% if device.status.value == '丢失' %}
+                <div class="info-row" style="color: #ff4d4f;">
+                    <span class="info-label">丢失时间</span>
+                    <span class="info-value">{{ device.lost_time.strftime('%Y-%m-%d %H:%M') }}</span>
+                </div>
+                {% endif %}
+                {% if device.status.value == '已损坏' %}
+                <div class="info-row" style="color: #ff4d4f;">
+                    <span class="info-label">损坏原因</span>
+                    <span class="info-value">{{ device.damage_reason }}</span>
+                </div>
+                <div class="info-row" style="color: #ff4d4f;">
+                    <span class="info-label">损坏时间</span>
+                    <span class="info-value">{{ device.damage_time.strftime('%Y-%m-%d %H:%M') }}</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- 操作区 -->
+        {% if device.status.value == '在库' %}
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">⚡ 操作</span>
+            </div>
+            <div class="card-body">
+                {% if is_custodian %}
+                <div class="action-btns">
+                    <button class="btn btn-primary btn-lg btn-block" onclick="openTransferModal()">转借他人</button>
+                </div>
+                {% else %}
+                <div class="action-btns">
+                    <button class="btn btn-primary btn-lg btn-block" onclick="openBorrowModal()">我要借用</button>
+                </div>
+                <p style="font-size: 13px; color: #8c8c8c; margin-top: 12px; text-align: center;">借用后可查看柜号信息</p>
+                {% endif %}
+            </div>
+        </div>
+
+        {% elif device.status.value == '借出' and is_borrower %}
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">⚡ 归还/转借</span>
+            </div>
+            <div class="card-body">
+                <div class="action-btns">
+                    <button class="btn btn-warning btn-lg btn-block" onclick="openReturnModal()">立即归还</button>
+                    <button class="btn btn-primary btn-block" onclick="openTransferModal()">转借他人</button>
+                    <button class="btn btn-success btn-block" onclick="openRenewModal()">借用续期</button>
+                </div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">⚠️ 异常报备</span>
+            </div>
+            <div class="card-body">
+                <div class="action-btns">
+                    <button class="btn btn-error btn-block" onclick="openReportLostModal()">⚠️ 丢失报备</button>
+                    <button class="btn btn-warning btn-block" onclick="openReportDamageModal()">🔧 损坏报备</button>
+                    {% if device.previous_borrower %}
+                    <button class="btn btn-error btn-block" onclick="confirmNotFound()">❔ 未找到</button>
+                    {% else %}
+                    <button class="btn btn-error btn-block" onclick="confirmNotFoundDirect()">未找到</button>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        {% elif device.status.value == '借出' and is_custodian %}
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">⚡ 保管人操作</span>
+            </div>
+            <div class="card-body">
+                <div class="action-btns">
+                    <button class="btn btn-warning btn-lg btn-block" onclick="confirmReturnByCustodian()">收回借用</button>
+                    {% if device_type == '手机' %}
+                    <button class="btn btn-primary btn-block" onclick="openTransferCustodianModal()">转让保管人</button>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        {% elif device.status.value == '借出' and not is_borrower %}
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">⚡ 操作</span>
+            </div>
+            <div class="card-body">
+                <div class="action-btns">
+                    <button class="btn btn-default btn-lg btn-block" disabled>设备已借出</button>
+                    <button class="btn btn-primary btn-block" onclick="confirmTransferToMe()">转给自己</button>
+                </div>
+            </div>
+        </div>
+
+        {% elif device.status.value == '丢失' %}
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">⚡ 操作</span>
+            </div>
+            <div class="card-body">
+                <div class="action-btns">
+                    <button class="btn btn-default btn-lg btn-block" disabled>设备已丢失</button>
+                    <button class="btn btn-success btn-block" onclick="openFoundModal()">我已找到</button>
+                </div>
+            </div>
+        </div>
+
+        {% elif device.status.value == '已损坏' %}
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">⚡ 操作</span>
+            </div>
+            <div class="card-body">
+                <div class="action-btns">
+                    <button class="btn btn-default btn-lg btn-block" disabled>设备已损坏</button>
+                    <button class="btn btn-warning btn-block" onclick="openRepairedModal()">我已修好</button>
+                </div>
+            </div>
+        </div>
+
+        {% elif device.status.value == '已寄出' %}
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">📦 设备状态</span>
+            </div>
+            <div class="card-body">
+                <button class="btn btn-default btn-lg btn-block" disabled>设备已寄出</button>
+            </div>
+        </div>
+
+        {% elif device.status.value == '报废' %}
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">🚫 设备状态</span>
+            </div>
+            <div class="card-body">
+                <button class="btn btn-default btn-lg btn-block" disabled>设备已报废</button>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- 用户备注 -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">📝 用户备注</span>
+                <button class="btn btn-primary btn-sm" onclick="openAddRemarkModal()">+ 添加备注</button>
+            </div>
+            <div class="card-body">
+                {% if remarks %}
+                <div class="remarks-list">
+                    {% for remark in remarks %}
+                    <div class="remark-item" data-remark-id="{{ remark.id }}">
+                        <div class="remark-content">{{ remark.content | e }}</div>
+                        <div class="remark-meta">
+                            <span class="remark-author">{{ remark.creator }}</span>
+                            <span>{{ remark.create_time }}</span>
+                            {% if remark.is_creator %}
+                            <div class="remark-actions">
+                                <a href="javascript:void(0)" onclick="openEditRemarkModalFromElement(this)">编辑</a>
+                                <a href="javascript:void(0)" class="delete" onclick="deleteRemarkFromElement(this)">删除</a>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="empty-state" style="padding: 40px;">
+                    <p class="empty-title">暂无备注</p>
+                    <button class="btn btn-primary" onclick="openAddRemarkModal()">添加第一条备注</button>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- 查看记录 -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">👁️ 查看记录</span>
+                <span style="font-size: 12px; color: #8c8c8c;">最近20条</span>
+            </div>
+            <div class="card-body">
+                {% if view_records %}
+                <div class="timeline">
+                    {% for vr in view_records %}
+                    <div class="timeline-item">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-header">
+                                <span class="timeline-device">{{ vr.viewer }}{% if is_admin_user(vr.viewer) %}<span class="status-tag status-lost" style="margin-left: 4px; font-size: 10px; padding: 1px 4px;">管</span>{% endif %}</span>
+                                <span class="timeline-time">{{ vr.view_time[:19] }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="empty-state" style="padding: 40px;">
+                    <p class="empty-title">暂无查看记录</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- 右侧：登记后查看/借用信息 + 借用记录 -->
+    <div class="detail-sidebar">
+        {% if device.status.value == '在库' %}
+        <!-- 在库状态：锁定信息 -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">🔒 登记后查看</span>
+            </div>
+            <div class="card-body" style="color: #8c8c8c; background: #fafafa; border-radius: 8px;">
+                <p>• {% if device_type == '手机' %}保管人{% else %}柜号{% endif %}：***</p>
+                <p>• 借用记录：***</p>
+                <p style="color: #1890ff; margin-top: 12px;">借用成功后可查看完整信息</p>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if device.status.value == '借出' %}
+        <!-- 借出状态：借用信息 -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">
+                    {% if is_borrower %}✅ 您正在借用此设备{% else %}📤 当前借用信息{% endif %}
+                </span>
+            </div>
+            <div class="card-body">
+                {% if is_borrower %}
+                <div class="info-row" style="background: #e6f7ff; padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+                    <span class="info-label">📍 {% if device_type == '手机' %}保管人{% else %}柜号{% endif %}</span>
+                    <span class="info-value" style="color: #1890ff; font-size: 18px; font-weight: 600;">{{ device.cabinet_number }}</span>
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <button class="btn btn-primary" onclick="openCabinetMapModal()">🗺️ 查看柜子位置图</button>
+                </div>
+                {% endif %}
+                <div class="info-row">
+                    <span class="info-label">借用人</span>
+                    <span class="info-value">{{ device.borrower }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">借用时间</span>
+                    <span class="info-value">{{ device.borrow_time.strftime('%Y-%m-%d %H:%M') }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">借用原因</span>
+                    <span class="info-value">{{ device.reason or '-' }}</span>
+                </div>
+                {% if device.expected_return_date %}
+                <div class="info-row">
+                    <span class="info-label">预计归还</span>
+                    <span class="info-value {% if is_overdue %}" style="color: #ff4d4f; font-weight: 500;{% endif %}">
+                        {% if is_overdue %}
+                        ⚠️ 已逾期 {{ overdue_days }} 天
+                        {% else %}
+                        {{ device.expected_return_date.strftime('%Y-%m-%d') }}
+                        {% endif %}
+                    </span>
+                </div>
+                {% endif %}
+                {% if device.previous_borrower %}
+                <div class="info-row" style="background: #fff7e6; padding: 12px; border-radius: 8px; margin-top: 12px;">
+                    <span class="info-label">上一个借用人</span>
+                    <span class="info-value">{{ device.previous_borrower }}</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- 借用记录 -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">📋 借用记录</span>
+            </div>
+            <div class="card-body">
+                {% if records %}
+                <div class="timeline">
+                    {% for record in records %}
+                    <div class="timeline-item">
+                        <div class="timeline-dot
+                            {% if '借出' in record.operation_type %}borrow
+                            {% elif '归还' in record.operation_type %}return
+                            {% else %}lost{% endif %}"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-header">
+                                <span class="timeline-device">
+                                    <span class="status-tag
+                                        {% if '借出' in record.operation_type %}status-borrowed
+                                        {% elif '归还' in record.operation_type %}status-available
+                                        {% elif '丢失' in record.operation_type or '损坏' in record.operation_type %}status-lost
+                                        {% elif '续期' in record.operation_type %}status-available
+                                        {% else %}status-borrowed{% endif %}">
+                                        {{ record.operation_type }}
+                                    </span>
+                                </span>
+                                <span class="timeline-time">{{ record.operation_time[:19] }}</span>
+                            </div>
+                            <div style="margin-top: 4px; font-size: 13px; color: #595959;">
+                                {{ record.borrower }}
+                                {% if record.entry_source == '管理员录入' %}
+                                <span class="status-tag status-no-cabinet" style="margin-left: 4px; font-size: 10px; padding: 1px 4px;">管</span>
+                                {% endif %}
+                            </div>
+                            {% if record.reason and record.reason != 'nan' %}
+                            <div style="margin-top: 4px; font-size: 13px; color: #595959;">
+                                原因：{{ record.reason }}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="empty-state" style="padding: 40px;">
+                    <p class="empty-title">暂无记录</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- 弹窗：借用 -->
+<div class="modal-overlay" id="borrowModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">📥 借用登记</span>
+            <button class="modal-close" onclick="closeModal('borrowModal')">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label">借用人</label>
+                <input type="text" class="form-input" value="{{ user.borrower_name }}" readonly>
+            </div>
+            <div class="form-group">
+                <label class="form-label">借用原因</label>
+                <div class="radio-group">
+                    <label class="radio-item"><input type="radio" name="borrowReason" value="测试" checked><span>测试</span></label>
+                    <label class="radio-item"><input type="radio" name="borrowReason" value="开发"><span>开发</span></label>
+                    <label class="radio-item"><input type="radio" name="borrowReason" value="演示"><span>演示</span></label>
+                    <label class="radio-item"><input type="radio" name="borrowReason" value="出差"><span>出差</span></label>
+                    <label class="radio-item"><input type="radio" name="borrowReason" value="其他"><span>其他</span></label>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">详细说明</label>
+                <textarea id="borrowDetail" class="form-textarea" rows="2">用于功能测试</textarea>
+            </div>
+            <div class="form-group">
+                <label class="form-label">预计归还日期</label>
+                <input type="date" id="returnDate" class="form-input">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="closeModal('borrowModal')">取消</button>
+            <button class="btn btn-primary" onclick="submitBorrow()">确认借用</button>
+        </div>
+    </div>
+</div>
+
+<!-- 弹窗：归还 -->
+<div class="modal-overlay" id="returnModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">📤 归还确认</span>
+            <button class="modal-close" onclick="closeModal('returnModal')">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label">归还原因</label>
+                <div class="radio-group">
+                    <label class="radio-item"><input type="radio" name="returnReason" value="正常归还" checked><span>正常归还</span></label>
+                    <label class="radio-item"><input type="radio" name="returnReason" value="设备收回"><span>设备收回</span></label>
+                    <label class="radio-item"><input type="radio" name="returnReason" value="转借他人"><span>转借他人</span></label>
+                    <label class="radio-item"><input type="radio" name="returnReason" value="其他"><span>其他</span></label>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">归还备注</label>
+                <textarea id="returnRemark" class="form-textarea" rows="2">设备完好，无异常</textarea>
+            </div>
+            <div style="background: #f6ffed; padding: 16px; border-radius: 8px; margin-top: 16px;">
+                <p style="font-weight: 500; margin-bottom: 12px;">✓ 归还前请确认：</p>
+                <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                    <input type="checkbox" id="check1" checked> 设备外观完好，无明显损坏
+                </label>
+                <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                    <input type="checkbox" id="check2" checked> 配件齐全（充电器、数据线等）
+                </label>
+                <label style="display: flex; align-items: center; gap: 8px;">
+                    <input type="checkbox" id="check3" checked> 已清除设备中的个人数据
+                </label>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="closeModal('returnModal')">取消</button>
+            <button class="btn btn-warning" onclick="submitReturn()">确认归还</button>
+        </div>
+    </div>
+</div>
+
+<!-- 弹窗：转借 -->
+<div class="modal-overlay" id="transferModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">🔄 转借设备</span>
+            <button class="modal-close" onclick="closeModal('transferModal')">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label">转借给 <span style="color: #ff4d4f;">*</span></label>
+                <input type="text" id="transferTo" class="form-input" placeholder="输入姓名搜索..." autocomplete="off">
+                <div id="userSuggestions" style="background: #fff; border: 1px solid #d9d9d9; border-radius: 4px; max-height: 200px; overflow-y: auto; display: none; margin-top: 4px;"></div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">备注</label>
+                <textarea id="transferRemark" class="form-textarea" rows="2" placeholder="可选：添加转借备注"></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="closeModal('transferModal')">取消</button>
+            <button class="btn btn-primary" onclick="submitTransfer()">确认转借</button>
+        </div>
+    </div>
+</div>
+
+<!-- 弹窗：续期 -->
+<div class="modal-overlay" id="renewModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">📅 借用续期</span>
+            <button class="modal-close" onclick="closeModal('renewModal')">×</button>
+        </div>
+        <div class="modal-body">
+            <p style="color: #8c8c8c; margin-bottom: 16px;">请选择新的预计归还日期（只能往后选择）：</p>
+            <div class="form-group">
+                <label class="form-label">新预计归还日期</label>
+                <input type="date" id="renewDate" class="form-input">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="closeModal('renewModal')">取消</button>
+            <button class="btn btn-success" onclick="submitRenew()">确认续期</button>
+        </div>
+    </div>
+</div>
+
+<!-- 弹窗：丢失报备 -->
+<div class="modal-overlay" id="reportLostModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">⚠️ 丢失报备</span>
+            <button class="modal-close" onclick="closeModal('reportLostModal')">×</button>
+        </div>
+        <div class="modal-body">
+            <p>确定要报备此设备丢失吗？</p>
+            <p style="color: #8c8c8c; font-size: 13px; margin-top: 8px;">丢失时间：{{ now }}</p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="closeModal('reportLostModal')">取消</button>
+            <button class="btn btn-error" onclick="submitReportLost()">确认报备</button>
+        </div>
+    </div>
+</div>
+
+<!-- 弹窗：损坏报备 -->
+<div class="modal-overlay" id="reportDamageModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">🔧 损坏报备</span>
+            <button class="modal-close" onclick="closeModal('reportDamageModal')">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label">损坏原因</label>
+                <textarea id="damageReason" class="form-textarea" rows="3" placeholder="请填写损坏原因"></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="closeModal('reportDamageModal')">取消</button>
+            <button class="btn btn-warning" onclick="submitReportDamage()">确认报备</button>
+        </div>
+    </div>
+</div>
+
+<!-- 弹窗：我已找到 -->
+<div class="modal-overlay" id="foundModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">✅ 设备已找到</span>
+            <button class="modal-close" onclick="closeModal('foundModal')">×</button>
+        </div>
+        <div class="modal-body">
+            <p style="margin-bottom: 16px;">请选择后续操作：</p>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <button class="btn btn-primary btn-lg" onclick="submitFound('keep')">转给自己</button>
+                <button class="btn btn-warning btn-lg" onclick="submitFound('return')">{% if device_type == '手机' %}转给保管人{% else %}归还入库{% endif %}</button>
+                <button class="btn btn-default btn-lg" onclick="closeModal('foundModal'); openTransferSelectModal('found')">转给别人</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 弹窗：我已修好 -->
+<div class="modal-overlay" id="repairedModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">🔧 设备已修好</span>
+            <button class="modal-close" onclick="closeModal('repairedModal')">×</button>
+        </div>
+        <div class="modal-body">
+            <p style="margin-bottom: 16px;">请选择后续操作：</p>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <button class="btn btn-primary btn-lg" onclick="submitRepaired('keep')">转给自己</button>
+                <button class="btn btn-warning btn-lg" onclick="submitRepaired('return')">{% if device_type == '手机' %}转给保管人{% else %}归还入库{% endif %}</button>
+                <button class="btn btn-default btn-lg" onclick="closeModal('repairedModal'); openTransferSelectModal('repaired')">转给别人</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 弹窗：选择转借人 -->
+<div class="modal-overlay" id="transferSelectModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">👤 选择转借人</span>
+            <button class="modal-close" onclick="closeModal('transferSelectModal')">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <select id="transferToUser" class="form-select">
+                    <option value="">请选择</option>
+                </select>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="closeModal('transferSelectModal')">取消</button>
+            <button class="btn btn-primary" onclick="submitTransferToUser()">确认</button>
+        </div>
+    </div>
+</div>
+
+<!-- 弹窗：转让保管人 -->
+<div class="modal-overlay" id="transferCustodianModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">🔑 转让保管人</span>
+            <button class="modal-close" onclick="closeModal('transferCustodianModal')">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label">新保管人</label>
+                <select id="newCustodian" class="form-select">
+                    <option value="">请选择新保管人</option>
+                </select>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="closeModal('transferCustodianModal')">取消</button>
+            <button class="btn btn-primary" onclick="submitTransferCustodian()">确认转让</button>
+        </div>
+    </div>
+</div>
+
+<!-- 弹窗：添加备注 -->
+<div class="modal-overlay" id="addRemarkModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">📝 添加备注</span>
+            <button class="modal-close" onclick="closeModal('addRemarkModal')">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label">备注内容</label>
+                <textarea id="remarkContent" class="form-textarea" rows="4" placeholder="请输入备注内容..."></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="closeModal('addRemarkModal')">取消</button>
+            <button class="btn btn-primary" onclick="submitAddRemark()">确认添加</button>
+        </div>
+    </div>
+</div>
+
+<!-- 弹窗：编辑备注 -->
+<div class="modal-overlay" id="editRemarkModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">✏️ 编辑备注</span>
+            <button class="modal-close" onclick="closeModal('editRemarkModal')">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label">备注内容</label>
+                <textarea id="editRemarkContent" class="form-textarea" rows="4"></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="closeModal('editRemarkModal')">取消</button>
+            <button class="btn btn-primary" onclick="submitEditRemark()">确认修改</button>
+        </div>
+    </div>
+</div>
+
+<!-- 弹窗：柜子位置图 -->
+<div class="modal-overlay" id="cabinetMapModal" style="align-items: flex-start; padding-top: 40px;">
+    <div class="modal" style="max-width: 90vw; width: auto;">
+        <div class="modal-header">
+            <span class="modal-title">🗺️ 柜子位置分布图</span>
+            <button class="modal-close" onclick="closeModal('cabinetMapModal')">×</button>
+        </div>
+        <div class="modal-body" style="padding: 0;">
+            <img src="{{ url_for('static', filename='images/cabinet_map.png') }}" alt="柜子位置图" style="max-width: 100%; height: auto; display: block;">
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="closeModal('cabinetMapModal')">关闭</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const deviceId = '{{ device.id }}';
+const deviceType = '{{ device_type }}';
+let currentAction = '';
+let currentRemarkId = '';
+let allUsers = [];
+
+// 页面加载完成后初始化
+document.addEventListener('DOMContentLoaded', function() {
+    // 加载用户列表
+    fetch('/api/users').then(r => r.json()).then(data => {
+        if (data.success && data.users) {
+            allUsers = data.users;
+        }
+    }).catch(() => {});
+
+    // 设置默认归还日期为1天后
+    const returnDateEl = document.getElementById('returnDate');
+    if (returnDateEl) {
+        returnDateEl.value = new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    }
+
+    // 借用原因联动
+    const reasonInputs = document.querySelectorAll('input[name="borrowReason"]');
+    const detailReason = document.getElementById('borrowDetail');
+    if (detailReason && reasonInputs.length > 0) {
+        const reasonDetails = {'测试': '用于功能测试', '开发': '用于开发调试', '演示': '用于产品演示', '出差': '用于出差使用', '其他': ''};
+        reasonInputs.forEach(input => input.addEventListener('change', () => detailReason.value = reasonDetails[input.value]));
+    }
+});
+
+// 弹窗控制
+function openModal(id) { document.getElementById(id).classList.add('active'); }
+function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
+function openBorrowModal() { openModal('borrowModal'); }
+function openReturnModal() { openModal('returnModal'); }
+function openTransferModal() { openModal('transferModal'); loadUserSuggestions(); }
+function openRenewModal() {
+    const renewDateEl = document.getElementById('renewDate');
+    if (renewDateEl) {
+        const today = new Date().toISOString().split('T')[0];
+        renewDateEl.min = today;
+        renewDateEl.value = today;
+    }
+    openModal('renewModal');
+}
+function openReportLostModal() { openModal('reportLostModal'); }
+function openReportDamageModal() { openModal('reportDamageModal'); }
+function openFoundModal() { openModal('foundModal'); }
+function openRepairedModal() { openModal('repairedModal'); }
+function openAddRemarkModal() { openModal('addRemarkModal'); }
+
+function openTransferSelectModal(action) {
+    currentAction = action;
+    const select = document.getElementById('transferToUser');
+    select.innerHTML = '<option value="">加载中...</option>';
+    openModal('transferSelectModal');
+    loadUsersToSelect(select);
+}
+
+function openTransferCustodianModal() {
+    const select = document.getElementById('newCustodian');
+    select.innerHTML = '<option value="">加载中...</option>';
+    openModal('transferCustodianModal');
+    loadUsersToSelect(select);
+}
+
+function openEditRemarkModal(id, content) {
+    currentRemarkId = id;
+    document.getElementById('editRemarkContent').value = content;
+    openModal('editRemarkModal');
+}
+
+function openEditRemarkModalFromElement(element) {
+    const item = element.closest('.remark-item');
+    if (!item) return;
+    const id = item.dataset.remarkId;
+    const contentEl = item.querySelector('.remark-content');
+    const content = contentEl ? contentEl.textContent : '';
+    if (id) {
+        openEditRemarkModal(id, content);
+    }
+}
+
+function loadUsersToSelect(select) {
+    fetch('/api/users').then(r => r.json()).then(data => {
+        if (data.success) {
+            select.innerHTML = '<option value="">请选择</option>';
+            data.users.forEach(u => {
+                const option = document.createElement('option');
+                option.value = u.borrower_name;
+                option.textContent = u.borrower_name;
+                select.appendChild(option);
+            });
+        }
+    }).catch(() => select.innerHTML = '<option value="">加载失败</option>');
+}
+
+function loadUserSuggestions() {
+    const input = document.getElementById('transferTo');
+    const suggestions = document.getElementById('userSuggestions');
+    if (!input || !suggestions) return;
+
+    input.addEventListener('input', function() {
+        const keyword = this.value.trim().toLowerCase();
+        if (!keyword) { suggestions.style.display = 'none'; return; }
+        const matched = allUsers.filter(u => u.borrower_name.toLowerCase().includes(keyword));
+        if (matched.length > 0) {
+            suggestions.innerHTML = matched.map(u => {
+                const name = u.borrower_name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                return '<div style="padding: 10px 12px; cursor: pointer;" onclick="selectUser(\'' + name + '\')">' + u.borrower_name + '</div>';
+            }).join('');
+            suggestions.style.display = 'block';
+        } else {
+            suggestions.innerHTML = '<div style="padding: 10px 12px; color: #999;">无匹配用户</div>';
+            suggestions.style.display = 'block';
+        }
+    });
+
+    document.addEventListener('click', e => {
+        if (!e.target.closest('#transferTo') && !e.target.closest('#userSuggestions')) {
+            suggestions.style.display = 'none';
+        }
+    });
+}
+
+function selectUser(name) {
+    const transferToEl = document.getElementById('transferTo');
+    const suggestionsEl = document.getElementById('userSuggestions');
+    if (transferToEl) transferToEl.value = name;
+    if (suggestionsEl) suggestionsEl.style.display = 'none';
+}
+
+// API提交
+function submitBorrow() {
+    const reasonEl = document.querySelector('input[name="borrowReason"]:checked');
+    const detailEl = document.getElementById('borrowDetail');
+    const dateEl = document.getElementById('returnDate');
+    
+    if (!reasonEl) { showToast('请选择借用原因'); return; }
+    if (!dateEl || !dateEl.value) { showToast('请选择预计归还日期'); return; }
+    
+    const reason = reasonEl.value;
+    const detail = detailEl ? detailEl.value.trim() : '';
+    const date = dateEl.value;
+    const fullReason = reason + (detail ? ' - ' + detail : '');
+
+    fetch('/api/borrow', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({device_id: deviceId, reason: fullReason, expected_return_date: date})
+    }).then(r => r.json()).then(data => {
+        if (data.success) { showToast('借用成功！'); setTimeout(() => location.reload(), 1000); }
+        else { showToast(data.message || '借用失败'); }
+    }).catch(() => showToast('提交失败，请重试'));
+}
+
+function submitReturn() {
+    const reasonEl = document.querySelector('input[name="returnReason"]:checked');
+    const remarkEl = document.getElementById('returnRemark');
+    
+    if (!reasonEl) { showToast('请选择归还原因'); return; }
+    
+    const reason = reasonEl.value;
+    const remark = remarkEl ? remarkEl.value.trim() : '';
+    const fullRemark = reason + (remark ? ' - ' + remark : '');
+
+    const check1 = document.getElementById('check1');
+    const check2 = document.getElementById('check2');
+    const check3 = document.getElementById('check3');
+    if ((!check1 || !check1.checked) || (!check2 || !check2.checked) || (!check3 || !check3.checked)) {
+        showToast('请确认所有检查项'); return;
+    }
+
+    fetch('/api/return', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({device_id: deviceId, reason: fullRemark})
+    }).then(r => r.json()).then(data => {
+        if (data.success) { showToast('归还成功！'); setTimeout(() => window.location.href = '/pc', 1000); }
+        else { showToast(data.message || '归还失败'); }
+    }).catch(() => showToast('提交失败，请重试'));
+}
+
+function submitTransfer() {
+    const toEl = document.getElementById('transferTo');
+    const remarkEl = document.getElementById('transferRemark');
+    if (!toEl) { showToast('页面元素错误'); return; }
+    
+    const to = toEl.value.trim();
+    const remark = remarkEl ? remarkEl.value.trim() : '';
+    if (!to) { showToast('请选择转借人'); return; }
+    if (!allUsers.some(u => u.borrower_name === to)) { showToast('该用户不存在，请从列表中选择'); return; }
+
+    fetch('/api/transfer', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({device_id: deviceId, transfer_to: to, remark: remark})
+    }).then(r => r.json()).then(data => {
+        if (data.success) { showToast('转借成功'); setTimeout(() => window.location.href = '/pc', 1000); }
+        else { showToast(data.message || '转借失败'); }
+    }).catch(() => showToast('提交失败，请重试'));
+    closeModal('transferModal');
+}
+
+function submitRenew() {
+    const dateEl = document.getElementById('renewDate');
+    if (!dateEl || !dateEl.value) { showToast('请选择续期日期'); return; }
+    const date = dateEl.value;
+    const today = new Date().toISOString().split('T')[0];
+    if (date < today) { showToast('续期日期不能早于今天'); return; }
+
+    fetch('/api/renew', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({device_id: deviceId, new_return_date: date})
+    }).then(r => r.json()).then(data => {
+        if (data.success) { showToast('续期成功'); setTimeout(() => location.reload(), 1000); }
+        else { showToast(data.message || '续期失败'); }
+    }).catch(() => showToast('提交失败，请重试'));
+    closeModal('renewModal');
+}
+
+function submitReportLost() {
+    fetch('/api/report-lost', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({device_id: deviceId})
+    }).then(r => r.json()).then(data => {
+        if (data.success) { showToast('丢失报备成功'); setTimeout(() => location.reload(), 1000); }
+        else { showToast(data.message || '报备失败'); }
+    }).catch(() => showToast('提交失败，请重试'));
+    closeModal('reportLostModal');
+}
+
+function submitReportDamage() {
+    const reasonEl = document.getElementById('damageReason');
+    if (!reasonEl) { showToast('页面元素错误'); return; }
+    const reason = reasonEl.value.trim();
+    if (!reason) { showToast('请填写损坏原因'); return; }
+
+    fetch('/api/report-damage', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({device_id: deviceId, damage_reason: reason})
+    }).then(r => r.json()).then(data => {
+        if (data.success) { showToast('损坏报备成功'); setTimeout(() => location.reload(), 1000); }
+        else { showToast(data.message || '报备失败'); }
+    }).catch(() => showToast('提交失败，请重试'));
+    closeModal('reportDamageModal');
+}
+
+function submitFound(action) {
+    const data = {device_id: deviceId, action: action};
+    if (action === 'transfer') {
+        const transferToEl = document.getElementById('transferToUser');
+        if (!transferToEl) { showToast('页面元素错误'); return; }
+        const transferTo = transferToEl.value;
+        if (!transferTo) { showToast('请选择转借人'); return; }
+        data.transfer_to = transferTo;
+    }
+    fetch('/api/found-device', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    }).then(r => r.json()).then(data => {
+        if (data.success) { showToast('操作成功'); setTimeout(() => location.reload(), 1000); }
+        else { showToast(data.message || '操作失败'); }
+    }).catch(() => showToast('提交失败，请重试'));
+    closeModal('foundModal');
+    closeModal('transferSelectModal');
+}
+
+function submitRepaired(action) {
+    const data = {device_id: deviceId, action: action};
+    if (action === 'transfer') {
+        const transferToEl = document.getElementById('transferToUser');
+        if (!transferToEl) { showToast('页面元素错误'); return; }
+        const transferTo = transferToEl.value;
+        if (!transferTo) { showToast('请选择转借人'); return; }
+        data.transfer_to = transferTo;
+    }
+    fetch('/api/repair-device', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    }).then(r => r.json()).then(data => {
+        if (data.success) { showToast('操作成功'); setTimeout(() => location.reload(), 1000); }
+        else { showToast(data.message || '操作失败'); }
+    }).catch(() => showToast('提交失败，请重试'));
+    closeModal('repairedModal');
+    closeModal('transferSelectModal');
+}
+
+function submitTransferToUser() {
+    if (currentAction === 'found') submitFound('transfer');
+    else submitRepaired('transfer');
+}
+
+function confirmTransferToMe() {
+    const deviceName = document.querySelector('.detail-title h2')?.textContent || '此设备';
+    const borrower = document.querySelector('.info-value')?.textContent || '当前借用人';
+    if (!confirm('确定要将 ' + deviceName + ' 从 ' + borrower + ' 转借到自己名下吗？')) return;
+    fetch('/api/transfer-to-me', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({device_id: deviceId})
+    }).then(r => r.json()).then(data => {
+        if (data.success) { showToast('转借成功'); setTimeout(() => location.reload(), 1000); }
+        else { showToast(data.message || '转借失败'); }
+    }).catch(() => showToast('提交失败，请重试'));
+}
+
+function confirmReturnByCustodian() {
+    const deviceName = document.querySelector('.detail-title h2')?.textContent || '此设备';
+    const borrower = document.querySelector('.info-value')?.textContent || '当前借用人';
+    if (!confirm('确定要收回 ' + deviceName + ' 吗？当前借用人为 ' + borrower)) return;
+    fetch('/api/return-by-custodian', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({device_id: deviceId})
+    }).then(r => r.json()).then(data => {
+        if (data.success) { showToast('收回成功'); setTimeout(() => location.reload(), 1000); }
+        else { showToast(data.message || '收回失败'); }
+    }).catch(() => showToast('提交失败，请重试'));
+}
+
+function confirmNotFound() {
+    if (!confirm('确定要退回此设备吗？将转回给上一个借用人。')) return;
+    fetch('/api/not-found', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({device_id: deviceId})
+    }).then(r => r.json()).then(data => {
+        if (data.success) { showToast('操作成功'); setTimeout(() => location.reload(), 1000); }
+        else { showToast(data.message || '操作失败'); }
+    }).catch(() => showToast('提交失败，请重试'));
+}
+
+function confirmNotFoundDirect() {
+    if (!confirm('确定设备未找到吗？将记录借用人未找到，设备转为丢失状态。')) return;
+    fetch('/api/not-found-direct', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({device_id: deviceId})
+    }).then(r => r.json()).then(data => {
+        if (data.success) { showToast('已记录：借用人未找到，设备已转为丢失'); setTimeout(() => location.reload(), 1000); }
+        else { showToast(data.message || '操作失败'); }
+    }).catch(() => showToast('提交失败，请重试'));
+}
+
+function submitTransferCustodian() {
+    const newCustodianEl = document.getElementById('newCustodian');
+    if (!newCustodianEl) { showToast('页面元素错误'); return; }
+    const newCustodian = newCustodianEl.value;
+    if (!newCustodian) { showToast('请选择新保管人'); return; }
+    fetch('/api/transfer-custodian', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({device_id: deviceId, new_custodian: newCustodian})
+    }).then(r => r.json()).then(data => {
+        if (data.success) { showToast('保管人转让成功'); setTimeout(() => location.reload(), 1000); }
+        else { showToast(data.message || '转让失败'); }
+    }).catch(() => showToast('提交失败，请重试'));
+    closeModal('transferCustodianModal');
+}
+
+function submitAddRemark() {
+    const contentEl = document.getElementById('remarkContent');
+    if (!contentEl) { showToast('页面元素错误'); return; }
+    const content = contentEl.value.trim();
+    if (!content) { showToast('备注内容不能为空'); return; }
+    fetch('/api/remark/add', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({device_id: deviceId, content: content})
+    }).then(r => r.json()).then(data => {
+        if (data.success) { showToast('备注已添加'); closeModal('addRemarkModal'); location.reload(); }
+        else { showToast(data.message || '添加失败'); }
+    }).catch(() => showToast('提交失败，请重试'));
+}
+
+function submitEditRemark() {
+    const contentEl = document.getElementById('editRemarkContent');
+    if (!contentEl) { showToast('页面元素错误'); return; }
+    const content = contentEl.value.trim();
+    if (!content) { showToast('备注内容不能为空'); return; }
+    fetch('/api/remark/edit', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({remark_id: currentRemarkId, content: content})
+    }).then(r => r.json()).then(data => {
+        if (data.success) { showToast('备注已更新'); closeModal('editRemarkModal'); location.reload(); }
+        else { showToast(data.message || '更新失败'); }
+    }).catch(() => showToast('提交失败，请重试'));
+}
+
+function openCabinetMapModal() {
+    openModal('cabinetMapModal');
+}
+
+function deleteRemark(id) {
+    if (!confirm('确定要删除这条备注吗？')) return;
+    fetch('/api/remark/delete', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({remark_id: id})
+    }).then(r => r.json()).then(data => {
+        if (data.success) { showToast('删除成功'); location.reload(); }
+        else { showToast(data.message || '删除失败'); }
+    }).catch(() => showToast('删除失败，请重试'));
+}
+
+function deleteRemarkFromElement(element) {
+    const item = element.closest('.remark-item');
+    if (!item) return;
+    const id = item.dataset.remarkId;
+    if (id) {
+        deleteRemark(id);
+    }
+}
+
+// 将函数导出到全局作用域，确保 onclick 可以调用
+window.openBorrowModal = openBorrowModal;
+window.openReturnModal = openReturnModal;
+window.openTransferModal = openTransferModal;
+window.openRenewModal = openRenewModal;
+window.openReportLostModal = openReportLostModal;
+window.openReportDamageModal = openReportDamageModal;
+window.openFoundModal = openFoundModal;
+window.openRepairedModal = openRepairedModal;
+window.openAddRemarkModal = openAddRemarkModal;
+window.openTransferSelectModal = openTransferSelectModal;
+window.openTransferCustodianModal = openTransferCustodianModal;
+window.openEditRemarkModalFromElement = openEditRemarkModalFromElement;
+window.submitBorrow = submitBorrow;
+window.submitReturn = submitReturn;
+window.submitTransfer = submitTransfer;
+window.submitRenew = submitRenew;
+window.submitReportLost = submitReportLost;
+window.submitReportDamage = submitReportDamage;
+window.submitFound = submitFound;
+window.submitRepaired = submitRepaired;
+window.submitTransferToUser = submitTransferToUser;
+window.confirmTransferToMe = confirmTransferToMe;
+window.confirmReturnByCustodian = confirmReturnByCustodian;
+window.confirmNotFound = confirmNotFound;
+window.confirmNotFoundDirect = confirmNotFoundDirect;
+window.submitTransferCustodian = submitTransferCustodian;
+window.submitAddRemark = submitAddRemark;
+window.submitEditRemark = submitEditRemark;
+window.deleteRemark = deleteRemark;
+window.openCabinetMapModal = openCabinetMapModal;
+window.deleteRemarkFromElement = deleteRemarkFromElement;
+window.selectUser = selectUser;
+window.openModal = openModal;
+window.closeModal = closeModal;
+
+</script>
+{% endblock %}

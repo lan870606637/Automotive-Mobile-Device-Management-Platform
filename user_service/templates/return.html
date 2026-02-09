@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+
+{% block title %}归还确认 - {{ device.name }}{% endblock %}
+
+{% set show_nav = false %}
+
+{% block content %}
+<div class="form-page">
+    <!-- 页面头部 -->
+    <div class="page-header">
+        <a href="javascript:history.back()" class="back-btn">‹</a>
+        <h1>归还确认</h1>
+    </div>
+    
+    <!-- 设备信息 -->
+    <div class="info-card">
+        <div class="device-mini">
+            <span class="mini-icon">{% if device_type == '车机' %}🚗{% else %}📱{% endif %}</span>
+            <div class="mini-info">
+                <span class="mini-name">{{ device.name }}</span>
+                <span class="mini-type">{{ device_type }}</span>
+            </div>
+        </div>
+        {% if is_borrower %}
+        <div class="you-tag">您借用的设备</div>
+        {% endif %}
+    </div>
+    
+    <!-- 借用与归还信息 -->
+    <div class="info-card">
+        <h3 class="card-title-small">借用信息</h3>
+        <div class="info-list-simple">
+            <div class="info-row">
+                <span class="label">借用人</span>
+                <span class="value">{{ device.borrower }}</span>
+            </div>
+            <div class="info-row">
+                <span class="label">借用时间</span>
+                <span class="value">{{ device.borrow_time.strftime('%Y-%m-%d') }}</span>
+            </div>
+            <div class="info-row">
+                <span class="label">借用原因</span>
+                <span class="value">{{ device.reason or '-' }}</span>
+            </div>
+            <div class="info-row">
+                <span class="label">借用备注</span>
+                <span class="value">{{ device.remark or '-' }}</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 归还信息填写 -->
+    <div class="form-card">
+        <h3 class="form-title">归还信息</h3>
+        
+        <div class="form-group">
+            <label class="form-label">归还人</label>
+            <input type="text" id="returnPerson" class="form-input" value="{{ device.borrower }}" readonly>
+        </div>
+        
+        <div class="form-group">
+            <label class="form-label">归还原因</label>
+            <div class="radio-group">
+                <label class="radio-item">
+                    <input type="radio" name="returnReason" value="正常归还" checked>
+                    <span class="radio-text">正常归还</span>
+                </label>
+                <label class="radio-item">
+                    <input type="radio" name="returnReason" value="设备收回">
+                    <span class="radio-text">设备收回</span>
+                </label>
+                <label class="radio-item">
+                    <input type="radio" name="returnReason" value="转借他人">
+                    <span class="radio-text">转借他人</span>
+                </label>
+                <label class="radio-item">
+                    <input type="radio" name="returnReason" value="其他">
+                    <span class="radio-text">其他</span>
+                </label>
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <label class="form-label">归还备注</label>
+            <textarea id="returnRemark" class="form-textarea" rows="2">设备完好，无异常</textarea>
+        </div>
+    </div>
+    
+    <!-- 设备检查清单 -->
+    <div class="checklist-card">
+        <div class="checklist-header">
+            <h4>✓ 归还前请确认</h4>
+            <button type="button" class="btn-check-all" onclick="checkAll()">一键全选</button>
+        </div>
+        <label class="check-item">
+            <input type="checkbox" id="check1">
+            <span>设备外观完好，无明显损坏</span>
+        </label>
+        <label class="check-item">
+            <input type="checkbox" id="check2">
+            <span>配件齐全（充电器、数据线等）</span>
+        </label>
+        <label class="check-item">
+            <input type="checkbox" id="check3">
+            <span>已清除设备中的个人数据</span>
+        </label>
+    </div>
+    
+    <!-- 提交按钮 -->
+    <div class="form-actions">
+        <button type="button" class="btn btn-default btn-large" onclick="history.back()">取消</button>
+        <button type="button" class="btn btn-warning btn-large" onclick="submitReturn()">确认归还</button>
+    </div>
+</div>
+
+<script>
+function checkAll() {
+    document.getElementById('check1').checked = true;
+    document.getElementById('check2').checked = true;
+    document.getElementById('check3').checked = true;
+}
+
+function submitReturn() {
+    const returnPerson = document.getElementById('returnPerson').value.trim();
+    const returnReason = document.querySelector('input[name="returnReason"]:checked').value;
+    const returnRemark = document.getElementById('returnRemark').value.trim();
+    
+    // 检查确认项
+    if (!document.getElementById('check1').checked ||
+        !document.getElementById('check2').checked ||
+        !document.getElementById('check3').checked) {
+        showToast('请确认所有检查项');
+        return;
+    }
+    
+    const fullRemark = returnReason + (returnRemark ? ' - ' + returnRemark : '');
+    
+    const btn = document.querySelector('.btn-warning');
+    btn.disabled = true;
+    btn.textContent = '提交中...';
+    
+    fetch('/api/return', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            device_id: '{{ device.id }}',
+            person: returnPerson,
+            reason: fullRemark
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast('归还成功！');
+            setTimeout(() => {
+                window.location.href = '/home';
+            }, 1500);
+        } else {
+            showToast(data.message || '归还失败');
+            btn.disabled = false;
+            btn.textContent = '确认归还';
+        }
+    })
+    .catch(() => {
+        showToast('提交失败，请重试');
+        btn.disabled = false;
+        btn.textContent = '确认归还';
+    });
+}
+</script>
+{% endblock %}

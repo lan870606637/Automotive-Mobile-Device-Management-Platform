@@ -1,0 +1,129 @@
+{% extends "pc/base_pc.html" %}
+
+{% block title %}全部借用记录 - 设备管理系统{% endblock %}
+
+{% set active_nav = 'all_records' %}
+
+{% block content %}
+<h1 class="page-title">🌍 全部借用记录</h1>
+
+<!-- 统计卡片 -->
+<div class="stats-grid" style="grid-template-columns: repeat(3, 1fr);">
+    <div class="stat-card">
+        <div class="stat-header">
+            <span class="stat-icon blue">📊</span>
+            <span class="stat-label">总记录</span>
+        </div>
+        <div class="stat-value">{{ total_records }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-header">
+            <span class="stat-icon orange">📤</span>
+            <span class="stat-label">借用次数</span>
+        </div>
+        <div class="stat-value">{{ borrow_count }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-header">
+            <span class="stat-icon green">✅</span>
+            <span class="stat-label">归还次数</span>
+        </div>
+        <div class="stat-value">{{ return_count }}</div>
+    </div>
+</div>
+
+<!-- 记录列表 -->
+<div class="card">
+    <div class="card-header">
+        <span class="card-title">📋 所有人的操作记录</span>
+    </div>
+    <div class="card-body">
+        {% if records %}
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>时间</th>
+                    <th>设备名称</th>
+                    <th>类型</th>
+                    <th>操作</th>
+                    <th>借用人</th>
+                    <th>操作人</th>
+                    <th>原因/备注</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for record in records %}
+                <tr>
+                    <td style="font-size: 13px; color: #8c8c8c;">{{ record.operation_time }}</td>
+                    <td>
+                        <span style="font-size: 16px; margin-right: 4px;">{% if record.device_type == '车机' %}🚗{% else %}📱{% endif %}</span>
+                        <span style="font-weight: 500;">{{ record.device_name }}</span>
+                    </td>
+                    <td>{{ record.device_type }}</td>
+                    <td>
+                        <span class="status-tag
+                            {% if '借出' in record.operation_type.value %}status-borrowed
+                            {% elif '归还' in record.operation_type.value %}status-available
+                            {% elif '丢失' in record.operation_type.value or '损坏' in record.operation_type.value or '未找到' in record.operation_type.value %}status-lost
+                            {% elif '续期' in record.operation_type.value %}status-no-cabinet
+                            {% else %}status-borrowed{% endif %}">
+                            {{ record.operation_type.value }}
+                        </span>
+                    </td>
+                    <td>{{ record.borrower }}{% if is_admin_user(record.borrower) %}<span class="status-tag status-lost" style="margin-left: 4px; font-size: 10px; padding: 1px 4px;">管</span>{% endif %}</td>
+                    <td>{{ record.operator }}{% if is_admin_user(record.operator) %}<span class="status-tag status-lost" style="margin-left: 4px; font-size: 10px; padding: 1px 4px;">管</span>{% endif %}</td>
+                    <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #595959;">
+                        {% if record.reason and record.reason != 'nan' %}
+                        {{ record.reason }}
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        
+        <!-- 分页器 -->
+        {% if total_pages > 1 %}
+        <div class="pagination" style="display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 24px; padding-top: 16px; border-top: 1px solid #f0f0f0;">
+            {% if page > 1 %}
+            <a href="{{ url_for('pc_all_records', page=page-1) }}" class="btn btn-default">‹ 上一页</a>
+            {% else %}
+            <button class="btn btn-default" disabled style="opacity: 0.5; cursor: not-allowed;">‹ 上一页</button>
+            {% endif %}
+            
+            <div style="display: flex; gap: 6px; align-items: center;">
+                {% for p in range(1, total_pages + 1) %}
+                    {% if p == page %}
+                    <span class="btn btn-primary" style="min-width: 36px; padding: 6px 12px; cursor: default;">{{ p }}</span>
+                    {% elif p <= 3 or p > total_pages - 3 or (p >= page - 1 and p <= page + 1) %}
+                    <a href="{{ url_for('pc_all_records', page=p) }}" class="btn btn-default" style="min-width: 36px; padding: 6px 12px;">{{ p }}</a>
+                    {% elif p == 4 and page > 5 %}
+                    <span style="color: #999;">...</span>
+                    {% elif p == total_pages - 3 and page < total_pages - 4 %}
+                    <span style="color: #999;">...</span>
+                    {% endif %}
+                {% endfor %}
+            </div>
+            
+            {% if page < total_pages %}
+            <a href="{{ url_for('pc_all_records', page=page+1) }}" class="btn btn-primary">下一页 ›</a>
+            {% else %}
+            <button class="btn btn-primary" disabled style="opacity: 0.5; cursor: not-allowed;">下一页 ›</button>
+            {% endif %}
+        </div>
+        <div style="text-align: center; margin-top: 12px; color: #8c8c8c; font-size: 13px;">
+            第 {{ page }} 页，共 {{ total_pages }} 页，总计 {{ total_records }} 条记录
+        </div>
+        {% endif %}
+        
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">📋</div>
+            <p class="empty-title">暂无记录</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

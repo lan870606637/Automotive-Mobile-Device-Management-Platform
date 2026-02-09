@@ -1,0 +1,301 @@
+<!-- 
+  电脑端后台管理 - 过期未还页面
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>过期未还 - 车载测试设备管理系统</title>
+    <link rel="stylesheet" href="/static/admin/admin_pc.css">
+</head>
+<body class="pc-admin-body">
+    <div class="pc-admin-wrapper">
+        <!-- 侧边栏 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <span class="logo">🔧</span>
+                <span class="logo-text">后台管理</span>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="/admin/pc/dashboard" class="nav-item">
+                    <span class="nav-icon">📊</span>
+                    <span>仪表盘</span>
+                </a>
+                <a href="/admin/pc/devices" class="nav-item">
+                    <span class="nav-icon">📱</span>
+                    <span>设备管理</span>
+                </a>
+                <a href="/admin/pc/users" class="nav-item">
+                    <span class="nav-icon">👥</span>
+                    <span>用户管理</span>
+                </a>
+                <a href="/admin/pc/records" class="nav-item">
+                    <span class="nav-icon">📋</span>
+                    <span>记录查询</span>
+                </a>
+                <a href="/admin/pc/logs" class="nav-item">
+                    <span class="nav-icon">📜</span>
+                    <span>操作日志</span>
+                </a>
+                <a href="/admin/pc/overdue" class="nav-item active">
+                    <span class="nav-icon">⚠️</span>
+                    <span>过期未还</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <span>👤 {{ admin_name }}</span>
+                <a href="/admin/logout" class="logout-btn">退出</a>
+            </div>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <header class="content-header">
+                <h1>⚠️ 过期未还设备</h1>
+                <div class="header-actions">
+                    <button class="btn btn-primary" onclick="sendReminders()">📢 发送提醒</button>
+                    <button class="btn btn-success" onclick="exportOverdue()">📥 导出列表</button>
+                </div>
+            </header>
+
+            <!-- 统计信息 -->
+            <div class="stats-row" style="margin-bottom: 20px;">
+                <div class="stat-card-large overdue">
+                    <div class="stat-icon-bg">⚠️</div>
+                    <div class="stat-info">
+                        <span class="stat-value">{{ overdue_count }}</span>
+                        <span class="stat-label">逾期设备总数</span>
+                    </div>
+                </div>
+                <div class="stat-card-large borrowed">
+                    <div class="stat-icon-bg">📱</div>
+                    <div class="stat-info">
+                        <span class="stat-value">{{ phone_overdue }}</span>
+                        <span class="stat-label">手机逾期</span>
+                    </div>
+                </div>
+                <div class="stat-card-large borrowed">
+                    <div class="stat-icon-bg">🚗</div>
+                    <div class="stat-info">
+                        <span class="stat-value">{{ car_overdue }}</span>
+                        <span class="stat-label">车机逾期</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 逾期列表 -->
+            <div class="content-card">
+                <div class="card-header">
+                    <h3>逾期设备列表（按逾期天数排序）</h3>
+                    <button class="btn btn-secondary" onclick="refreshOverdue()">🔄 刷新</button>
+                </div>
+                <div class="data-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>设备名称</th>
+                                <th>类型</th>
+                                <th>借用人</th>
+                                <th>借出时间</th>
+                                <th>预计归还</th>
+                                <th>逾期天数</th>
+                                <th>联系方式</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="overdueTableBody">
+                            {% for device in overdue_devices %}
+                            <tr style="background: {{ '#fff1f0' if device.overdue_days > 7 else '' }}">
+                                <td>
+                                    <strong>{{ device.device_name }}</strong>
+                                    {% if device.overdue_days > 14 %}
+                                    <span style="color: #ff4d4f; font-size: 12px;">(严重逾期)</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ '📱' if device.device_type == '手机' else '🚗' }} {{ device.device_type }}</td>
+                                <td>{{ device.borrower }}</td>
+                                <td>{{ device.borrow_time }}</td>
+                                <td style="color: #ff4d4f; font-weight: 500;">{{ device.expect_return_time }}</td>
+                                <td>
+                                    <span style="color: {{ '#ff4d4f' if device.overdue_days > 7 else '#faad14' }}; font-weight: 600;">
+                                        {{ device.overdue_days }} 天
+                                    </span>
+                                </td>
+                                <td>{{ device.phone or '-' }}</td>
+                                <td>
+                                    <div class="table-actions">
+                                        <button class="btn btn-sm btn-success" onclick="returnDevice('{{ device.id }}')">归还</button>
+                                        <button class="btn btn-sm btn-primary" onclick="remindUser('{{ device.id }}')">提醒</button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% if not overdue_devices %}
+                <div class="empty-state" style="padding: 60px;">
+                    <span style="font-size: 64px;">✅</span>
+                    <p style="margin-top: 16px; font-size: 18px; color: #52c41a;">太棒了！没有逾期设备</p>
+                </div>
+                {% endif %}
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast提示 -->
+    <div id="toast" class="toast"></div>
+
+    <script>
+        // 加载逾期设备
+        async function loadOverdue() {
+            try {
+                const response = await fetch('/api/devices/overdue');
+                const data = await response.json();
+                renderOverdue(data.devices || []);
+            } catch (error) {
+                showToast('加载数据失败', 'error');
+            }
+        }
+
+        // 渲染逾期设备
+        function renderOverdue(devices) {
+            const tbody = document.getElementById('overdueTableBody');
+            
+            if (devices.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="empty-cell">暂无逾期设备</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = devices.map(device => `
+                <tr style="background: ${device.overdue_days > 7 ? '#fff1f0' : ''}">
+                    <td>
+                        <strong>${device.device_name}</strong>
+                        ${device.overdue_days > 14 ? '<span style="color: #ff4d4f; font-size: 12px;">(严重逾期)</span>' : ''}
+                    </td>
+                    <td>${device.device_type === '手机' ? '📱' : '🚗'} ${device.device_type}</td>
+                    <td>${device.borrower}</td>
+                    <td>${device.borrow_time}</td>
+                    <td style="color: #ff4d4f; font-weight: 500;">${device.expect_return_time}</td>
+                    <td>
+                        <span style="color: ${device.overdue_days > 7 ? '#ff4d4f' : '#faad14'}; font-weight: 600;">
+                            ${device.overdue_days} 天
+                        </span>
+                    </td>
+                    <td>${device.phone || '-'}</td>
+                    <td>
+                        <div class="table-actions">
+                            <button class="btn btn-sm btn-success" onclick="returnDevice('${device.id}')">归还</button>
+                            <button class="btn btn-sm btn-primary" onclick="remindUser('${device.id}')">提醒</button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // 归还设备
+        async function returnDevice(deviceId) {
+            if (!confirm('确认归还该设备吗？')) return;
+            
+            try {
+                const response = await fetch(`/api/devices/${deviceId}/return`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    showToast('归还成功', 'success');
+                    loadOverdue();
+                } else {
+                    showToast(result.message || '归还失败', 'error');
+                }
+            } catch (error) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        // 提醒用户
+        async function remindUser(deviceId) {
+            try {
+                const response = await fetch(`/api/devices/${deviceId}/remind`, {
+                    method: 'POST'
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    showToast('提醒已发送', 'success');
+                } else {
+                    showToast(result.message || '发送失败', 'error');
+                }
+            } catch (error) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        // 批量发送提醒
+        async function sendReminders() {
+            if (!confirm('确定要给所有逾期用户发送提醒吗？')) return;
+            
+            try {
+                const response = await fetch('/api/overdue/remind_all', {
+                    method: 'POST'
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    showToast(`已发送 ${result.count} 条提醒`, 'success');
+                } else {
+                    showToast(result.message || '发送失败', 'error');
+                }
+            } catch (error) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        // 导出逾期列表
+        async function exportOverdue() {
+            try {
+                const response = await fetch('/api/overdue/export');
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `逾期设备_${new Date().toISOString().split('T')[0]}.xlsx`;
+                    a.click();
+                    showToast('导出成功', 'success');
+                } else {
+                    showToast('导出失败', 'error');
+                }
+            } catch (error) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        // 刷新数据
+        function refreshOverdue() {
+            loadOverdue();
+            showToast('已刷新', 'success');
+        }
+
+        // 显示Toast
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type} show`;
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', loadOverdue);
+        
+        // 每30秒自动刷新
+        setInterval(loadOverdue, 30000);
+    </script>
+</body>
+</html>

@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+
+{% block title %}选择设备类型 - 设备管理系统{% endblock %}
+
+{% set show_nav = false %}
+
+{% block content %}
+<div class="auth-page">
+    <div class="auth-logo">
+        <div class="logo-icon">📱💻</div>
+        <h1>车载测试设备管理系统</h1>
+        <p>请选择您当前使用的设备类型</p>
+    </div>
+    
+    <div class="device-type-container">
+        <a href="{{ url_for('mobile_login') }}" class="device-type-card mobile-card">
+            <div class="device-icon">📱</div>
+            <h3>手机端</h3>
+            <p>适用于手机、平板等移动设备</p>
+            <div class="device-features">
+                <span class="feature-tag">扫码登录</span>
+                <span class="feature-tag">触屏优化</span>
+            </div>
+        </a>
+        
+        <a href="{{ url_for('pc_login') }}" class="device-type-card pc-card">
+            <div class="device-icon">💻</div>
+            <h3>电脑端</h3>
+            <p>适用于电脑、笔记本等桌面设备</p>
+            <div class="device-features">
+                <span class="feature-tag">大屏适配</span>
+                <span class="feature-tag">键盘操作</span>
+            </div>
+        </a>
+    </div>
+    
+    <div class="auth-footer">
+        <p>选择后将进入对应的登录页面</p>
+    </div>
+</div>
+
+<style>
+.auth-logo {
+    text-align: center;
+    width: 100%;
+    margin: 0 auto;
+}
+
+.auth-logo h1,
+.auth-logo p {
+    text-align: center;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.auth-footer {
+    text-align: center;
+    width: 100%;
+    margin-top: 20px;
+}
+
+.device-type-container {
+    display: flex;
+    gap: 30px;
+    justify-content: center;
+    flex-wrap: nowrap;
+    padding: 20px;
+    max-width: 600px;
+    margin: 0 auto 0 calc(50% - 300px);
+}
+
+.device-type-card {
+    flex: 0 0 280px;
+    width: 280px;
+    height: 280px;
+    background: white;
+    border-radius: 16px;
+    padding: 20px;
+    text-align: center;
+    text-decoration: none;
+    color: #333;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    transition: all 0.3s ease;
+    border: 2px solid transparent;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    box-sizing: border-box;
+}
+
+.device-type-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+}
+
+.mobile-card:hover {
+    border-color: #07c160;
+}
+
+.pc-card:hover {
+    border-color: #1890ff;
+}
+
+.device-icon {
+    font-size: 64px;
+    margin-bottom: 15px;
+}
+
+.device-type-card h3 {
+    font-size: 20px;
+    margin-bottom: 10px;
+    color: #333;
+}
+
+.device-type-card p {
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 15px;
+}
+
+.device-features {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.feature-tag {
+    background: #f0f0f0;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    color: #666;
+}
+
+.mobile-card:hover .feature-tag {
+    background: rgba(7, 193, 96, 0.1);
+    color: #07c160;
+}
+
+.pc-card:hover .feature-tag {
+    background: rgba(24, 144, 255, 0.1);
+    color: #1890ff;
+}
+
+@media (max-width: 640px) {
+    .device-type-container {
+        gap: 15px;
+        padding: 15px;
+        max-width: 100%;
+    }
+    
+    .device-type-card {
+        flex: 0 0 150px;
+        width: 150px;
+        height: 150px;
+        padding: 10px;
+    }
+    
+    .device-icon {
+        font-size: 36px;
+        margin-bottom: 6px;
+    }
+    
+    .device-type-card h3 {
+        font-size: 14px;
+        margin-bottom: 4px;
+    }
+    
+    .device-type-card p {
+        font-size: 10px;
+        margin-bottom: 6px;
+    }
+    
+    .device-features {
+        gap: 4px;
+    }
+    
+    .feature-tag {
+        font-size: 9px;
+        padding: 2px 5px;
+    }
+}
+</style>
+{% endblock %}

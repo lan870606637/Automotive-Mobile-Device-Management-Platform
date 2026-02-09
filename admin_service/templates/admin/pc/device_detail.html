@@ -1,0 +1,260 @@
+<!-- 
+  电脑端后台管理 - 新增/编辑设备页面
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ '编辑设备' if device else '新增设备' }} - 车载测试设备管理系统</title>
+    <link rel="stylesheet" href="/static/admin/admin_pc.css">
+</head>
+<body class="pc-admin-body">
+    <div class="pc-admin-wrapper">
+        <!-- 侧边栏 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <span class="logo">🔧</span>
+                <span class="logo-text">后台管理</span>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="/admin/pc/dashboard" class="nav-item">
+                    <span class="nav-icon">📊</span>
+                    <span>仪表盘</span>
+                </a>
+                <a href="/admin/pc/devices" class="nav-item active">
+                    <span class="nav-icon">📱</span>
+                    <span>设备管理</span>
+                </a>
+                <a href="/admin/pc/users" class="nav-item">
+                    <span class="nav-icon">👥</span>
+                    <span>用户管理</span>
+                </a>
+                <a href="/admin/pc/records" class="nav-item">
+                    <span class="nav-icon">📋</span>
+                    <span>记录查询</span>
+                </a>
+                <a href="/admin/pc/logs" class="nav-item">
+                    <span class="nav-icon">📜</span>
+                    <span>操作日志</span>
+                </a>
+                <a href="/admin/pc/overdue" class="nav-item">
+                    <span class="nav-icon">⚠️</span>
+                    <span>过期未还</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <span>👤 {{ admin_name }}</span>
+                <a href="/admin/logout" class="logout-btn">退出</a>
+            </div>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <header class="content-header">
+                <h1>{{ '编辑设备' if device else '新增设备' }}</h1>
+                <div class="header-actions">
+                    <a href="/admin/pc/devices" class="btn btn-secondary">← 返回列表</a>
+                </div>
+            </header>
+
+            <!-- 表单 -->
+            <div class="form-container">
+                <form id="deviceForm">
+                    <!-- 基本信息 -->
+                    <div class="form-section">
+                        <h3 class="form-section-title">基本信息</h3>
+                        <div class="form-row">
+                            <div class="form-field">
+                                <label>设备类型 <span class="required">*</span></label>
+                                <select id="deviceType" required>
+                                    <option value="手机" {{ 'selected' if device and device.device_type == '手机' else '' }}>📱 手机</option>
+                                    <option value="车机" {{ 'selected' if device and device.device_type == '车机' else '' }}>🚗 车机</option>
+                                </select>
+                            </div>
+                            <div class="form-field">
+                                <label>设备名称 <span class="required">*</span></label>
+                                <input type="text" id="deviceName" value="{{ device.device_name if device else '' }}" placeholder="请输入设备名称（唯一）" required>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-field">
+                                <label>型号</label>
+                                <input type="text" id="deviceModel" value="{{ device.model if device else '' }}" placeholder="如：iPhone 14 Pro Max">
+                            </div>
+                            <div class="form-field">
+                                <label>设备状态</label>
+                                <select id="deviceStatus">
+                                    <option value="在库" {{ 'selected' if device and device.status == '在库' else '' }}>在库</option>
+                                    <option value="已寄出" {{ 'selected' if device and device.status == '已寄出' else '' }}>已寄出</option>
+                                    <option value="维修中" {{ 'selected' if device and device.status == '维修中' else '' }}>维修中</option>
+                                    <option value="已损坏" {{ 'selected' if device and device.status == '已损坏' else '' }}>已损坏</option>
+                                    <option value="报废" {{ 'selected' if device and device.status == '报废' else '' }}>报废</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 存放信息 -->
+                    <div class="form-section">
+                        <h3 class="form-section-title">存放信息</h3>
+                        <div class="form-row">
+                            <div class="form-field">
+                                <label>柜号/保管人 <span class="required">*</span></label>
+                                <input type="text" id="deviceCabinet" value="{{ device.cabinet if device else '' }}" placeholder="如：A01 或 张三" required>
+                            </div>
+                            <div class="form-field">
+                                <label>当前借用人</label>
+                                <input type="text" id="deviceBorrower" value="{{ device.borrower if device else '' }}" placeholder="设备借出时自动填充">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 动态字段（手机特有） -->
+                    <div class="form-section" id="phoneFields" style="{{ '' if device and device.device_type == '手机' else 'display:none;' }}">
+                        <h3 class="form-section-title">手机特有信息</h3>
+                        <div class="form-row">
+                            <div class="form-field">
+                                <label>SN码</label>
+                                <input type="text" id="phoneSN" value="{{ device.sn if device else '' }}" placeholder="设备序列号">
+                            </div>
+                            <div class="form-field">
+                                <label>IMEI</label>
+                                <input type="text" id="phoneIMEI" value="{{ device.imei if device else '' }}" placeholder="IMEI号">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-field">
+                                <label>手机号码</label>
+                                <input type="text" id="phoneNumber" value="{{ device.phone_number if device else '' }}" placeholder="设备手机号">
+                            </div>
+                            <div class="form-field">
+                                <label>运营商</label>
+                                <select id="phoneCarrier">
+                                    <option value="" {{ 'selected' if device and not device.carrier else '' }}>无</option>
+                                    <option value="移动" {{ 'selected' if device and device.carrier == '移动' else '' }}>移动</option>
+                                    <option value="联通" {{ 'selected' if device and device.carrier == '联通' else '' }}>联通</option>
+                                    <option value="电信" {{ 'selected' if device and device.carrier == '电信' else '' }}>电信</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 动态字段（车机特有） -->
+                    <div class="form-section" id="carFields" style="{{ '' if device and device.device_type == '车机' else 'display:none;' }}">
+                        <h3 class="form-section-title">车机特有信息</h3>
+                        <div class="form-row">
+                            <div class="form-field">
+                                <label>软件版本</label>
+                                <input type="text" id="carVersion" value="{{ device.software_version if device else '' }}" placeholder="软件版本号">
+                            </div>
+                            <div class="form-field">
+                                <label>硬件版本</label>
+                                <input type="text" id="carHardware" value="{{ device.hardware_version if device else '' }}" placeholder="硬件版本号">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 备注 -->
+                    <div class="form-section">
+                        <h3 class="form-section-title">备注信息</h3>
+                        <div class="form-field">
+                            <label>设备备注</label>
+                            <textarea id="deviceRemarks" placeholder="可选：添加设备备注信息...">{{ device.remarks if device else '' }}</textarea>
+                        </div>
+                    </div>
+
+                    <!-- 操作按钮 -->
+                    <div class="form-actions">
+                        <a href="/admin/pc/devices" class="btn btn-secondary">取消</a>
+                        <button type="submit" class="btn btn-primary">💾 保存设备</button>
+                    </div>
+                </form>
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast提示 -->
+    <div id="toast" class="toast"></div>
+
+    <script>
+        // 设备类型切换
+        document.getElementById('deviceType').addEventListener('change', function() {
+            const phoneFields = document.getElementById('phoneFields');
+            const carFields = document.getElementById('carFields');
+            
+            if (this.value === '手机') {
+                phoneFields.style.display = 'block';
+                carFields.style.display = 'none';
+            } else {
+                phoneFields.style.display = 'none';
+                carFields.style.display = 'block';
+            }
+        });
+
+        // 表单提交
+        document.getElementById('deviceForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const deviceData = {
+                device_type: document.getElementById('deviceType').value,
+                device_name: document.getElementById('deviceName').value.trim(),
+                model: document.getElementById('deviceModel').value.trim(),
+                status: document.getElementById('deviceStatus').value,
+                cabinet: document.getElementById('deviceCabinet').value.trim(),
+                borrower: document.getElementById('deviceBorrower').value.trim(),
+                remarks: document.getElementById('deviceRemarks').value.trim()
+            };
+
+            // 手机特有字段
+            if (deviceData.device_type === '手机') {
+                deviceData.sn = document.getElementById('phoneSN').value.trim();
+                deviceData.imei = document.getElementById('phoneIMEI').value.trim();
+                deviceData.phone_number = document.getElementById('phoneNumber').value.trim();
+                deviceData.carrier = document.getElementById('phoneCarrier').value;
+            }
+
+            // 车机特有字段
+            if (deviceData.device_type === '车机') {
+                deviceData.software_version = document.getElementById('carVersion').value.trim();
+                deviceData.hardware_version = document.getElementById('carHardware').value.trim();
+            }
+
+            const isEdit = '{{ device.id if device else "" }}' !== '';
+            const url = isEdit ? `/api/devices/{{ device.id if device else "" }}` : '/api/devices';
+            const method = isEdit ? 'PUT' : 'POST';
+
+            try {
+                const response = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(deviceData)
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showToast(isEdit ? '设备更新成功' : '设备录入成功', 'success');
+                    setTimeout(() => {
+                        window.location.href = '/admin/pc/devices';
+                    }, 1000);
+                } else {
+                    showToast(result.message || '操作失败', 'error');
+                }
+            } catch (error) {
+                showToast('网络错误，请重试', 'error');
+            }
+        });
+
+        // 显示Toast
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type} show`;
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

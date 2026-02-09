@@ -1,0 +1,229 @@
+{% extends "pc/base_pc.html" %}
+
+{% block title %}{{ device.name }} - 设备详情{% endblock %}
+
+{% set active_nav = 'devices' %}
+
+{% block content %}
+<!-- 页面头部 -->
+<div class="detail-header">
+    <div class="detail-icon">
+        {% if device_type == '车机' %}🚗{% else %}📱{% endif %}
+    </div>
+    <div class="detail-title">
+        <h2>{{ device.name }}</h2>
+        <div class="detail-meta">
+            {% if is_circulating %}
+            <span class="status-tag status-circulating">流通设备</span>
+            {% else %}
+            <span class="status-tag status-no-cabinet">无柜号设备</span>
+            {% endif %}
+            <span>{{ device_type }}</span>
+        </div>
+    </div>
+</div>
+
+<!-- 设备详情 -->
+<div class="detail-grid">
+    <div class="detail-main">
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">📋 设备信息</span>
+            </div>
+            <div class="card-body">
+                <div class="info-row">
+                    <span class="info-label">设备类型</span>
+                    <span class="info-value">{{ device_type }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">型号</span>
+                    <span class="info-value">{{ device.model or '-' }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">柜号</span>
+                    <span class="info-value" style="color: {% if is_circulating %}#52c41a{% else %}#999{% endif %}; font-weight: 500;">
+                        {{ '流通' if is_circulating else '无' }}
+                    </span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">备注</span>
+                    <span class="info-value">{{ device.remark or '-' }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 状态提示 -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">ℹ️ 状态说明</span>
+            </div>
+            <div class="card-body">
+                <div style="background: {% if is_circulating %}#f6ffed{% else %}#f5f5f5{% endif %}; padding: 20px; border-radius: 8px; text-align: center;">
+                    <p style="font-size: 16px; font-weight: 500; color: {% if is_circulating %}#52c41a{% else %}#666{% endif %}; margin-bottom: 8px;">
+                        {% if is_circulating %}🔄 此设备为流通设备{% else %}⚠️ 此设备暂无柜号信息{% endif %}
+                    </p>
+                    <p style="color: #8c8c8c; font-size: 14px;">暂不支持借用操作</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 用户备注 -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">📝 用户备注</span>
+                <button class="btn btn-primary btn-sm" onclick="openAddRemarkModal()">+ 添加备注</button>
+            </div>
+            <div class="card-body">
+                {% if remarks %}
+                <div class="remarks-list">
+                    {% for remark in remarks %}
+                    <div class="remark-item">
+                        <div class="remark-content">{{ remark.content }}</div>
+                        <div class="remark-meta">
+                            <span class="remark-author">{{ remark.creator }}</span>
+                            <span>{{ remark.create_time }}</span>
+                            {% if remark.is_creator %}
+                            <div class="remark-actions">
+                                <a href="javascript:void(0)" onclick="openEditRemarkModal('{{ remark.id }}', '{{ remark.content|replace("'", "\\'") }}')">编辑</a>
+                                <a href="javascript:void(0)" class="delete" onclick="deleteRemark('{{ remark.id }}')">删除</a>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="empty-state" style="padding: 40px;">
+                    <p class="empty-title">暂无备注</p>
+                    <button class="btn btn-primary" onclick="openAddRemarkModal()">添加第一条备注</button>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- 查看记录 -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">👁️ 查看记录</span>
+            </div>
+            <div class="card-body">
+                {% if view_records %}
+                <div class="timeline">
+                    {% for vr in view_records %}
+                    <div class="timeline-item">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-header">
+                                <span class="timeline-device">{{ vr.viewer }}</span>
+                                <span class="timeline-time">{{ vr.view_time }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="empty-state" style="padding: 40px;">
+                    <p class="empty-title">暂无查看记录</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 弹窗：添加备注 -->
+<div class="modal-overlay" id="addRemarkModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">📝 添加备注</span>
+            <button class="modal-close" onclick="closeModal('addRemarkModal')">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label">备注内容</label>
+                <textarea id="remarkContent" class="form-textarea" rows="4" placeholder="请输入备注内容..."></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="closeModal('addRemarkModal')">取消</button>
+            <button class="btn btn-primary" onclick="submitAddRemark()">确认添加</button>
+        </div>
+    </div>
+</div>
+
+<!-- 弹窗：编辑备注 -->
+<div class="modal-overlay" id="editRemarkModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">✏️ 编辑备注</span>
+            <button class="modal-close" onclick="closeModal('editRemarkModal')">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label">备注内容</label>
+                <textarea id="editRemarkContent" class="form-textarea" rows="4"></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="closeModal('editRemarkModal')">取消</button>
+            <button class="btn btn-primary" onclick="submitEditRemark()">确认修改</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const deviceId = '{{ device.id }}';
+let currentRemarkId = '';
+
+function openModal(id) { document.getElementById(id).classList.add('active'); }
+function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
+function openAddRemarkModal() { openModal('addRemarkModal'); }
+
+function openEditRemarkModal(id, content) {
+    currentRemarkId = id;
+    document.getElementById('editRemarkContent').value = content;
+    openModal('editRemarkModal');
+}
+
+function submitAddRemark() {
+    const content = document.getElementById('remarkContent').value.trim();
+    if (!content) { showToast('备注内容不能为空'); return; }
+    fetch('/api/remark/add', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({device_id: deviceId, content: content})
+    }).then(r => r.json()).then(data => {
+        if (data.success) { showToast('备注已添加'); closeModal('addRemarkModal'); location.reload(); }
+        else { showToast(data.message || '添加失败'); }
+    }).catch(() => showToast('提交失败，请重试'));
+}
+
+function submitEditRemark() {
+    const content = document.getElementById('editRemarkContent').value.trim();
+    if (!content) { showToast('备注内容不能为空'); return; }
+    fetch('/api/remark/edit', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({remark_id: currentRemarkId, content: content})
+    }).then(r => r.json()).then(data => {
+        if (data.success) { showToast('备注已更新'); closeModal('editRemarkModal'); location.reload(); }
+        else { showToast(data.message || '更新失败'); }
+    }).catch(() => showToast('提交失败，请重试'));
+}
+
+function deleteRemark(id) {
+    if (!confirm('确定要删除这条备注吗？')) return;
+    fetch('/api/remark/delete', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({remark_id: id})
+    }).then(r => r.json()).then(data => {
+        if (data.success) { showToast('删除成功'); location.reload(); }
+        else { showToast(data.message || '删除失败'); }
+    }).catch(() => showToast('删除失败，请重试'));
+}
+</script>
+{% endblock %}

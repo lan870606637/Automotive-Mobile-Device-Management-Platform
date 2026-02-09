@@ -1,0 +1,282 @@
+{% extends "base.html" %}
+
+{% block title %}转借设备 - 设备管理系统{% endblock %}
+
+{% set active_nav = 'devices' %}
+
+{% block content %}
+<div class="borrow-page">
+    <!-- 页面头部 -->
+    <div class="page-header">
+        <a href="javascript:history.back()" class="back-btn">‹</a>
+        <h1>转借设备</h1>
+    </div>
+    
+    <!-- 设备信息 -->
+    <div class="device-info-card">
+        <div class="device-header">
+            <span class="device-icon-large">
+                {% if device_type == '车机' %}🚗{% else %}📱{% endif %}
+            </span>
+            <div class="device-title">
+                <h2>{{ device.name }}</h2>
+                <span class="status-badge status-borrowed">借出中</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 转借表单 -->
+    <div class="form-card">
+        <h3 class="form-title">选择转借人</h3>
+        
+        <form id="transferForm" onsubmit="return handleTransfer(event)">
+            <input type="hidden" id="device_id" value="{{ device.id }}">
+            
+            <div class="form-group">
+                <label for="transfer_to">转借给 <span class="required">*</span></label>
+                <div class="autocomplete-wrapper">
+                    <input type="text" id="transfer_to" name="transfer_to" class="form-control" 
+                           placeholder="输入姓名搜索..." autocomplete="off" required>
+                    <div id="user-suggestions" class="suggestions-list"></div>
+                </div>
+                <small class="form-text">输入姓名搜索系统内的用户</small>
+            </div>
+            
+            <div class="form-group">
+                <label for="transfer_time">转借时间</label>
+                <input type="text" id="transfer_time" class="form-control" readonly>
+            </div>
+            
+            <div class="form-group">
+                <label for="remark">备注</label>
+                <textarea id="remark" name="remark" class="form-control" rows="3" 
+                          placeholder="可选：添加转借备注"></textarea>
+            </div>
+            
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary btn-large btn-block">
+                    确认转借
+                </button>
+                <a href="javascript:history.back()" class="btn btn-default btn-block" style="margin-top: 10px;">
+                    取消
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+.autocomplete-wrapper {
+    position: relative;
+}
+
+.suggestions-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border: 1px solid #ddd;
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 1000;
+    display: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.suggestions-list.active {
+    display: block;
+}
+
+.suggestion-item {
+    padding: 12px 16px;
+    cursor: pointer;
+    border-bottom: 1px solid #f0f0f0;
+    transition: background 0.2s;
+}
+
+.suggestion-item:last-child {
+    border-bottom: none;
+}
+
+.suggestion-item:hover,
+.suggestion-item.selected {
+    background: #f5f7fa;
+}
+
+.suggestion-name {
+    font-weight: 500;
+    color: #333;
+}
+
+.suggestion-phone {
+    font-size: 12px;
+    color: #999;
+    margin-left: 8px;
+}
+
+.no-suggestions {
+    padding: 12px 16px;
+    color: #999;
+    text-align: center;
+}
+</style>
+
+<script>
+// 用户数据
+const users = [
+    {% for user in all_users %}
+    { name: {{ user.borrower_name | tojson }}, phone: {{ user.phone | tojson }} }{% if not loop.last %},{% endif %}
+    {% endfor %}
+];
+
+// 设置当前时间
+function setCurrentTime() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    
+    const timeStr = `${year}年${month}月${day}日 ${hours}:${minutes}`;
+    document.getElementById('transfer_time').value = timeStr;
+}
+
+// 搜索联想功能
+const transferInput = document.getElementById('transfer_to');
+const suggestionsList = document.getElementById('user-suggestions');
+let selectedIndex = -1;
+
+transferInput.addEventListener('input', function() {
+    const keyword = this.value.trim().toLowerCase();
+    selectedIndex = -1;
+    
+    if (keyword.length === 0) {
+        suggestionsList.classList.remove('active');
+        return;
+    }
+    
+    // 过滤匹配的用户
+    const matched = users.filter(u => 
+        u.name.toLowerCase().includes(keyword) || 
+        u.phone.includes(keyword)
+    );
+    
+    // 渲染建议列表
+    if (matched.length > 0) {
+        suggestionsList.innerHTML = matched.map((u, index) => `
+            <div class="suggestion-item" data-index="${index}" data-name="${u.name}">
+                <span class="suggestion-name">${u.name}</span>
+                <span class="suggestion-phone">${u.phone}</span>
+            </div>
+        `).join('');
+        
+        // 添加点击事件
+        suggestionsList.querySelectorAll('.suggestion-item').forEach(item => {
+            item.addEventListener('click', function() {
+                transferInput.value = this.dataset.name;
+                suggestionsList.classList.remove('active');
+            });
+        });
+        
+        suggestionsList.classList.add('active');
+    } else {
+        suggestionsList.innerHTML = '<div class="no-suggestions">无匹配用户</div>';
+        suggestionsList.classList.add('active');
+    }
+});
+
+// 键盘导航
+transferInput.addEventListener('keydown', function(e) {
+    const items = suggestionsList.querySelectorAll('.suggestion-item');
+    
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+        updateSelection(items);
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        selectedIndex = Math.max(selectedIndex - 1, -1);
+        updateSelection(items);
+    } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (selectedIndex >= 0 && items[selectedIndex]) {
+            transferInput.value = items[selectedIndex].dataset.name;
+            suggestionsList.classList.remove('active');
+        }
+    } else if (e.key === 'Escape') {
+        suggestionsList.classList.remove('active');
+    }
+});
+
+function updateSelection(items) {
+    items.forEach((item, index) => {
+        if (index === selectedIndex) {
+            item.classList.add('selected');
+            item.scrollIntoView({ block: 'nearest' });
+        } else {
+            item.classList.remove('selected');
+        }
+    });
+}
+
+// 点击外部关闭建议列表
+document.addEventListener('click', function(e) {
+    if (!e.target.closest('.autocomplete-wrapper')) {
+        suggestionsList.classList.remove('active');
+    }
+});
+
+// 页面加载时设置时间
+setCurrentTime();
+
+function handleTransfer(event) {
+    event.preventDefault();
+    
+    const deviceId = document.getElementById('device_id').value;
+    const transferTo = document.getElementById('transfer_to').value.trim();
+    const remark = document.getElementById('remark').value.trim();
+    
+    if (!transferTo) {
+        showToast('请输入转借人');
+        return false;
+    }
+    
+    // 验证用户是否存在
+    const userExists = users.some(u => u.name === transferTo);
+    if (!userExists) {
+        showToast('该用户不存在，请从列表中选择');
+        return false;
+    }
+    
+    showToast('正在处理...');
+    
+    fetch('/api/transfer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            device_id: deviceId,
+            transfer_to: transferTo,
+            remark: remark
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast('转借成功');
+            setTimeout(() => {
+                window.location.href = '/home';
+            }, 1000);
+        } else {
+            showToast(data.message || '转借失败');
+        }
+    })
+    .catch(() => showToast('转借失败，请重试'));
+    
+    return false;
+}
+</script>
+{% endblock %}

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}车载测试设备管理系统{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='pc/pc_style.css') }}">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <div class="pc-layout">
+        <!-- 侧边栏 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <span class="logo">🚗</span>
+                <span class="logo-text">设备管理</span>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="{{ url_for('pc_dashboard') }}" class="nav-item {% if active_nav == 'dashboard' %}active{% endif %}">
+                    <span class="nav-icon">📊</span>
+                    <span class="nav-text">仪表盘</span>
+                </a>
+                <a href="{{ url_for('pc_device_list') }}" class="nav-item {% if active_nav == 'devices' %}active{% endif %}">
+                    <span class="nav-icon">📱</span>
+                    <span class="nav-text">设备列表</span>
+                </a>
+                <a href="{{ url_for('pc_records') }}" class="nav-item {% if active_nav == 'my_records' %}active{% endif %}">
+                    <span class="nav-icon">📋</span>
+                    <span class="nav-text">我的借用记录</span>
+                </a>
+                <a href="{{ url_for('pc_all_records') }}" class="nav-item {% if active_nav == 'all_records' %}active{% endif %}">
+                    <span class="nav-icon">🌍</span>
+                    <span class="nav-text">全部借用记录</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="user-info-mini">
+                    <span class="user-avatar-mini">{{ user.borrower_name[0] if user.borrower_name else '?' }}</span>
+                    <span class="user-name">{{ user.borrower_name or '未设置' }}</span>
+                </div>
+                <a href="{{ url_for('logout') }}" class="logout-link">退出登录</a>
+            </div>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <!-- Toast提示 -->
+    <div id="toast" class="pc-toast"></div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

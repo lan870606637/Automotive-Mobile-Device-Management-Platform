@@ -1,0 +1,480 @@
+<!-- 
+  电脑端后台管理 - 设备管理页面
+  功能：列表展示、筛选、新增、编辑、删除、借还操作
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>设备管理 - 车载测试设备管理系统</title>
+    <link rel="stylesheet" href="/static/admin/admin_pc.css">
+</head>
+<body class="pc-admin-body">
+    <div class="pc-admin-wrapper">
+        <!-- 侧边栏 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <span class="logo">🔧</span>
+                <span class="logo-text">后台管理</span>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="/admin/pc/dashboard" class="nav-item">
+                    <span class="nav-icon">📊</span>
+                    <span>仪表盘</span>
+                </a>
+                <a href="/admin/pc/devices" class="nav-item active">
+                    <span class="nav-icon">📱</span>
+                    <span>设备管理</span>
+                </a>
+                <a href="/admin/pc/users" class="nav-item">
+                    <span class="nav-icon">👥</span>
+                    <span>用户管理</span>
+                </a>
+                <a href="/admin/pc/records" class="nav-item">
+                    <span class="nav-icon">📋</span>
+                    <span>记录查询</span>
+                </a>
+                <a href="/admin/pc/logs" class="nav-item">
+                    <span class="nav-icon">📜</span>
+                    <span>操作日志</span>
+                </a>
+                <a href="/admin/pc/overdue" class="nav-item">
+                    <span class="nav-icon">⚠️</span>
+                    <span>过期未还</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <span>👤 {{ admin_name }}</span>
+                <a href="/admin/logout" class="logout-btn">退出</a>
+            </div>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <header class="content-header">
+                <h1>设备管理</h1>
+                <div class="header-actions">
+                    <a href="/admin/pc/device/add" class="btn btn-primary">➕ 新增设备</a>
+                </div>
+            </header>
+
+            <!-- 筛选栏 -->
+            <div class="filter-bar">
+                <div class="filter-group">
+                    <input type="text" id="searchInput" class="search-input" placeholder="搜索设备名 / 借用人 / 柜号">
+                </div>
+                <div class="filter-group">
+                    <label>类型</label>
+                    <select id="filterType">
+                        <option value="">全部</option>
+                        <option value="手机">手机</option>
+                        <option value="车机">车机</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>状态</label>
+                    <select id="filterStatus">
+                        <option value="">全部</option>
+                        <option value="在库">在库</option>
+                        <option value="借出">借出</option>
+                        <option value="已寄出">已寄出</option>
+                        <option value="维修中">维修中</option>
+                        <option value="已损坏">已损坏</option>
+                        <option value="报废">报废</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>柜号</label>
+                    <select id="filterCabinet">
+                        <option value="">全部</option>
+                        {% for cabinet in cabinets %}
+                        <option value="{{ cabinet }}">{{ cabinet }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button class="btn btn-secondary" onclick="resetFilters()">重置</button>
+            </div>
+
+            <!-- 设备列表 -->
+            <div class="data-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>设备名称</th>
+                            <th>类型</th>
+                            <th>型号</th>
+                            <th>状态</th>
+                            <th>借用人</th>
+                            <th>柜号</th>
+                            <th>预计归还</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="deviceTableBody">
+                        {% for device in devices %}
+                        <tr>
+                            <td>
+                                <strong>{{ device.device_name }}</strong>
+                                {% if device.is_overdue %}
+                                <span style="color: #ff4d4f; font-size: 12px;">(逾期)</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ '📱' if device.device_type == '手机' else '🚗' }} {{ device.device_type }}</td>
+                            <td>{{ device.model or '-' }}</td>
+                            <td><span class="status-tag status-{{ device.status }}">{{ device.status }}</span></td>
+                            <td>{{ device.borrower or '-' }}</td>
+                            <td>{{ device.cabinet or '-' }}</td>
+                            <td style="color: {{ '#ff4d4f' if device.is_overdue else '#666' }}">{{ device.expect_return_time or '-' }}</td>
+                            <td>
+                                <div class="table-actions">
+                                    <a href="/admin/pc/device/{{ device.id }}" class="btn btn-sm btn-secondary">编辑</a>
+                                    {% if device.status == '在库' %}
+                                    <button class="btn btn-sm btn-primary" onclick="showBorrowModal('{{ device.id }}')">借出</button>
+                                    {% elif device.status == '借出' %}
+                                    <button class="btn btn-sm btn-success" onclick="showReturnModal('{{ device.id }}')">归还</button>
+                                    <button class="btn btn-sm btn-warning" onclick="showTransferModal('{{ device.id }}')">转借</button>
+                                    {% endif %}
+                                    <button class="btn btn-sm btn-danger" onclick="deleteDevice('{{ device.id }}')">删除</button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- 分页 -->
+            <div class="pagination" id="pagination">
+                <!-- 动态生成分页 -->
+            </div>
+        </main>
+    </div>
+
+    <!-- 借出设备弹窗 -->
+    <div id="borrowModal" class="modal">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3>📤 录入登记（借出设备）</h3>
+                <button class="modal-close" onclick="closeModal('borrowModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-field">
+                    <label>选择借用人 <span class="required">*</span></label>
+                    <select id="borrowUser">
+                        <option value="">请选择借用人</option>
+                        {% for user in users %}
+                        <option value="{{ user.name }}">{{ user.name }} {{ '(' + user.weixin_name + ')' if user.weixin_name else '' }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-row">
+                    <div class="form-field">
+                        <label>借出天数 <span class="required">*</span></label>
+                        <input type="number" id="borrowDays" value="7" min="1" max="365">
+                    </div>
+                    <div class="form-field">
+                        <label>柜号/保管人</label>
+                        <input type="text" id="borrowCabinet" value="流通">
+                    </div>
+                </div>
+                <div class="form-field">
+                    <label>借出备注</label>
+                    <textarea id="borrowRemarks" placeholder="可选：填写借出备注..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('borrowModal')">取消</button>
+                <button class="btn btn-primary" onclick="confirmBorrow()">确认借出</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 归还设备弹窗 -->
+    <div id="returnModal" class="modal">
+        <div class="modal-dialog" style="max-width: 400px;">
+            <div class="modal-header">
+                <h3>📥 强制归还设备</h3>
+                <button class="modal-close" onclick="closeModal('returnModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>确认强制归还该设备吗？</p>
+                <p style="color: #666; font-size: 14px; margin-top: 12px;">设备将回到在库状态，并记录操作日志。</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('returnModal')">取消</button>
+                <button class="btn btn-success" onclick="confirmReturn()">确认归还</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 转借设备弹窗 -->
+    <div id="transferModal" class="modal">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3>🔄 转借设备</h3>
+                <button class="modal-close" onclick="closeModal('transferModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-field">
+                    <label>新借用人 <span class="required">*</span></label>
+                    <select id="transferUser">
+                        <option value="">请选择借用人</option>
+                        {% for user in users %}
+                        <option value="{{ user.name }}">{{ user.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-field">
+                    <label>转借备注</label>
+                    <textarea id="transferRemarks" placeholder="可选：填写转借备注..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('transferModal')">取消</button>
+                <button class="btn btn-primary" onclick="confirmTransfer()">确认转借</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast提示 -->
+    <div id="toast" class="toast"></div>
+
+    <script>
+        let currentDeviceId = null;
+        let devices = [];
+
+        // 加载设备列表
+        async function loadDevices() {
+            try {
+                const response = await fetch('/api/devices');
+                devices = await response.json();
+                renderDevices(devices);
+            } catch (error) {
+                showToast('加载设备列表失败', 'error');
+            }
+        }
+
+        // 渲染设备列表
+        function renderDevices(deviceList) {
+            const tbody = document.getElementById('deviceTableBody');
+            
+            if (deviceList.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="empty-cell">暂无设备</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = deviceList.map(device => `
+                <tr>
+                    <td>
+                        <strong>${device.device_name}</strong>
+                        ${device.is_overdue ? '<span style="color: #ff4d4f; font-size: 12px;">(逾期)</span>' : ''}
+                    </td>
+                    <td>${device.device_type === '手机' ? '📱' : '🚗'} ${device.device_type}</td>
+                    <td>${device.model || '-'}</td>
+                    <td><span class="status-tag status-${device.status}">${device.status}</span></td>
+                    <td>${device.borrower || '-'}</td>
+                    <td>${device.cabinet || '-'}</td>
+                    <td style="color: ${device.is_overdue ? '#ff4d4f' : '#666'}">${device.expect_return_time || '-'}</td>
+                    <td>
+                        <div class="table-actions">
+                            <a href="/admin/pc/device/${device.id}" class="btn btn-sm btn-secondary">编辑</a>
+                            ${getActionButtons(device)}
+                            <button class="btn btn-sm btn-danger" onclick="deleteDevice('${device.id}')">删除</button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // 获取操作按钮
+        function getActionButtons(device) {
+            if (device.status === '在库') {
+                return `<button class="btn btn-sm btn-primary" onclick="showBorrowModal('${device.id}')">借出</button>`;
+            } else if (device.status === '借出') {
+                return `
+                    <button class="btn btn-sm btn-success" onclick="showReturnModal('${device.id}')">归还</button>
+                    <button class="btn btn-sm btn-warning" onclick="showTransferModal('${device.id}')">转借</button>
+                `;
+            }
+            return '';
+        }
+
+        // 筛选功能
+        document.getElementById('searchInput')?.addEventListener('input', filterDevices);
+        document.getElementById('filterType')?.addEventListener('change', filterDevices);
+        document.getElementById('filterStatus')?.addEventListener('change', filterDevices);
+        document.getElementById('filterCabinet')?.addEventListener('change', filterDevices);
+
+        function filterDevices() {
+            const keyword = document.getElementById('searchInput')?.value?.toLowerCase() || '';
+            const type = document.getElementById('filterType')?.value || '';
+            const status = document.getElementById('filterStatus')?.value || '';
+            const cabinet = document.getElementById('filterCabinet')?.value || '';
+
+            let filtered = devices;
+
+            if (keyword) {
+                filtered = filtered.filter(d => 
+                    (d.device_name && d.device_name.toLowerCase().includes(keyword)) ||
+                    (d.borrower && d.borrower.toLowerCase().includes(keyword)) ||
+                    (d.cabinet && d.cabinet.toLowerCase().includes(keyword))
+                );
+            }
+            if (type) filtered = filtered.filter(d => d.device_type === type);
+            if (status) filtered = filtered.filter(d => d.status === status);
+            if (cabinet) filtered = filtered.filter(d => d.cabinet === cabinet);
+
+            renderDevices(filtered);
+        }
+
+        function resetFilters() {
+            document.getElementById('searchInput').value = '';
+            document.getElementById('filterType').value = '';
+            document.getElementById('filterStatus').value = '';
+            document.getElementById('filterCabinet').value = '';
+            renderDevices(devices);
+        }
+
+        // 显示借出弹窗
+        function showBorrowModal(deviceId) {
+            currentDeviceId = deviceId;
+            document.getElementById('borrowModal').classList.add('show');
+        }
+
+        // 确认借出
+        async function confirmBorrow() {
+            const user = document.getElementById('borrowUser').value;
+            const days = document.getElementById('borrowDays').value;
+            const cabinet = document.getElementById('borrowCabinet').value;
+            const remarks = document.getElementById('borrowRemarks').value;
+
+            if (!user) {
+                showToast('请选择借用人', 'warning');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/devices/${currentDeviceId}/borrow`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user, days: parseInt(days), cabinet, remarks })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    showToast('借出成功', 'success');
+                    closeModal('borrowModal');
+                    loadDevices();
+                } else {
+                    showToast(result.message || '借出失败', 'error');
+                }
+            } catch (error) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        // 显示归还弹窗
+        function showReturnModal(deviceId) {
+            currentDeviceId = deviceId;
+            document.getElementById('returnModal').classList.add('show');
+        }
+
+        // 确认归还
+        async function confirmReturn() {
+            try {
+                const response = await fetch(`/api/devices/${currentDeviceId}/return`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    showToast('归还成功', 'success');
+                    closeModal('returnModal');
+                    loadDevices();
+                } else {
+                    showToast(result.message || '归还失败', 'error');
+                }
+            } catch (error) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        // 显示转借弹窗
+        function showTransferModal(deviceId) {
+            currentDeviceId = deviceId;
+            document.getElementById('transferModal').classList.add('show');
+        }
+
+        // 确认转借
+        async function confirmTransfer() {
+            const user = document.getElementById('transferUser').value;
+            const remarks = document.getElementById('transferRemarks').value;
+
+            if (!user) {
+                showToast('请选择新借用人', 'warning');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/devices/${currentDeviceId}/transfer`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user, remarks })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    showToast('转借成功', 'success');
+                    closeModal('transferModal');
+                    loadDevices();
+                } else {
+                    showToast(result.message || '转借失败', 'error');
+                }
+            } catch (error) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        // 删除设备
+        async function deleteDevice(deviceId) {
+            if (!confirm('确定要删除该设备吗？此操作不可恢复。')) return;
+
+            try {
+                const response = await fetch(`/api/devices/${deviceId}`, {
+                    method: 'DELETE'
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    showToast('删除成功', 'success');
+                    loadDevices();
+                } else {
+                    showToast(result.message || '删除失败', 'error');
+                }
+            } catch (error) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        // 关闭弹窗
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('show');
+        }
+
+        // 显示Toast
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type} show`;
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', loadDevices);
+    </script>
+</body>
+</html>

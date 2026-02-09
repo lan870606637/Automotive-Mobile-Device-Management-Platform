@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}我的借用记录 - 设备管理系统{% endblock %}
+
+{% set active_nav = 'records' %}
+
+{% block content %}
+<div class="records-page">
+    <!-- 页面头部 -->
+    <div class="page-header">
+        <a href="{{ url_for('home') }}" class="back-btn">‹</a>
+        <h1>我的借用记录</h1>
+    </div>
+    
+    <!-- 统计卡片 -->
+    <div class="stats-card">
+        <div class="stat-item">
+            <span class="stat-number">{{ total_records }}</span>
+            <span class="stat-label">总记录</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-number">{{ page }}</span>
+            <span class="stat-label">当前页</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-number">{{ total_pages }}</span>
+            <span class="stat-label">总页数</span>
+        </div>
+    </div>
+    
+    <!-- 记录列表 -->
+    <div class="records-list">
+        {% if records %}
+        <div class="timeline">
+            {% for record in records %}
+            <div class="timeline-item">
+                {% set op_type = record.operation_type.value if record.operation_type is not string else record.operation_type %}
+                <div class="timeline-dot {% if '借出' in op_type %}dot-borrow{% else %}dot-return{% endif %}"></div>
+                <div class="timeline-content">
+                    <div class="record-header">
+                        <span class="record-device">{{ record.device_name }}</span>
+                        <span class="record-type-badge {% if '借出' in op_type %}badge-borrow{% else %}badge-return{% endif %}">
+                            {{ op_type }}
+                        </span>
+                    </div>
+                    <div class="record-info">
+                        <span class="info-tag">{{ record.device_type }}</span>
+                        <span class="info-tag">{{ record.borrower }}{% if is_admin_user(record.borrower) %}<span style="color: #ff4d4f; font-weight: bold; margin-left: 2px;">管</span>{% endif %}</span>
+                    </div>
+                    {% if record.reason and record.reason != 'nan' %}
+                    <div class="record-reason">
+                        <span>💬 {{ record.reason }}</span>
+                    </div>
+                    {% endif %}
+                    {% if record.remark and record.remark != 'nan' %}
+                    <div class="record-remark">
+                        <span>📝 {{ record.remark }}</span>
+                    </div>
+                    {% endif %}
+                    <div class="record-time">
+                        {{ record.operation_time }}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <!-- 分页器 -->
+        {% if total_pages > 1 %}
+        <div class="pagination" style="display: flex; justify-content: center; align-items: center; gap: 8px; margin-top: 20px; padding: 16px 0;">
+            {% if page > 1 %}
+            <a href="{{ url_for('my_records', page=page-1) }}" class="btn btn-default btn-small" style="padding: 8px 16px;">上一页</a>
+            {% else %}
+            <button class="btn btn-default btn-small" style="padding: 8px 16px; opacity: 0.5;" disabled>上一页</button>
+            {% endif %}
+            
+            <span style="font-size: 14px; color: #666;">{{ page }} / {{ total_pages }}</span>
+            
+            {% if page < total_pages %}
+            <a href="{{ url_for('my_records', page=page+1) }}" class="btn btn-primary btn-small" style="padding: 8px 16px;">下一页</a>
+            {% else %}
+            <button class="btn btn-primary btn-small" style="padding: 8px 16px; opacity: 0.5;" disabled>下一页</button>
+            {% endif %}
+        </div>
+        {% endif %}
+        
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">📋</div>
+            <p>暂无借用记录</p>
+            <a href="{{ url_for('device_list') }}" class="btn btn-primary btn-small">去借设备</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
