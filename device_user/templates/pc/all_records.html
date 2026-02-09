@@ -1,11 +1,11 @@
 {% extends "pc/base_pc.html" %}
 
-{% block title %}我的借用记录 - 设备管理系统{% endblock %}
+{% block title %}全部借用记录 - 设备管理系统{% endblock %}
 
-{% set active_nav = 'my_records' %}
+{% set active_nav = 'all_records' %}
 
 {% block content %}
-<h1 class="page-title">📋 我的借用记录</h1>
+<h1 class="page-title">🌍 全部借用记录</h1>
 
 <!-- 统计卡片 -->
 <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr);">
@@ -35,7 +35,7 @@
 <!-- 记录列表 -->
 <div class="card">
     <div class="card-header">
-        <span class="card-title">📋 记录明细</span>
+        <span class="card-title">📋 所有人的操作记录</span>
     </div>
     <div class="card-body">
         {% if records %}
@@ -47,6 +47,7 @@
                     <th>类型</th>
                     <th>操作</th>
                     <th>借用人</th>
+                    <th>操作人</th>
                     <th>原因/备注</th>
                 </tr>
             </thead>
@@ -70,6 +71,7 @@
                         </span>
                     </td>
                     <td>{{ record.borrower }}{% if is_admin_user(record.borrower) %}<span class="status-tag status-lost" style="margin-left: 4px; font-size: 10px; padding: 1px 4px;">管</span>{% endif %}</td>
+                    <td>{{ record.operator }}{% if is_admin_user(record.operator) %}<span class="status-tag status-lost" style="margin-left: 4px; font-size: 10px; padding: 1px 4px;">管</span>{% endif %}</td>
                     <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #595959;">
                         {% if record.reason and record.reason != 'nan' %}
                         {{ record.reason }}
@@ -86,7 +88,7 @@
         {% if total_pages > 1 %}
         <div class="pagination" style="display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 24px; padding-top: 16px; border-top: 1px solid #f0f0f0;">
             {% if page > 1 %}
-            <a href="{{ url_for('pc_my_records', page=page-1) }}" class="btn btn-default">‹ 上一页</a>
+            <a href="{{ url_for('pc_all_records', page=page-1) }}" class="btn btn-default">‹ 上一页</a>
             {% else %}
             <button class="btn btn-default" disabled style="opacity: 0.5; cursor: not-allowed;">‹ 上一页</button>
             {% endif %}
@@ -96,7 +98,7 @@
                     {% if p == page %}
                     <span class="btn btn-primary" style="min-width: 36px; padding: 6px 12px; cursor: default;">{{ p }}</span>
                     {% elif p <= 3 or p > total_pages - 3 or (p >= page - 1 and p <= page + 1) %}
-                    <a href="{{ url_for('pc_my_records', page=p) }}" class="btn btn-default" style="min-width: 36px; padding: 6px 12px;">{{ p }}</a>
+                    <a href="{{ url_for('pc_all_records', page=p) }}" class="btn btn-default" style="min-width: 36px; padding: 6px 12px;">{{ p }}</a>
                     {% elif p == 4 and page > 5 %}
                     <span style="color: #999;">...</span>
                     {% elif p == total_pages - 3 and page < total_pages - 4 %}
@@ -106,7 +108,7 @@
             </div>
             
             {% if page < total_pages %}
-            <a href="{{ url_for('pc_my_records', page=page+1) }}" class="btn btn-primary">下一页 ›</a>
+            <a href="{{ url_for('pc_all_records', page=page+1) }}" class="btn btn-primary">下一页 ›</a>
             {% else %}
             <button class="btn btn-primary" disabled style="opacity: 0.5; cursor: not-allowed;">下一页 ›</button>
             {% endif %}
@@ -119,8 +121,7 @@
         {% else %}
         <div class="empty-state">
             <div class="empty-icon">📋</div>
-            <p class="empty-title">暂无借用记录</p>
-            <a href="{{ url_for('pc_device_list') }}" class="btn btn-primary">去借设备</a>
+            <p class="empty-title">暂无记录</p>
         </div>
         {% endif %}
     </div>

@@ -1,0 +1,441 @@
+<!-- 
+  电脑端后台管理 - 用户管理页面
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>用户管理 - 车载测试设备管理系统</title>
+    <link rel="stylesheet" href="/static/admin/admin_pc.css">
+</head>
+<body class="pc-admin-body">
+    <div class="pc-admin-wrapper">
+        <!-- 侧边栏 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <span class="logo">🔧</span>
+                <span class="logo-text">后台管理</span>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="/admin/pc/dashboard" class="nav-item">
+                    <span class="nav-icon">📊</span>
+                    <span>仪表盘</span>
+                </a>
+                <a href="/admin/pc/devices" class="nav-item">
+                    <span class="nav-icon">📱</span>
+                    <span>设备管理</span>
+                </a>
+                <a href="/admin/pc/users" class="nav-item active">
+                    <span class="nav-icon">👥</span>
+                    <span>用户管理</span>
+                </a>
+                <a href="/admin/pc/records" class="nav-item">
+                    <span class="nav-icon">📋</span>
+                    <span>记录查询</span>
+                </a>
+                <a href="/admin/pc/logs" class="nav-item">
+                    <span class="nav-icon">📜</span>
+                    <span>操作日志</span>
+                </a>
+                <a href="/admin/pc/overdue" class="nav-item">
+                    <span class="nav-icon">⚠️</span>
+                    <span>过期未还</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <span>👤 {{ admin_name }}</span>
+                <a href="/admin/logout" class="logout-btn">退出</a>
+            </div>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <header class="content-header">
+                <h1>用户管理</h1>
+                <div class="header-actions">
+                    <button class="btn btn-primary" onclick="showAddUserModal()">➕ 新增用户</button>
+                </div>
+            </header>
+
+            <!-- 筛选栏 -->
+            <div class="filter-bar">
+                <div class="filter-group">
+                    <input type="text" id="searchInput" class="search-input" placeholder="搜索姓名 / 微信名 / 手机号">
+                </div>
+                <div class="filter-group">
+                    <label>状态</label>
+                    <select id="filterStatus">
+                        <option value="">全部</option>
+                        <option value="正常">正常</option>
+                        <option value="已冻结">已冻结</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>角色</label>
+                    <select id="filterRole">
+                        <option value="">全部</option>
+                        <option value="管理员">管理员</option>
+                        <option value="普通用户">普通用户</option>
+                    </select>
+                </div>
+                <button class="btn btn-secondary" onclick="resetFilters()">重置</button>
+            </div>
+
+            <!-- 用户列表 -->
+            <div class="data-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>借用人</th>
+                            <th>微信名</th>
+                            <th>手机号</th>
+                            <th>借用次数</th>
+                            <th>角色</th>
+                            <th>状态</th>
+                            <th>注册时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="userTableBody">
+                        {% for user in users %}
+                        <tr>
+                            <td>
+                                <div style="display:flex;align-items:center;gap:12px;">
+                                    <div class="user-avatar-small">{{ user.name[0] if user.name else '?' }}</div>
+                                    <strong>{{ user.name }}</strong>
+                                </div>
+                            </td>
+                            <td>{{ user.weixin_name or '-' }}</td>
+                            <td>{{ user.phone or '-' }}</td>
+                            <td>{{ user.borrow_count }}</td>
+                            <td>
+                                {% if user.is_admin %}
+                                <span class="role-badge admin">管理员</span>
+                                {% else %}
+                                <span class="role-badge user">普通用户</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if user.is_frozen %}
+                                <span class="role-badge frozen">已冻结</span>
+                                {% else %}
+                                <span style="color: #52c41a;">正常</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ user.register_time }}</td>
+                            <td>
+                                <div class="table-actions">
+                                    <button class="btn btn-sm btn-secondary" onclick="editUser('{{ user.id }}')">编辑</button>
+                                    {% if user.is_frozen %}
+                                    <button class="btn btn-sm btn-success" onclick="unfreezeUser('{{ user.id }}')">解冻</button>
+                                    {% else %}
+                                    <button class="btn btn-sm btn-warning" onclick="freezeUser('{{ user.id }}')">冻结</button>
+                                    {% endif %}
+                                    {% if user.is_admin %}
+                                    <button class="btn btn-sm btn-danger" onclick="removeAdmin('{{ user.id }}')">取消管理</button>
+                                    {% else %}
+                                    <button class="btn btn-sm btn-primary" onclick="setAdmin('{{ user.id }}')">设管理</button>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+
+    <!-- 新增/编辑用户弹窗 -->
+    <div id="userModal" class="modal">
+        <div class="modal-dialog" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3 id="modalTitle">新增用户</h3>
+                <button class="modal-close" onclick="closeModal('userModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="userId">
+                <div class="form-field">
+                    <label>借用人姓名 <span class="required">*</span></label>
+                    <input type="text" id="userName" placeholder="请输入借用人姓名" required>
+                </div>
+                <div class="form-field">
+                    <label>微信名</label>
+                    <input type="text" id="userWeixin" placeholder="请输入微信名">
+                </div>
+                <div class="form-field">
+                    <label>手机号</label>
+                    <input type="text" id="userPhone" placeholder="请输入手机号">
+                </div>
+                <div class="form-field">
+                    <label>密码 {{ '<span class="required">*</span>' if not user else '' }}</label>
+                    <input type="password" id="userPassword" placeholder="{{ '留空则不修改' if user else '请输入密码' }}">
+                </div>
+                <div class="form-row" style="margin-top: 16px;">
+                    <div class="form-field">
+                        <label>
+                            <input type="checkbox" id="userIsAdmin"> 设为管理员
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('userModal')">取消</button>
+                <button class="btn btn-primary" onclick="saveUser()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast提示 -->
+    <div id="toast" class="toast"></div>
+
+    <script>
+        let users = [];
+
+        // 加载用户列表
+        async function loadUsers() {
+            try {
+                const response = await fetch('/api/admin/users');
+                users = await response.json();
+                renderUsers(users);
+            } catch (error) {
+                showToast('加载用户列表失败', 'error');
+            }
+        }
+
+        // 渲染用户列表
+        function renderUsers(userList) {
+            const tbody = document.getElementById('userTableBody');
+            
+            if (userList.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="empty-cell">暂无用户</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = userList.map(user => `
+                <tr>
+                    <td>
+                        <div style="display:flex;align-items:center;gap:12px;">
+                            <div class="user-avatar-small">${user.name ? user.name[0] : '?'}</div>
+                            <strong>${user.name}</strong>
+                        </div>
+                    </td>
+                    <td>${user.weixin_name || '-'}</td>
+                    <td>${user.phone || '-'}</td>
+                    <td>${user.borrow_count}</td>
+                    <td>${user.is_admin ? '<span class="role-badge admin">管理员</span>' : '<span class="role-badge user">普通用户</span>'}</td>
+                    <td>${user.is_frozen ? '<span class="role-badge frozen">已冻结</span>' : '<span style="color: #52c41a;">正常</span>'}</td>
+                    <td>${user.register_time}</td>
+                    <td>
+                        <div class="table-actions">
+                            <button class="btn btn-sm btn-secondary" onclick="editUser('${user.id}')">编辑</button>
+                            ${user.is_frozen 
+                                ? `<button class="btn btn-sm btn-success" onclick="unfreezeUser('${user.id}')">解冻</button>`
+                                : `<button class="btn btn-sm btn-warning" onclick="freezeUser('${user.id}')">冻结</button>`
+                            }
+                            ${user.is_admin
+                                ? `<button class="btn btn-sm btn-danger" onclick="removeAdmin('${user.id}')">取消管理</button>`
+                                : `<button class="btn btn-sm btn-primary" onclick="setAdmin('${user.id}')">设管理</button>`
+                            }
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // 显示新增用户弹窗
+        function showAddUserModal() {
+            document.getElementById('modalTitle').textContent = '新增用户';
+            document.getElementById('userId').value = '';
+            document.getElementById('userName').value = '';
+            document.getElementById('userWeixin').value = '';
+            document.getElementById('userPhone').value = '';
+            document.getElementById('userPassword').value = '';
+            document.getElementById('userIsAdmin').checked = false;
+            document.getElementById('userModal').classList.add('show');
+        }
+
+        // 编辑用户
+        function editUser(userId) {
+            const user = users.find(u => u.id === userId);
+            if (!user) return;
+
+            document.getElementById('modalTitle').textContent = '编辑用户';
+            document.getElementById('userId').value = user.id;
+            document.getElementById('userName').value = user.name;
+            document.getElementById('userWeixin').value = user.weixin_name || '';
+            document.getElementById('userPhone').value = user.phone || '';
+            document.getElementById('userPassword').value = '';
+            document.getElementById('userIsAdmin').checked = user.is_admin;
+            document.getElementById('userModal').classList.add('show');
+        }
+
+        // 保存用户
+        async function saveUser() {
+            const userId = document.getElementById('userId').value;
+            const userData = {
+                name: document.getElementById('userName').value.trim(),
+                weixin_name: document.getElementById('userWeixin').value.trim(),
+                phone: document.getElementById('userPhone').value.trim(),
+                password: document.getElementById('userPassword').value,
+                is_admin: document.getElementById('userIsAdmin').checked
+            };
+
+            if (!userData.name) {
+                showToast('请输入借用人姓名', 'warning');
+                return;
+            }
+
+            if (!userId && !userData.password) {
+                showToast('请输入密码', 'warning');
+                return;
+            }
+
+            const url = userId ? `/api/admin/users/${userId}` : '/api/admin/users';
+            const method = userId ? 'PUT' : 'POST';
+
+            try {
+                const response = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(userData)
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    showToast(userId ? '用户更新成功' : '用户创建成功', 'success');
+                    closeModal('userModal');
+                    loadUsers();
+                } else {
+                    showToast(result.message || '操作失败', 'error');
+                }
+            } catch (error) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        // 冻结用户
+        async function freezeUser(userId) {
+            if (!confirm('确定要冻结该用户吗？冻结后将无法借还设备。')) return;
+            
+            try {
+                const response = await fetch(`/api/users/${userId}/freeze`, { method: 'POST' });
+                const result = await response.json();
+                if (result.success) {
+                    showToast('用户已冻结', 'success');
+                    loadUsers();
+                } else {
+                    showToast(result.message || '操作失败', 'error');
+                }
+            } catch (error) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        // 解冻用户
+        async function unfreezeUser(userId) {
+            try {
+                const response = await fetch(`/api/users/${userId}/unfreeze`, { method: 'POST' });
+                const result = await response.json();
+                if (result.success) {
+                    showToast('用户已解冻', 'success');
+                    loadUsers();
+                } else {
+                    showToast(result.message || '操作失败', 'error');
+                }
+            } catch (error) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        // 设为管理员
+        async function setAdmin(userId) {
+            if (!confirm('确定要设为管理员吗？')) return;
+            
+            try {
+                const response = await fetch(`/api/users/${userId}/set_admin`, { method: 'POST' });
+                const result = await response.json();
+                if (result.success) {
+                    showToast('已设为管理员', 'success');
+                    loadUsers();
+                } else {
+                    showToast(result.message || '操作失败', 'error');
+                }
+            } catch (error) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        // 取消管理员
+        async function removeAdmin(userId) {
+            if (!confirm('确定要取消管理员权限吗？')) return;
+            
+            try {
+                const response = await fetch(`/api/users/${userId}/remove_admin`, { method: 'POST' });
+                const result = await response.json();
+                if (result.success) {
+                    showToast('已取消管理员权限', 'success');
+                    loadUsers();
+                } else {
+                    showToast(result.message || '操作失败', 'error');
+                }
+            } catch (error) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        // 筛选功能
+        document.getElementById('searchInput')?.addEventListener('input', filterUsers);
+        document.getElementById('filterStatus')?.addEventListener('change', filterUsers);
+        document.getElementById('filterRole')?.addEventListener('change', filterUsers);
+
+        function filterUsers() {
+            const keyword = document.getElementById('searchInput')?.value?.toLowerCase() || '';
+            const status = document.getElementById('filterStatus')?.value || '';
+            const role = document.getElementById('filterRole')?.value || '';
+
+            let filtered = users;
+
+            if (keyword) {
+                filtered = filtered.filter(u => 
+                    (u.name && u.name.toLowerCase().includes(keyword)) ||
+                    (u.weixin_name && u.weixin_name.toLowerCase().includes(keyword)) ||
+                    (u.phone && u.phone.includes(keyword))
+                );
+            }
+            if (status === '正常') filtered = filtered.filter(u => !u.is_frozen);
+            if (status === '已冻结') filtered = filtered.filter(u => u.is_frozen);
+            if (role === '管理员') filtered = filtered.filter(u => u.is_admin);
+            if (role === '普通用户') filtered = filtered.filter(u => !u.is_admin);
+
+            renderUsers(filtered);
+        }
+
+        function resetFilters() {
+            document.getElementById('searchInput').value = '';
+            document.getElementById('filterStatus').value = '';
+            document.getElementById('filterRole').value = '';
+            renderUsers(users);
+        }
+
+        // 关闭弹窗
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('show');
+        }
+
+        // 显示Toast
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type} show`;
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', loadUsers);
+    </script>
+</body>
+</html>

@@ -1,0 +1,225 @@
+<!-- 
+  电脑端后台管理 - 仪表盘
+  功能：数据统计、快捷入口、最近活动
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>后台仪表盘 - 车载测试设备管理系统</title>
+    <link rel="stylesheet" href="/static/admin/admin_pc.css">
+</head>
+<body class="pc-admin-body">
+    <div class="pc-admin-wrapper">
+        <!-- 侧边栏 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <span class="logo">🔧</span>
+                <span class="logo-text">后台管理</span>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="/admin/pc/dashboard" class="nav-item active">
+                    <span class="nav-icon">📊</span>
+                    <span>仪表盘</span>
+                </a>
+                <a href="/admin/pc/devices" class="nav-item">
+                    <span class="nav-icon">📱</span>
+                    <span>设备管理</span>
+                </a>
+                <a href="/admin/pc/users" class="nav-item">
+                    <span class="nav-icon">👥</span>
+                    <span>用户管理</span>
+                </a>
+                <a href="/admin/pc/records" class="nav-item">
+                    <span class="nav-icon">📋</span>
+                    <span>记录查询</span>
+                </a>
+                <a href="/admin/pc/logs" class="nav-item">
+                    <span class="nav-icon">📜</span>
+                    <span>操作日志</span>
+                </a>
+                <a href="/admin/pc/overdue" class="nav-item">
+                    <span class="nav-icon">⚠️</span>
+                    <span>过期未还</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <span>👤 {{ admin_name }}</span>
+                <a href="/admin/logout" class="logout-btn">退出</a>
+            </div>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <!-- 顶部栏 -->
+            <header class="content-header">
+                <h1>仪表盘</h1>
+                <div class="header-actions">
+                    <a href="/admin/pc/device/add" class="btn btn-primary">➕ 新增设备</a>
+                </div>
+            </header>
+
+            <!-- 统计卡片 -->
+            <div class="stats-row">
+                <div class="stat-card-large total">
+                    <div class="stat-icon-bg">📦</div>
+                    <div class="stat-info">
+                        <span class="stat-value">{{ total_devices }}</span>
+                        <span class="stat-label">总设备数</span>
+                    </div>
+                </div>
+                <div class="stat-card-large available">
+                    <div class="stat-icon-bg">✅</div>
+                    <div class="stat-info">
+                        <span class="stat-value">{{ available_devices }}</span>
+                        <span class="stat-label">在库设备</span>
+                    </div>
+                </div>
+                <div class="stat-card-large borrowed">
+                    <div class="stat-icon-bg">📤</div>
+                    <div class="stat-info">
+                        <span class="stat-value">{{ borrowed_devices }}</span>
+                        <span class="stat-label">已借出</span>
+                    </div>
+                </div>
+                <div class="stat-card-large overdue">
+                    <div class="stat-icon-bg">⚠️</div>
+                    <div class="stat-info">
+                        <span class="stat-value">{{ overdue_devices }}</span>
+                        <span class="stat-label">已逾期</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 设备类型统计 -->
+            <div class="stats-row">
+                <div class="stat-card-half">
+                    <h3>设备类型分布</h3>
+                    <div class="type-stats">
+                        <div class="type-stat-item">
+                            <span class="type-icon">📱</span>
+                            <div class="type-info">
+                                <span class="type-count">{{ phone_count }} 台</span>
+                                <span class="type-label">手机</span>
+                            </div>
+                        </div>
+                        <div class="type-stat-item">
+                            <span class="type-icon">🚗</span>
+                            <div class="type-info">
+                                <span class="type-count">{{ car_device_count }} 台</span>
+                                <span class="type-label">车机</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="stat-card-half">
+                    <h3>状态分布</h3>
+                    <div class="status-bars">
+                        <div class="status-bar-item">
+                            <span class="status-name">在库</span>
+                            <div class="status-bar">
+                                <div class="status-progress" style="width: {{ available_percent }}%; background: #4CAF50;"></div>
+                            </div>
+                            <span class="status-percent">{{ available_percent }}%</span>
+                        </div>
+                        <div class="status-bar-item">
+                            <span class="status-name">借出</span>
+                            <div class="status-bar">
+                                <div class="status-progress" style="width: {{ borrowed_percent }}%; background: #FF9800;"></div>
+                            </div>
+                            <span class="status-percent">{{ borrowed_percent }}%</span>
+                        </div>
+                        <div class="status-bar-item">
+                            <span class="status-name">其他</span>
+                            <div class="status-bar">
+                                <div class="status-progress" style="width: {{ other_percent }}%; background: #9e9e9e;"></div>
+                            </div>
+                            <span class="status-percent">{{ other_percent }}%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 最近活动和逾期设备 -->
+            <div class="content-row">
+                <div class="content-card">
+                    <div class="card-header">
+                        <h3>最近操作记录</h3>
+                        <a href="/admin/pc/records" class="view-all">查看全部 →</a>
+                    </div>
+                    <div class="record-table">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>操作</th>
+                                    <th>设备</th>
+                                    <th>用户</th>
+                                    <th>时间</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% if recent_records %}
+                                    {% for record in recent_records[:10] %}
+                                    <tr>
+                                        <td><span class="action-badge action-{{ record.action_type }}">{{ record.action_type }}</span></td>
+                                        <td>{{ record.device_name }}</td>
+                                        <td>{{ record.user_name }}</td>
+                                        <td>{{ record.time }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                {% else %}
+                                    <tr>
+                                        <td colspan="4" class="empty-cell">暂无记录</td>
+                                    </tr>
+                                {% endif %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="content-card">
+                    <div class="card-header">
+                        <h3>逾期设备</h3>
+                        <a href="/admin/pc/overdue" class="view-all">查看全部 →</a>
+                    </div>
+                    <div class="overdue-list">
+                        {% if overdue_devices_list %}
+                            {% for device in overdue_devices_list[:5] %}
+                            <div class="overdue-item">
+                                <div class="overdue-device">
+                                    <span class="device-icon">{{ '📱' if device.device_type == '手机' else '🚗' }}</span>
+                                    <span>{{ device.device_name }}</span>
+                                </div>
+                                <div class="overdue-info">
+                                    <span class="overdue-user">👤 {{ device.borrower }}</span>
+                                    <span class="overdue-days">逾期 {{ device.overdue_days }} 天</span>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            <div class="empty-state">
+                                <span>✅ 暂无逾期设备</span>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast提示 -->
+    <div id="toast" class="toast"></div>
+
+    <script>
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 2000);
+        }
+    </script>
+</body>
+</html>

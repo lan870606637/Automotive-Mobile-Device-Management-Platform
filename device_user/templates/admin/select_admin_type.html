@@ -1,0 +1,97 @@
+<!-- 
+  后台管理入口选择页面
+  类似客户端的选择页面风格
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>后台管理入口 - 车载测试设备管理系统</title>
+    <link rel="stylesheet" href="/static/admin/admin_select.css">
+</head>
+<body>
+    <div class="select-container">
+        <!-- 标题区域 -->
+        <div class="header">
+            <div class="logo">🔧</div>
+            <h1>后台管理系统</h1>
+            <p>请选择管理终端类型</p>
+        </div>
+
+        <!-- 选择区域 -->
+        <div class="select-grid">
+            <!-- 手机端选择 -->
+            <div class="select-card mobile-card" onclick="selectMobile()">
+                <div class="card-icon">📱</div>
+                <h3>手机端后台</h3>
+                <p>便捷操作，快速管理</p>
+                <div class="qr-section">
+                    <div class="qr-placeholder">
+                        <img src="/static/admin/qr_mobile.png" alt="手机端二维码" onerror="generateMobileQR(this)">
+                    </div>
+                    <span class="qr-tip">扫码进入</span>
+                </div>
+                <div class="btn-enter">进入手机端</div>
+            </div>
+
+            <!-- 电脑端选择 -->
+            <div class="select-card pc-card" onclick="selectPC()">
+                <div class="card-icon">💻</div>
+                <h3>电脑端后台</h3>
+                <p>大屏适配，功能完整</p>
+                <div class="feature-list">
+                    <span class="feature-tag">📊 数据统计</span>
+                    <span class="feature-tag">👥 用户管理</span>
+                    <span class="feature-tag">📋 记录导出</span>
+                </div>
+                <div class="btn-enter">进入电脑端</div>
+            </div>
+        </div>
+
+        <!-- 返回客户端 -->
+        <div class="footer">
+            <a href="/" class="back-link">
+                <span>←</span> 返回用户端
+            </a>
+        </div>
+    </div>
+
+    <!-- 提示消息 -->
+    <div id="toast" class="toast"></div>
+
+    <script>
+        // 选择手机端
+        function selectMobile() {
+            window.location.href = '/admin/mobile/login';
+        }
+
+        // 选择电脑端
+        function selectPC() {
+            window.location.href = '/admin/pc/login';
+        }
+
+        // 生成手机端二维码（如果图片不存在）
+        function generateMobileQR(img) {
+            // 使用QRCode.js生成二维码
+            img.onerror = null;
+            img.src = 'data:image/svg+xml;base64,' + btoa(`
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+                    <rect fill="white" width="100" height="100"/>
+                    <path fill="black" d="M10,10 h30 v30 h-30 z M15,15 v20 h20 v-20 z M40,10 h5 v5 h-5 z M50,10 h5 v5 h-5 z M60,10 h30 v30 h-30 z M65,15 v20 h20 v-20 z M10,40 h5 v5 h-5 z M10,50 h5 v5 h-5 z M20,40 h20 v20 h-20 z M50,40 h5 v5 h-5 z M60,40 h5 v5 h-5 z M70,40 h20 v20 h-20 z M10,60 h30 v30 h-30 z M15,65 v20 h20 v-20 z M40,60 h5 v5 h-5 z M50,60 h10 v5 h-10 z M70,60 h5 v5 h-5 z M80,60 h10 v10 h-10 z M40,70 h10 v10 h-10 z M60,70 h10 v10 h-10 z M80,70 h10 v10 h-10 z M40,85 h5 v5 h-5 z M50,85 h10 v5 h-10 z M70,85 h10 v5 h-10 z"/>
+                </svg>
+            `);
+        }
+
+        // 显示提示
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 2000);
+        }
+    </script>
+</body>
+</html>

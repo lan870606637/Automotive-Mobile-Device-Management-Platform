@@ -173,6 +173,8 @@ class User:
     borrower_name: str = ""   # 借用人名称（必填，唯一）
     borrow_count: int = 0
     is_frozen: bool = False
+    is_admin: bool = False    # 是否为管理员
+    is_deleted: bool = False  # 是否已删除
     create_time: Optional[datetime] = None
     
     def to_dict(self) -> dict:
@@ -184,6 +186,7 @@ class User:
             "borrower_name": self.borrower_name,
             "borrow_count": self.borrow_count,
             "is_frozen": "已冻结" if self.is_frozen else "正常",
+            "is_admin": "是" if self.is_admin else "否",
             "create_time": self.create_time.strftime("%Y-%m-%d %H:%M:%S") if self.create_time else "",
         }
 

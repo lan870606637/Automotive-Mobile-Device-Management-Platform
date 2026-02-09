@@ -406,8 +406,24 @@ class APIClient:
     
     def verify_admin(self, username: str, password: str) -> bool:
         """验证管理员账号密码"""
+        # 1. 检查传统管理员表
         for admin in self._admins:
             if admin.username == username and admin.password == password:
+                return True
+        
+        # 2. 检查被指定为管理员的用户（通过借用人名称或手机号登录）
+        for user in self._users:
+            if user.is_admin and not user.is_frozen:
+                # 支持借用人名称或手机号作为账号
+                if (user.borrower_name == username or user.phone == username) and user.password == password:
+                    return True
+        
+        return False
+    
+    def is_user_admin(self, borrower_name: str) -> bool:
+        """检查指定用户是否为管理员"""
+        for user in self._users:
+            if user.borrower_name == borrower_name and user.is_admin:
                 return True
         return False
     
@@ -732,7 +748,279 @@ class APIClient:
                 self._save_data()
                 return True
         return False
+
+    def set_user_admin(self, user_id: str) -> bool:
+        """设置用户为管理员"""
+        for user in self._users:
+            if user.id == user_id:
+                user.is_admin = True
+                self.add_operation_log(f"设置管理员", user.wechat_name)
+                self._save_data()
+                return True
+        return False
+
+    def cancel_user_admin(self, user_id: str) -> bool:
+        """取消用户管理员权限"""
+        for user in self._users:
+            if user.id == user_id:
+                user.is_admin = False
+                self.add_operation_log(f"取消管理员", user.wechat_name)
+                self._save_data()
+                return True
+        return False
+
+    def set_user_admin_flag(self, user_id: str, is_admin: bool) -> bool:
+        """设置用户管理员标志"""
+        for user in self._users:
+            if user.id == user_id:
+                user.is_admin = is_admin
+                action = "设置管理员" if is_admin else "取消管理员"
+                self.add_operation_log(action, user.wechat_name)
+                self._save_data()
+                return True
+        return False
+
+    # ==================== 后台管理功能 ====================
     
+    def verify_admin_login(self, username: str, password: str) -> Optional[dict]:
+        """验证管理员登录"""
+        for admin in self._admins:
+            if admin.username == username and admin.password == password:
+                return {
+                    'id': admin.id,
+                    'name': admin.username,
+                    'username': admin.username
+                }
+        return None
+    
+    def get_users(self) -> List[User]:
+        """获取所有用户列表"""
+        return [u for u in self._users if not u.is_deleted]
+    
+    def get_device(self, device_id: str) -> Optional[Device]:
+        """根据ID获取设备"""
+        for device in self._car_machines + self._phones:
+            if device.id == device_id and not device.is_deleted:
+                return device
+        return None
+    
+    def get_device_records(self, device_id: str, limit: int = 10) -> List[Record]:
+        """获取设备的操作记录"""
+        records = [r for r in self._records if r.device_id == device_id]
+        return sorted(records, key=lambda x: x.operation_time, reverse=True)[:limit]
+    
+    def create_device(self, device_type, device_name: str, model: str = '', 
+                     cabinet: str = '', status: str = '在库', remarks: str = '') -> Device:
+        """创建新设备"""
+        from models import DeviceStatus, CarMachine, Phone
+        
+        device_id = str(uuid.uuid4())
+        device_status = DeviceStatus(status) if status else DeviceStatus.IN_STOCK
+        
+        if device_type == DeviceType.PHONE or str(device_type) == 'DeviceType.PHONE':
+            device = Phone(
+                id=device_id,
+                name=device_name,
+                model=model,
+                cabinet_number=cabinet,
+                status=device_status,
+                remark=remarks
+            )
+            self._phones.append(device)
+        else:
+            device = CarMachine(
+                id=device_id,
+                name=device_name,
+                model=model,
+                cabinet_number=cabinet,
+                status=device_status,
+                remark=remarks
+            )
+            self._car_machines.append(device)
+        
+        self.add_operation_log("创建设备", device_name)
+        self._save_data()
+        return device
+    
+    def update_device(self, device_id: str, data: dict) -> bool:
+        """更新设备信息"""
+        device = self.get_device(device_id)
+        if not device:
+            return False
+        
+        if 'device_name' in data:
+            device.name = data['device_name']
+        if 'model' in data:
+            device.model = data['model']
+        if 'cabinet' in data:
+            device.cabinet_number = data['cabinet']
+        if 'status' in data:
+            device.status = DeviceStatus(data['status'])
+        if 'remarks' in data:
+            device.remark = data['remarks']
+        if 'borrower' in data:
+            device.borrower = data['borrower']
+        
+        self.add_operation_log("编辑设备", device.name)
+        self._save_data()
+        return True
+    
+    def delete_device(self, device_id: str) -> bool:
+        """删除设备（逻辑删除）"""
+        device = self.get_device(device_id)
+        if not device:
+            return False
+        
+        device.is_deleted = True
+        self.add_operation_log("删除设备", device.name)
+        self._save_data()
+        return True
+    
+    def create_user(self, borrower_name: str, wechat_name: str = '', 
+                   phone: str = '', password: str = '', is_admin: bool = False) -> User:
+        """创建新用户"""
+        user_id = str(uuid.uuid4())
+        user = User(
+            id=user_id,
+            borrower_name=borrower_name,
+            wechat_name=wechat_name,
+            phone=phone,
+            password=password,
+            is_admin=is_admin,
+            register_time=datetime.now()
+        )
+        self._users.append(user)
+        self.add_operation_log("创建用户", borrower_name)
+        self._save_data()
+        return user
+    
+    def update_user(self, user_id: str, data: dict) -> bool:
+        """更新用户信息"""
+        for user in self._users:
+            if user.id == user_id:
+                if 'name' in data:
+                    user.borrower_name = data['name']
+                if 'weixin_name' in data:
+                    user.wechat_name = data['weixin_name']
+                if 'phone' in data:
+                    user.phone = data['phone']
+                if 'password' in data and data['password']:
+                    user.password = data['password']
+                if 'is_admin' in data:
+                    user.is_admin = data['is_admin']
+                
+                self.add_operation_log("编辑用户", user.borrower_name)
+                self._save_data()
+                return True
+        return False
+    
+    def delete_user(self, user_id: str) -> bool:
+        """删除用户（逻辑删除）"""
+        for user in self._users:
+            if user.id == user_id:
+                user.is_deleted = True
+                self.add_operation_log("删除用户", user.borrower_name)
+                self._save_data()
+                return True
+        return False
+    
+    def borrow_device(self, device_id: str, borrower: str, days: int = 7, 
+                     cabinet: str = '流通', remarks: str = '', operator: str = '管理员') -> bool:
+        """借出设备"""
+        device = self.get_device(device_id)
+        if not device:
+            return False
+        
+        device.borrower = borrower
+        device.cabinet_number = cabinet
+        device.status = DeviceStatus.BORROWED
+        device.borrow_time = datetime.now()
+        device.expected_return_date = datetime.now() + timedelta(days=days)
+        
+        # 创建记录
+        record = Record(
+            id=str(uuid.uuid4()),
+            device_id=device_id,
+            device_name=device.name,
+            device_type=device.device_type.value,
+            operation_type=OperationType.BORROW,
+            operator=operator,
+            operation_time=datetime.now(),
+            borrower=borrower,
+            reason=remarks,
+            remark=remarks
+        )
+        self._records.append(record)
+        
+        # 更新用户借用次数
+        for user in self._users:
+            if user.borrower_name == borrower:
+                user.borrow_count += 1
+                break
+        
+        self.add_operation_log("录入登记", device.name)
+        self._save_data()
+        return True
+    
+    def return_device(self, device_id: str, operator: str = '管理员') -> bool:
+        """归还设备"""
+        device = self.get_device(device_id)
+        if not device:
+            return False
+        
+        borrower = device.borrower
+        device.borrower = ''
+        device.cabinet_number = 'A01'  # 默认柜号
+        device.status = DeviceStatus.AVAILABLE
+        device.borrow_time = None
+        device.expected_return_date = None
+        
+        # 创建记录
+        record = Record(
+            id=str(uuid.uuid4()),
+            device_id=device_id,
+            device_name=device.name,
+            device_type=device.device_type.value,
+            operation_type=OperationType.RETURN,
+            operator=operator,
+            operation_time=datetime.now(),
+            borrower=borrower
+        )
+        self._records.append(record)
+        
+        self.add_operation_log("强制归还", device.name)
+        self._save_data()
+        return True
+    
+    def transfer_device(self, device_id: str, new_borrower: str, 
+                       remarks: str = '', operator: str = '管理员') -> bool:
+        """转借设备"""
+        device = self.get_device(device_id)
+        if not device:
+            return False
+        
+        old_borrower = device.borrower
+        device.borrower = new_borrower
+        
+        # 创建记录
+        record = Record(
+            id=str(uuid.uuid4()),
+            device_id=device_id,
+            device_name=device.name,
+            device_type=device.device_type.value,
+            operation_type=OperationType.TRANSFER,
+            operator=operator,
+            operation_time=datetime.now(),
+            borrower=f"{old_borrower} → {new_borrower}",
+            reason=remarks,
+            remark=remarks
+        )
+        self._records.append(record)
+        
+        self.add_operation_log("转借设备", device.name)
+        self._save_data()
+        return True
+
     # ==================== 备注管理 ====================
     
     def get_remarks(self, device_id: Optional[str] = None) -> List[UserRemark]:
@@ -777,6 +1065,42 @@ class APIClient:
         )
         self._operation_logs.append(log)
         self._save_data()
+    
+    def get_admin_logs(self, limit: int = 100) -> List[dict]:
+        """获取管理员操作日志（用于后台管理）"""
+        logs = sorted(self._operation_logs, key=lambda x: x.operation_time, reverse=True)[:limit]
+        result = []
+        for log in logs:
+            result.append({
+                'id': log.id,
+                'time': log.operation_time.strftime('%Y-%m-%d %H:%M:%S'),
+                'admin_name': log.operator,
+                'action_type': self._categorize_action(log.operation_content),
+                'details': f"{log.operation_content}: {log.device_info}",
+                'ip': ''  # IP地址需要在外部记录
+            })
+        return result
+    
+    def _categorize_action(self, content: str) -> str:
+        """将操作内容分类"""
+        if '借出' in content or '录入登记' in content:
+            return '借出'
+        elif '归还' in content or '强制归还' in content:
+            return '归还'
+        elif '转借' in content:
+            return '转借'
+        elif '编辑' in content or '修改' in content:
+            return '编辑'
+        elif '删除' in content:
+            return '删除'
+        elif '新增' in content or '添加' in content or '创建' in content:
+            return '新增'
+        elif '冻结' in content or '解冻' in content:
+            return '用户管理'
+        elif '管理员' in content:
+            return '权限管理'
+        else:
+            return '其他'
     
     def reload_data(self):
         """重新加载数据（用于网页端刷新）"""

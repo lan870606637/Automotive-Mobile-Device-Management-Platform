@@ -1,0 +1,152 @@
+<!-- 
+  电脑端后台管理 - 操作日志页面
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>操作日志 - 车载测试设备管理系统</title>
+    <link rel="stylesheet" href="/static/admin/admin_pc.css">
+</head>
+<body class="pc-admin-body">
+    <div class="pc-admin-wrapper">
+        <!-- 侧边栏 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <span class="logo">🔧</span>
+                <span class="logo-text">后台管理</span>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="/admin/pc/dashboard" class="nav-item">
+                    <span class="nav-icon">📊</span>
+                    <span>仪表盘</span>
+                </a>
+                <a href="/admin/pc/devices" class="nav-item">
+                    <span class="nav-icon">📱</span>
+                    <span>设备管理</span>
+                </a>
+                <a href="/admin/pc/users" class="nav-item">
+                    <span class="nav-icon">👥</span>
+                    <span>用户管理</span>
+                </a>
+                <a href="/admin/pc/records" class="nav-item">
+                    <span class="nav-icon">📋</span>
+                    <span>记录查询</span>
+                </a>
+                <a href="/admin/pc/logs" class="nav-item active">
+                    <span class="nav-icon">📜</span>
+                    <span>操作日志</span>
+                </a>
+                <a href="/admin/pc/overdue" class="nav-item">
+                    <span class="nav-icon">⚠️</span>
+                    <span>过期未还</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <span>👤 {{ admin_name }}</span>
+                <a href="/admin/logout" class="logout-btn">退出</a>
+            </div>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <header class="content-header">
+                <h1>操作日志</h1>
+                <div class="header-actions">
+                    <button class="btn btn-secondary" onclick="refreshLogs()">🔄 刷新</button>
+                </div>
+            </header>
+
+            <!-- 说明 -->
+            <div class="content-card" style="margin-bottom: 20px;">
+                <p style="color: #666; font-size: 14px;">📋 显示最近100条管理员操作记录，包括设备操作、用户管理、系统设置等。</p>
+            </div>
+
+            <!-- 日志列表 -->
+            <div class="data-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>时间</th>
+                            <th>管理员</th>
+                            <th>操作类型</th>
+                            <th>操作详情</th>
+                            <th>IP地址</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logsTableBody">
+                        {% for log in logs %}
+                        <tr>
+                            <td>{{ log.time }}</td>
+                            <td>{{ log.admin_name }}</td>
+                            <td><span class="action-badge action-{{ log.action_type }}">{{ log.action_type }}</span></td>
+                            <td>{{ log.details }}</td>
+                            <td style="font-family: monospace; color: #999;">{{ log.ip or '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast提示 -->
+    <div id="toast" class="toast"></div>
+
+    <script>
+        // 加载日志
+        async function loadLogs() {
+            try {
+                const response = await fetch('/api/logs?limit=100');
+                const logs = await response.json();
+                renderLogs(logs);
+            } catch (error) {
+                showToast('加载日志失败', 'error');
+            }
+        }
+
+        // 渲染日志
+        function renderLogs(logs) {
+            const tbody = document.getElementById('logsTableBody');
+            
+            if (logs.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="empty-cell">暂无日志</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = logs.map(log => `
+                <tr>
+                    <td>${log.time}</td>
+                    <td>${log.admin_name}</td>
+                    <td><span class="action-badge action-${log.action_type}">${log.action_type}</span></td>
+                    <td>${log.details}</td>
+                    <td style="font-family: monospace; color: #999;">${log.ip || '-'}</td>
+                </tr>
+            `).join('');
+        }
+
+        // 刷新日志
+        function refreshLogs() {
+            loadLogs();
+            showToast('已刷新', 'success');
+        }
+
+        // 显示Toast
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type} show`;
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', loadLogs);
+        
+        // 每30秒自动刷新
+        setInterval(loadLogs, 30000);
+    </script>
+</body>
+</html>

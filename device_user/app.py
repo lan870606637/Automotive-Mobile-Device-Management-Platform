@@ -44,11 +44,11 @@ app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 
 def login_required(f):
-    """登录验证装饰器"""
+    """登录验证装饰器 - 未登录跳转到设备选择页面"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
-            return redirect(url_for('login'))
+            return redirect(url_for('select_device_type'))
         return f(*args, **kwargs)
     return decorated_function
 
@@ -68,8 +68,22 @@ def get_current_user():
             'wechat_name': user.wechat_name,
             'phone': user.phone,
             'borrower_name': user.borrower_name,
+            'is_admin': user.is_admin,
         }
     return {}
+
+
+def is_admin_user(borrower_name):
+    """检查指定借用人是否为管理员"""
+    return api_client.is_user_admin(borrower_name)
+
+
+@app.context_processor
+def inject_globals():
+    """注入全局模板变量和函数"""
+    return {
+        'is_admin_user': is_admin_user,
+    }
 
 
 def mask_phone(phone):
@@ -99,41 +113,80 @@ def device_route(mobile_route, pc_route):
 def index():
     """首页 - 根据设备类型自动跳转"""
     if 'user_id' in session:
-        if is_mobile_device():
-            return redirect(url_for('home'))
-        else:
+        # 根据session中保存的登录设备类型跳转
+        login_device_type = session.get('login_device_type', 'mobile')
+        if login_device_type == 'pc':
             return redirect(url_for('pc_dashboard'))
-    return redirect(url_for('login'))
+        else:
+            return redirect(url_for('home'))
+    # 未登录用户先跳转到设备选择页面
+    return redirect(url_for('select_device_type'))
 
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    """用户登录页面"""
+@app.route('/select-device')
+def select_device_type():
+    """设备选择页面 - 选择手机端或电脑端"""
+    return render_template('select_device_type.html')
+
+
+@app.route('/login/mobile', methods=['GET', 'POST'])
+def mobile_login():
+    """手机端登录页面 - 带二维码"""
     if request.method == 'POST':
         phone = request.form.get('phone', '').strip()
         password = request.form.get('password', '').strip()
 
         if not phone or not password:
-            return render_template('login.html', error='请输入手机号和密码')
+            return render_template('mobile/login.html', error='请输入手机号和密码')
 
         user = api_client.verify_user_login(phone, password)
         if user:
             session['user_id'] = user.id
             session['phone'] = user.phone
+            session['login_device_type'] = 'mobile'  # 记录登录设备类型
 
             # 检查是否需要设置借用人名称
             if not user.borrower_name:
                 return redirect(url_for('set_borrower_name'))
 
-            # 根据设备类型跳转到对应的首页
-            if is_mobile_device():
-                return redirect(url_for('home'))
-            else:
-                return redirect(url_for('pc_dashboard'))
+            return redirect(url_for('home'))
         else:
-            return render_template('login.html', error='手机号或密码错误，或账号已被冻结')
+            return render_template('mobile/login.html', error='手机号或密码错误，或账号已被冻结')
 
-    return render_template('login.html')
+    return render_template('mobile/login.html')
+
+
+@app.route('/login/pc', methods=['GET', 'POST'])
+def pc_login():
+    """电脑端登录页面 - 不带二维码"""
+    if request.method == 'POST':
+        phone = request.form.get('phone', '').strip()
+        password = request.form.get('password', '').strip()
+
+        if not phone or not password:
+            return render_template('pc/login.html', error='请输入手机号和密码')
+
+        user = api_client.verify_user_login(phone, password)
+        if user:
+            session['user_id'] = user.id
+            session['phone'] = user.phone
+            session['login_device_type'] = 'pc'  # 记录登录设备类型
+
+            # 检查是否需要设置借用人名称
+            if not user.borrower_name:
+                return redirect(url_for('set_borrower_name'))
+
+            return redirect(url_for('pc_dashboard'))
+        else:
+            return render_template('pc/login.html', error='手机号或密码错误，或账号已被冻结')
+
+    return render_template('pc/login.html')
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """用户登录页面 - 兼容旧版，重定向到设备选择页面"""
+    return redirect(url_for('select_device_type'))
 
 
 @app.route('/register', methods=['GET', 'POST'])
@@ -161,7 +214,7 @@ def register():
         # 注册用户
         success, message = api_client.register_user(phone, password, borrower_name)
         if success:
-            return render_template('register.html', success='注册成功，请登录')
+            return render_template('register.html', success='注册成功，请前往设备选择页面登录')
         else:
             return render_template('register.html', error=message)
 
@@ -230,9 +283,9 @@ def login_qrcode():
 
 @app.route('/logout')
 def logout():
-    """退出登录"""
+    """退出登录 - 跳转到设备选择页面"""
     session.clear()
-    return redirect(url_for('login'))
+    return redirect(url_for('select_device_type'))
 
 
 @app.route('/set-borrower-name', methods=['GET', 'POST'])
@@ -240,7 +293,7 @@ def set_borrower_name():
     """设置借用人名称（首次登录）"""
     user_id = session.get('user_id')
     if not user_id:
-        return redirect(url_for('login'))
+        return redirect(url_for('select_device_type'))
     
     # 获取用户信息
     user = None
@@ -250,11 +303,15 @@ def set_borrower_name():
             break
     
     if not user:
-        return redirect(url_for('login'))
+        return redirect(url_for('select_device_type'))
     
-    # 如果已设置借用人名称，跳转到首页
+    # 根据登录设备类型决定跳转目标
+    login_device_type = session.get('login_device_type', 'mobile')
+    home_route = 'pc_dashboard' if login_device_type == 'pc' else 'home'
+    
+    # 如果已设置借用人名称，跳转到对应首页
     if user.borrower_name:
-        return redirect(url_for('home'))
+        return redirect(url_for(home_route))
     
     if request.method == 'POST':
         borrower_name = request.form.get('borrower_name', '').strip()
@@ -264,7 +321,7 @@ def set_borrower_name():
         
         # 检查是否已存在
         if api_client.update_user_borrower_name(user_id, borrower_name):
-            return redirect(url_for('home'))
+            return redirect(url_for(home_route))
         else:
             return render_template('set_borrower_name.html', error='该借用人名称已被使用，请更换')
     
@@ -641,9 +698,29 @@ def my_records():
             'reason': record.reason,
             'remark': record.remark
         })
+    
+    # 分页逻辑 - 每页20条
+    page = request.args.get('page', 1, type=int)
+    per_page = 20
+    total_records = len(record_list)
+    total_pages = (total_records + per_page - 1) // per_page
+    
+    # 确保页码有效
+    if page < 1:
+        page = 1
+    if page > total_pages and total_pages > 0:
+        page = total_pages
+    
+    # 切片获取当前页数据
+    start = (page - 1) * per_page
+    end = start + per_page
+    paginated_records = record_list[start:end]
 
     return render_template('my_records.html',
-                         records=record_list,
+                         records=paginated_records,
+                         total_records=total_records,
+                         page=page,
+                         total_pages=total_pages,
                          user=user)
 
 
@@ -1056,7 +1133,7 @@ def api_search():
             result.append({
                 'id': device.id,
                 'name': device.name,
-                'type': '车机' if isinstance(device, CarMachine) else '手机',
+                'device_type': '车机' if isinstance(device, CarMachine) else '手机',
                 'status': device.status.value,
                 'remark': device.remark or '-',
                 'is_scrapped': device.status == DeviceStatus.SCRAPPED,
@@ -1850,12 +1927,821 @@ def pc_my_records():
     borrow_count = len([r for r in record_list if '借出' in r['operation_type']])
     return_count = len([r for r in record_list if '归还' in r['operation_type']])
     
+    # 分页逻辑 - 每页50条
+    page = request.args.get('page', 1, type=int)
+    per_page = 50
+    total_pages = (total_records + per_page - 1) // per_page
+    
+    # 确保页码有效
+    if page < 1:
+        page = 1
+    if total_pages > 0 and page > total_pages:
+        page = total_pages
+    
+    # 切片获取当前页数据
+    start = (page - 1) * per_page
+    end = start + per_page
+    paginated_records = record_list[start:end]
+    
     return render_template('pc/my_records.html',
-                         records=record_list,
+                         records=paginated_records,
                          total_records=total_records,
                          borrow_count=borrow_count,
                          return_count=return_count,
+                         page=page,
+                         total_pages=total_pages,
                          user=user)
+
+
+@app.route('/pc/all-records')
+@login_required
+def pc_all_records():
+    """PC端全部借用记录"""
+    user = get_current_user()
+    
+    all_records = api_client.get_records()
+    
+    # 准备全部记录数据
+    all_records_data = []
+    for record in all_records:
+        all_records_data.append({
+            'device_name': record.device_name,
+            'device_type': record.device_type,
+            'operation_type': record.operation_type.value,
+            'operation_time': record.operation_time.strftime('%Y-%m-%d %H:%M:%S'),
+            'borrower': record.borrower,
+            'operator': record.operator,
+            'reason': record.reason,
+            'remark': record.remark
+        })
+    all_records_data.sort(key=lambda x: x['operation_time'], reverse=True)
+    
+    total_records = len(all_records_data)
+    borrow_count = len([r for r in all_records_data if '借出' in r['operation_type']])
+    return_count = len([r for r in all_records_data if '归还' in r['operation_type']])
+    
+    # 分页逻辑 - 每页50条
+    page = request.args.get('page', 1, type=int)
+    per_page = 50
+    total_pages = (total_records + per_page - 1) // per_page
+    
+    # 确保页码有效
+    if page < 1:
+        page = 1
+    if total_pages > 0 and page > total_pages:
+        page = total_pages
+    
+    # 切片获取当前页数据
+    start = (page - 1) * per_page
+    end = start + per_page
+    paginated_records = all_records_data[start:end]
+    
+    return render_template('pc/all_records.html',
+                         records=paginated_records,
+                         total_records=total_records,
+                         borrow_count=borrow_count,
+                         return_count=return_count,
+                         page=page,
+                         total_pages=total_pages,
+                         user=user)
+
+
+# ==================== 后台管理系统 ====================
+
+def admin_required(f):
+    """管理员权限验证装饰器"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'admin_id' not in session:
+            return redirect(url_for('admin_select'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+@app.route('/admin')
+def admin_select():
+    """后台管理入口选择页面"""
+    return render_template('admin/select_admin_type.html')
+
+
+# ==================== 手机端后台管理 ====================
+
+@app.route('/admin/mobile/login', methods=['GET', 'POST'])
+def admin_mobile_login():
+    """手机端后台登录页面"""
+    if request.method == 'POST':
+        data = request.get_json()
+        username = data.get('username', '').strip()
+        password = data.get('password', '').strip()
+        
+        # 验证管理员身份
+        admin = api_client.verify_admin_login(username, password)
+        if admin:
+            session['admin_id'] = admin.get('id', username)
+            session['admin_name'] = admin.get('name', username)
+            return jsonify({'success': True})
+        else:
+            return jsonify({'success': False, 'message': '用户名或密码错误'})
+    
+    return render_template('admin/mobile/login.html')
+
+
+@app.route('/admin/mobile/dashboard')
+@admin_required
+def admin_mobile_dashboard():
+    """手机端后台仪表盘"""
+    # 获取统计数据
+    all_devices = api_client.get_all_devices()
+    total_devices = len(all_devices)
+    available_devices = len([d for d in all_devices if d.status == DeviceStatus.IN_STOCK])
+    borrowed_devices = len([d for d in all_devices if d.status == DeviceStatus.BORROWED])
+    
+    # 计算逾期设备
+    overdue_devices = 0
+    for device in all_devices:
+        if device.status == DeviceStatus.BORROWED and device.expect_return_time:
+            try:
+                expect_time = datetime.strptime(device.expect_return_time, '%Y-%m-%d')
+                if expect_time < datetime.now():
+                    overdue_devices += 1
+            except:
+                pass
+    
+    # 获取最近记录
+    all_records = api_client.get_records()
+    recent_records = []
+    for record in all_records[:10]:
+        recent_records.append({
+            'action_type': record.operation_type.value,
+            'device_name': record.device_name,
+            'user_name': record.borrower,
+            'time': record.operation_time.strftime('%m-%d %H:%M')
+        })
+    
+    return render_template('admin/mobile/dashboard.html',
+                         admin_name=session.get('admin_name', '管理员'),
+                         total_devices=total_devices,
+                         available_devices=available_devices,
+                         borrowed_devices=borrowed_devices,
+                         overdue_devices=overdue_devices,
+                         recent_records=recent_records)
+
+
+@app.route('/admin/mobile/devices')
+@admin_required
+def admin_mobile_devices():
+    """手机端设备查询页面"""
+    return render_template('admin/mobile/devices.html',
+                         admin_name=session.get('admin_name', '管理员'))
+
+
+@app.route('/admin/mobile/device/add')
+@admin_required
+def admin_mobile_device_add():
+    """手机端设备录入页面"""
+    return render_template('admin/mobile/device_add.html',
+                         admin_name=session.get('admin_name', '管理员'))
+
+
+@app.route('/admin/mobile/settings')
+@admin_required
+def admin_mobile_settings():
+    """手机端设置页面（占位）"""
+    return redirect(url_for('admin_mobile_dashboard'))
+
+
+# ==================== 电脑端后台管理 ====================
+
+@app.route('/admin/pc/login', methods=['GET', 'POST'])
+def admin_pc_login():
+    """电脑端后台登录页面"""
+    if request.method == 'POST':
+        data = request.get_json()
+        username = data.get('username', '').strip()
+        password = data.get('password', '').strip()
+        
+        # 验证管理员身份
+        admin = api_client.verify_admin_login(username, password)
+        if admin:
+            session['admin_id'] = admin.get('id', username)
+            session['admin_name'] = admin.get('name', username)
+            return jsonify({'success': True})
+        else:
+            return jsonify({'success': False, 'message': '用户名或密码错误'})
+    
+    return render_template('admin/pc/login.html')
+
+
+@app.route('/admin/pc/dashboard')
+@admin_required
+def admin_pc_dashboard():
+    """电脑端后台仪表盘"""
+    # 获取统计数据
+    all_devices = api_client.get_all_devices()
+    total_devices = len(all_devices)
+    available_devices = len([d for d in all_devices if d.status == DeviceStatus.IN_STOCK])
+    borrowed_devices = len([d for d in all_devices if d.status == DeviceStatus.BORROWED])
+    
+    phone_count = len([d for d in all_devices if d.device_type == DeviceType.PHONE])
+    car_device_count = len([d for d in all_devices if d.device_type == DeviceType.CAR_MACHINE])
+    
+    # 计算逾期设备
+    overdue_devices_list = []
+    overdue_devices = 0
+    for device in all_devices:
+        if device.status == DeviceStatus.BORROWED and device.expected_return_date:
+            try:
+                expect_time = device.expected_return_date
+                if isinstance(expect_time, str):
+                    expect_time = datetime.strptime(expect_time, '%Y-%m-%d')
+                if expect_time < datetime.now():
+                    overdue_devices += 1
+                    overdue_days = (datetime.now() - expect_time).days
+                    overdue_devices_list.append({
+                        'device_name': device.name,
+                        'device_type': '手机' if device.device_type == DeviceType.PHONE else '车机',
+                        'borrower': device.borrower,
+                        'overdue_days': overdue_days
+                    })
+            except Exception as e:
+                print(f"计算逾期天数出错: {e}")
+                pass
+    
+    overdue_devices_list.sort(key=lambda x: x['overdue_days'], reverse=True)
+    
+    # 计算百分比
+    available_percent = round(available_devices / total_devices * 100, 1) if total_devices > 0 else 0
+    borrowed_percent = round(borrowed_devices / total_devices * 100, 1) if total_devices > 0 else 0
+    other_percent = round(100 - available_percent - borrowed_percent, 1)
+    
+    # 获取最近记录
+    all_records = api_client.get_records()
+    recent_records = []
+    for record in all_records[:10]:
+        recent_records.append({
+            'action_type': record.operation_type.value,
+            'device_name': record.device_name,
+            'user_name': record.borrower,
+            'time': record.operation_time.strftime('%Y-%m-%d %H:%M')
+        })
+    
+    return render_template('admin/pc/dashboard.html',
+                         admin_name=session.get('admin_name', '管理员'),
+                         total_devices=total_devices,
+                         available_devices=available_devices,
+                         borrowed_devices=borrowed_devices,
+                         overdue_devices=overdue_devices,
+                         phone_count=phone_count,
+                         car_device_count=car_device_count,
+                         available_percent=available_percent,
+                         borrowed_percent=borrowed_percent,
+                         other_percent=other_percent,
+                         overdue_devices_list=overdue_devices_list[:5],
+                         recent_records=recent_records)
+
+
+@app.route('/admin/pc/devices')
+@admin_required
+def admin_pc_devices():
+    """电脑端设备管理页面"""
+    all_devices = api_client.get_all_devices()
+    users = api_client.get_users()
+    
+    # 获取所有柜号
+    cabinets = list(set([d.cabinet_number for d in all_devices if d.cabinet_number]))
+    
+    # 准备设备数据
+    devices_data = []
+    for device in all_devices:
+        is_overdue = False
+        if device.status == DeviceStatus.BORROWED and device.expected_return_date:
+            try:
+                expect_time = device.expected_return_date
+                if isinstance(expect_time, str):
+                    expect_time = datetime.strptime(expect_time, '%Y-%m-%d')
+                is_overdue = expect_time < datetime.now()
+            except:
+                pass
+        
+        devices_data.append({
+            'id': device.id,
+            'device_name': device.name,
+            'device_type': '手机' if device.device_type == DeviceType.PHONE else '车机',
+            'model': getattr(device, 'model', ''),
+            'status': device.status.value,
+            'borrower': device.borrower,
+            'cabinet': device.cabinet_number,
+            'expect_return_time': device.expected_return_date.strftime('%Y-%m-%d') if device.expected_return_date else None,
+            'is_overdue': is_overdue
+        })
+    
+    # 准备用户数据
+    users_data = [{'id': u.id, 'name': u.borrower_name, 'weixin_name': u.wechat_name} for u in users]
+    
+    return render_template('admin/pc/devices.html',
+                         admin_name=session.get('admin_name', '管理员'),
+                         devices=devices_data,
+                         users=users_data,
+                         cabinets=cabinets)
+
+
+@app.route('/admin/pc/device/add')
+@app.route('/admin/pc/device/<device_id>')
+@admin_required
+def admin_pc_device_add_edit(device_id=None):
+    """电脑端新增/编辑设备页面"""
+    device = None
+    if device_id:
+        device_obj = api_client.get_device(device_id)
+        if device_obj:
+            device = {
+                'id': device_obj.id,
+                'device_name': device_obj.name,
+                'device_type': '手机' if device_obj.device_type == DeviceType.PHONE else '车机',
+                'model': getattr(device_obj, 'model', ''),
+                'status': device_obj.status.value,
+                'cabinet': device_obj.cabinet_number,
+                'borrower': device_obj.borrower,
+                'remarks': getattr(device_obj, 'remark', '')
+            }
+    
+    return render_template('admin/pc/device_add.html',
+                         admin_name=session.get('admin_name', '管理员'),
+                         device=device)
+
+
+@app.route('/admin/pc/users')
+@admin_required
+def admin_pc_users():
+    """电脑端用户管理页面"""
+    users = api_client.get_users()
+    
+    users_data = []
+    for user in users:
+        users_data.append({
+            'id': user.id,
+            'name': user.borrower_name,
+            'weixin_name': user.wechat_name,
+            'phone': user.phone,
+            'borrow_count': user.borrow_count,
+            'is_admin': user.is_admin,
+            'is_frozen': user.is_frozen,
+            'register_time': user.create_time.strftime('%Y-%m-%d') if hasattr(user, 'create_time') and user.create_time else '-'
+        })
+    
+    return render_template('admin/pc/users.html',
+                         admin_name=session.get('admin_name', '管理员'),
+                         users=users_data)
+
+
+@app.route('/admin/pc/records')
+@admin_required
+def admin_pc_records():
+    """电脑端记录查询页面"""
+    all_records = api_client.get_records()
+    
+    records_data = []
+    for record in all_records[:50]:
+        records_data.append({
+            'action_type': record.operation_type.value,
+            'device_name': record.device_name,
+            'device_type': '手机' if record.device_type == DeviceType.PHONE else '车机',
+            'user_name': record.borrower,
+            'time': record.operation_time.strftime('%Y-%m-%d %H:%M'),
+            'remarks': record.remark
+        })
+    
+    return render_template('admin/pc/records.html',
+                         admin_name=session.get('admin_name', '管理员'),
+                         records=records_data)
+
+
+@app.route('/admin/pc/logs')
+@admin_required
+def admin_pc_logs():
+    """电脑端操作日志页面"""
+    # 获取操作日志
+    logs = api_client.get_admin_logs(limit=100)
+    
+    return render_template('admin/pc/logs.html',
+                         admin_name=session.get('admin_name', '管理员'),
+                         logs=logs)
+
+
+@app.route('/admin/pc/overdue')
+@admin_required
+def admin_pc_overdue():
+    """电脑端过期未还页面"""
+    all_devices = api_client.get_all_devices()
+    
+    overdue_devices = []
+    for device in all_devices:
+        if device.status == DeviceStatus.BORROWED and device.expected_return_date:
+            try:
+                expect_time = device.expected_return_date
+                if expect_time < datetime.now():
+                    overdue_days = (datetime.now() - expect_time).days
+                    
+                    # 获取用户手机号
+                    phone = ''
+                    for user in api_client.get_users():
+                        if user.borrower_name == device.borrower:
+                            phone = user.phone
+                            break
+                    
+                    overdue_devices.append({
+                        'id': device.id,
+                        'device_name': device.name,
+                        'device_type': '手机' if device.device_type == DeviceType.PHONE else '车机',
+                        'borrower': device.borrower,
+                        'borrow_time': device.borrow_time.strftime('%Y-%m-%d %H:%M') if device.borrow_time else None,
+                        'expect_return_time': device.expected_return_date.strftime('%Y-%m-%d') if device.expected_return_date else None,
+                        'overdue_days': overdue_days,
+                        'phone': phone
+                    })
+            except:
+                pass
+    
+    overdue_devices.sort(key=lambda x: x['overdue_days'], reverse=True)
+    
+    phone_overdue = len([d for d in overdue_devices if d['device_type'] == '手机'])
+    car_overdue = len([d for d in overdue_devices if d['device_type'] == '车机'])
+    
+    return render_template('admin/pc/overdue.html',
+                         admin_name=session.get('admin_name', '管理员'),
+                         overdue_devices=overdue_devices,
+                         overdue_count=len(overdue_devices),
+                         phone_overdue=phone_overdue,
+                         car_overdue=car_overdue)
+
+
+@app.route('/admin/logout')
+def admin_logout():
+    """管理员退出登录"""
+    session.pop('admin_id', None)
+    session.pop('admin_name', None)
+    return redirect(url_for('admin_select'))
+
+
+# ==================== 后台管理API接口 ====================
+
+@app.route('/api/admin/login', methods=['POST'])
+def api_admin_login():
+    """管理员登录API"""
+    data = request.get_json()
+    username = data.get('username', '').strip()
+    password = data.get('password', '').strip()
+    
+    admin = api_client.verify_admin_login(username, password)
+    if admin:
+        session['admin_id'] = admin.get('id', username)
+        session['admin_name'] = admin.get('name', username)
+        return jsonify({'success': True})
+    else:
+        return jsonify({'success': False, 'message': '用户名或密码错误'})
+
+
+@app.route('/api/devices', methods=['GET', 'POST'])
+@admin_required
+def api_devices():
+    """设备列表API / 新增设备API"""
+    if request.method == 'GET':
+        devices = api_client.get_all_devices()
+        devices_data = []
+        for device in devices:
+            is_overdue = False
+            if device.status == DeviceStatus.BORROWED and device.expected_return_date:
+                try:
+                    expect_time = datetime.strptime(device.expect_return_time, '%Y-%m-%d')
+                    is_overdue = expect_time < datetime.now()
+                except:
+                    pass
+            
+            devices_data.append({
+                'id': device.id,
+                'device_name': device.name,
+                'device_type': '手机' if device.device_type == DeviceType.PHONE else '车机',
+                'model': getattr(device, 'model', ''),
+                'status': device.status.value,
+                'borrower': device.borrower,
+                'cabinet': device.cabinet_number,
+                'borrow_time': device.borrow_time.strftime('%Y-%m-%d %H:%M') if device.borrow_time else None,
+                'expect_return_time': device.expected_return_date.strftime('%Y-%m-%d') if device.expected_return_date else None,
+                'remarks': getattr(device, 'remark', ''),
+                'is_overdue': is_overdue
+            })
+        return jsonify(devices_data)
+    
+    else:  # POST
+        data = request.get_json()
+        # 创建设备
+        try:
+            device_type = DeviceType.PHONE if data.get('device_type') == '手机' else DeviceType.CAR_MACHINE
+            device = api_client.create_device(
+                device_type=device_type,
+                device_name=data.get('device_name'),
+                model=data.get('model', ''),
+                cabinet=data.get('cabinet', ''),
+                status=data.get('status', '在库'),
+                remarks=data.get('remarks', '')
+            )
+            return jsonify({'success': True, 'device_id': device.id})
+        except Exception as e:
+            return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/devices/<device_id>', methods=['GET', 'PUT', 'DELETE'])
+@admin_required
+def api_device_detail(device_id):
+    """设备详情 / 更新 / 删除API"""
+    if request.method == 'GET':
+        device = api_client.get_device(device_id)
+        if device:
+            return jsonify({
+                'id': device.id,
+                'device_name': device.name,
+                'device_type': '手机' if device.device_type == DeviceType.PHONE else '车机',
+                'model': getattr(device, 'model', ''),
+                'status': device.status.value,
+                'borrower': device.borrower,
+                'cabinet': device.cabinet_number,
+                'remarks': getattr(device, 'remark', '')
+            })
+        return jsonify({'error': '设备不存在'}), 404
+    
+    elif request.method == 'PUT':
+        data = request.get_json()
+        try:
+            api_client.update_device(device_id, data)
+            return jsonify({'success': True})
+        except Exception as e:
+            return jsonify({'success': False, 'message': str(e)})
+    
+    else:  # DELETE
+        try:
+            api_client.delete_device(device_id)
+            return jsonify({'success': True})
+        except Exception as e:
+            return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/devices/<device_id>/borrow', methods=['POST'])
+@admin_required
+def api_device_borrow(device_id):
+    """借出设备API"""
+    data = request.get_json()
+    try:
+        api_client.borrow_device(
+            device_id=device_id,
+            borrower=data.get('user'),
+            days=int(data.get('days', 7)),
+            cabinet=data.get('cabinet', '流通'),
+            remarks=data.get('remarks', ''),
+            operator=session.get('admin_name', '管理员')
+        )
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/devices/<device_id>/return', methods=['POST'])
+@admin_required
+def api_device_return(device_id):
+    """归还设备API"""
+    try:
+        api_client.return_device(
+            device_id=device_id,
+            operator=session.get('admin_name', '管理员')
+        )
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/devices/<device_id>/transfer', methods=['POST'])
+@admin_required
+def api_device_transfer(device_id):
+    """转借设备API"""
+    data = request.get_json()
+    try:
+        api_client.transfer_device(
+            device_id=device_id,
+            new_borrower=data.get('user'),
+            remarks=data.get('remarks', ''),
+            operator=session.get('admin_name', '管理员')
+        )
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/devices/<device_id>/records', methods=['GET'])
+@admin_required
+def api_device_records(device_id):
+    """获取设备的借还记录API"""
+    limit = request.args.get('limit', 5, type=int)
+    records = api_client.get_device_records(device_id, limit=limit)
+    
+    records_data = []
+    for record in records:
+        records_data.append({
+            'action_type': record.operation_type.value,
+            'user_name': record.borrower,
+            'time': record.operation_time.strftime('%Y-%m-%d %H:%M')
+        })
+    
+    return jsonify(records_data)
+
+
+@app.route('/api/devices/overdue', methods=['GET'])
+@admin_required
+def api_devices_overdue():
+    """获取逾期设备列表API"""
+    all_devices = api_client.get_all_devices()
+    
+    overdue_devices = []
+    for device in all_devices:
+        if device.status == DeviceStatus.BORROWED and device.expected_return_date:
+            try:
+                expect_time = device.expected_return_date
+                if expect_time < datetime.now():
+                    overdue_days = (datetime.now() - expect_time).days
+                    
+                    # 获取用户手机号
+                    phone = ''
+                    for user in api_client.get_users():
+                        if user.borrower_name == device.borrower:
+                            phone = user.phone
+                            break
+                    
+                    overdue_devices.append({
+                        'id': device.id,
+                        'device_name': device.name,
+                        'device_type': '手机' if device.device_type == DeviceType.PHONE else '车机',
+                        'borrower': device.borrower,
+                        'borrow_time': device.borrow_time.strftime('%Y-%m-%d %H:%M') if device.borrow_time else None,
+                        'expect_return_time': device.expected_return_date.strftime('%Y-%m-%d') if device.expected_return_date else None,
+                        'overdue_days': overdue_days,
+                        'phone': phone
+                    })
+            except:
+                pass
+    
+    overdue_devices.sort(key=lambda x: x['overdue_days'], reverse=True)
+    
+    return jsonify({'devices': overdue_devices, 'count': len(overdue_devices)})
+
+
+@app.route('/api/admin/users', methods=['GET', 'POST'])
+@admin_required
+def api_admin_users():
+    """用户列表 / 新增用户API (后台管理)"""
+    if request.method == 'GET':
+        users = api_client.get_users()
+        users_data = []
+        for user in users:
+            users_data.append({
+                'id': user.id,
+                'name': user.borrower_name,
+                'weixin_name': user.wechat_name,
+                'phone': user.phone,
+                'borrow_count': user.borrow_count,
+                'is_admin': user.is_admin,
+                'is_frozen': user.is_frozen,
+                'register_time': user.create_time.strftime('%Y-%m-%d') if hasattr(user, 'create_time') and user.create_time else '-'
+            })
+        return jsonify(users_data)
+    
+    else:  # POST
+        data = request.get_json()
+        try:
+            user = api_client.create_user(
+                borrower_name=data.get('name'),
+                wechat_name=data.get('weixin_name', ''),
+                phone=data.get('phone', ''),
+                password=data.get('password'),
+                is_admin=data.get('is_admin', False)
+            )
+            return jsonify({'success': True, 'user_id': user.id})
+        except Exception as e:
+            return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/users/<user_id>', methods=['PUT', 'DELETE'])
+@admin_required
+def api_user_detail(user_id):
+    """更新用户 / 删除用户API"""
+    if request.method == 'PUT':
+        data = request.get_json()
+        try:
+            api_client.update_user(user_id, data)
+            return jsonify({'success': True})
+        except Exception as e:
+            return jsonify({'success': False, 'message': str(e)})
+    
+    else:  # DELETE
+        try:
+            api_client.delete_user(user_id)
+            return jsonify({'success': True})
+        except Exception as e:
+            return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/users/<user_id>/freeze', methods=['POST'])
+@admin_required
+def api_user_freeze(user_id):
+    """冻结用户API"""
+    try:
+        api_client.freeze_user(user_id)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/users/<user_id>/unfreeze', methods=['POST'])
+@admin_required
+def api_user_unfreeze(user_id):
+    """解冻用户API"""
+    try:
+        api_client.unfreeze_user(user_id)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/users/<user_id>/set_admin', methods=['POST'])
+@admin_required
+def api_user_set_admin(user_id):
+    """设置管理员API"""
+    try:
+        api_client.set_user_admin(user_id, True)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/users/<user_id>/remove_admin', methods=['POST'])
+@admin_required
+def api_user_remove_admin(user_id):
+    """取消管理员API"""
+    try:
+        api_client.set_user_admin(user_id, False)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/records', methods=['GET'])
+@admin_required
+def api_records():
+    """记录查询API"""
+    page = request.args.get('page', 1, type=int)
+    limit = request.args.get('limit', 20, type=int)
+    
+    records = api_client.get_records()
+    
+    records_data = []
+    for record in records:
+        records_data.append({
+            'action_type': record.operation_type.value,
+            'device_name': record.device_name,
+            'device_type': '手机' if record.device_type == DeviceType.PHONE else '车机',
+            'user_name': record.borrower,
+            'time': record.operation_time.strftime('%Y-%m-%d %H:%M'),
+            'remarks': record.remark
+        })
+    
+    # 分页
+    total = len(records_data)
+    total_pages = (total + limit - 1) // limit
+    start = (page - 1) * limit
+    end = start + limit
+    paginated = records_data[start:end]
+    
+    return jsonify({
+        'records': paginated,
+        'page': page,
+        'total_pages': total_pages,
+        'total': total
+    })
+
+
+@app.route('/api/records/export', methods=['POST'])
+@admin_required
+def api_records_export():
+    """导出记录API"""
+    # 这里应该返回Excel文件
+    # 简化处理，返回JSON
+    return jsonify({'success': True, 'message': '导出功能待实现'})
+
+
+@app.route('/api/logs', methods=['GET'])
+@admin_required
+def api_logs():
+    """操作日志API"""
+    limit = request.args.get('limit', 100, type=int)
+    logs = api_client.get_admin_logs(limit=limit)
+    return jsonify(logs)
 
 
 # ==================== 错误处理 ====================

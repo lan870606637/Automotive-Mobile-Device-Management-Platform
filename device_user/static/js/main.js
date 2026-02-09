@@ -255,6 +255,28 @@ function getCurrentLocation(callback) {
     }
 }
 
+// 显示原因/备注气泡提示
+function showReasonTooltip(btn, reason) {
+    let tooltip = document.getElementById('reasonTooltip');
+    if (!tooltip) {
+        tooltip = document.createElement('div');
+        tooltip.id = 'reasonTooltip';
+        tooltip.style.cssText = 'position:fixed;display:none;background:#333;color:#fff;padding:8px 12px;border-radius:4px;font-size:12px;max-width:300px;z-index:10000;word-wrap:break-word;';
+        document.body.appendChild(tooltip);
+    }
+    tooltip.textContent = reason;
+    const rect = btn.getBoundingClientRect();
+    tooltip.style.left = rect.left + 'px';
+    tooltip.style.top = (rect.bottom + 8) + 'px';
+    tooltip.style.display = 'block';
+    setTimeout(() => {
+        document.addEventListener('click', function hide() {
+            tooltip.style.display = 'none';
+            document.removeEventListener('click', hide);
+        });
+    }, 100);
+}
+
 // 导出全局函数
 window.showToast = showToast;
 window.formatDate = formatDate;
@@ -265,3 +287,4 @@ window.request = request;
 window.storage = storage;
 window.validateForm = validateForm;
 window.getCurrentLocation = getCurrentLocation;
+window.showReasonTooltip = showReasonTooltip;

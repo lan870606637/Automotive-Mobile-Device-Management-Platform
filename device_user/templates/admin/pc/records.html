@@ -1,0 +1,308 @@
+<!-- 
+  电脑端后台管理 - 记录查询页面
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>记录查询 - 车载测试设备管理系统</title>
+    <link rel="stylesheet" href="/static/admin/admin_pc.css">
+</head>
+<body class="pc-admin-body">
+    <div class="pc-admin-wrapper">
+        <!-- 侧边栏 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <span class="logo">🔧</span>
+                <span class="logo-text">后台管理</span>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="/admin/pc/dashboard" class="nav-item">
+                    <span class="nav-icon">📊</span>
+                    <span>仪表盘</span>
+                </a>
+                <a href="/admin/pc/devices" class="nav-item">
+                    <span class="nav-icon">📱</span>
+                    <span>设备管理</span>
+                </a>
+                <a href="/admin/pc/users" class="nav-item">
+                    <span class="nav-icon">👥</span>
+                    <span>用户管理</span>
+                </a>
+                <a href="/admin/pc/records" class="nav-item active">
+                    <span class="nav-icon">📋</span>
+                    <span>记录查询</span>
+                </a>
+                <a href="/admin/pc/logs" class="nav-item">
+                    <span class="nav-icon">📜</span>
+                    <span>操作日志</span>
+                </a>
+                <a href="/admin/pc/overdue" class="nav-item">
+                    <span class="nav-icon">⚠️</span>
+                    <span>过期未还</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <span>👤 {{ admin_name }}</span>
+                <a href="/admin/logout" class="logout-btn">退出</a>
+            </div>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <header class="content-header">
+                <h1>记录查询</h1>
+                <div class="header-actions">
+                    <button class="btn btn-success" onclick="exportRecords()">📥 导出Excel</button>
+                </div>
+            </header>
+
+            <!-- 筛选栏 -->
+            <div class="filter-bar">
+                <div class="filter-group">
+                    <input type="text" id="searchDevice" class="search-input" placeholder="搜索设备名">
+                </div>
+                <div class="filter-group">
+                    <input type="text" id="searchUser" placeholder="搜索借用人">
+                </div>
+                <div class="filter-group">
+                    <label>类型</label>
+                    <select id="filterType">
+                        <option value="">全部</option>
+                        <option value="手机">手机</option>
+                        <option value="车机">车机</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>操作</label>
+                    <select id="filterAction">
+                        <option value="">全部</option>
+                        <option value="借出">借出</option>
+                        <option value="归还">归还</option>
+                        <option value="录入登记">录入登记</option>
+                        <option value="强制归还">强制归还</option>
+                        <option value="转借">转借</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>开始日期</label>
+                    <input type="date" id="startDate">
+                </div>
+                <div class="filter-group">
+                    <label>结束日期</label>
+                    <input type="date" id="endDate">
+                </div>
+                <button class="btn btn-secondary" onclick="resetFilters()">重置</button>
+            </div>
+
+            <!-- 记录列表 -->
+            <div class="data-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>操作类型</th>
+                            <th>设备名称</th>
+                            <th>设备类型</th>
+                            <th>借用人</th>
+                            <th>操作时间</th>
+                            <th>备注</th>
+                        </tr>
+                    </thead>
+                    <tbody id="recordsTableBody">
+                        {% for record in records %}
+                        <tr>
+                            <td><span class="action-badge action-{{ record.action_type }}">{{ record.action_type }}</span></td>
+                            <td>{{ record.device_name }}</td>
+                            <td>{{ record.device_type }}</td>
+                            <td>{{ record.user_name }}</td>
+                            <td>{{ record.time }}</td>
+                            <td>{{ record.remarks or '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- 分页 -->
+            <div class="pagination" id="pagination">
+                <!-- 动态生成分页 -->
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast提示 -->
+    <div id="toast" class="toast"></div>
+
+    <script>
+        let records = [];
+        let currentPage = 1;
+        let totalPages = 1;
+
+        // 加载记录
+        async function loadRecords(page = 1) {
+            try {
+                const params = new URLSearchParams();
+                params.append('page', page);
+                params.append('limit', 20);
+
+                const response = await fetch(`/api/records?${params}`);
+                const data = await response.json();
+                
+                records = data.records || [];
+                currentPage = data.page || 1;
+                totalPages = data.total_pages || 1;
+                
+                renderRecords(records);
+                renderPagination();
+            } catch (error) {
+                showToast('加载记录失败', 'error');
+            }
+        }
+
+        // 渲染记录
+        function renderRecords(recordList) {
+            const tbody = document.getElementById('recordsTableBody');
+            
+            if (recordList.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="empty-cell">暂无记录</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = recordList.map(record => `
+                <tr>
+                    <td><span class="action-badge action-${record.action_type}">${record.action_type}</span></td>
+                    <td>${record.device_name}</td>
+                    <td>${record.device_type}</td>
+                    <td>${record.user_name}</td>
+                    <td>${record.time}</td>
+                    <td>${record.remarks || '-'}</td>
+                </tr>
+            `).join('');
+        }
+
+        // 渲染分页
+        function renderPagination() {
+            const pagination = document.getElementById('pagination');
+            if (totalPages <= 1) {
+                pagination.innerHTML = '';
+                return;
+            }
+
+            let html = '';
+            
+            // 上一页
+            html += `<button class="pagination-btn" onclick="loadRecords(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>上一页</button>`;
+            
+            // 页码
+            for (let i = 1; i <= totalPages; i++) {
+                if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
+                    html += `<button class="pagination-btn ${i === currentPage ? 'active' : ''}" onclick="loadRecords(${i})">${i}</button>`;
+                } else if (i === currentPage - 3 || i === currentPage + 3) {
+                    html += `<span>...</span>`;
+                }
+            }
+            
+            // 下一页
+            html += `<button class="pagination-btn" onclick="loadRecords(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>下一页</button>`;
+            
+            pagination.innerHTML = html;
+        }
+
+        // 筛选功能
+        document.getElementById('searchDevice')?.addEventListener('input', filterRecords);
+        document.getElementById('searchUser')?.addEventListener('input', filterRecords);
+        document.getElementById('filterType')?.addEventListener('change', filterRecords);
+        document.getElementById('filterAction')?.addEventListener('change', filterRecords);
+        document.getElementById('startDate')?.addEventListener('change', filterRecords);
+        document.getElementById('endDate')?.addEventListener('change', filterRecords);
+
+        function filterRecords() {
+            const deviceKeyword = document.getElementById('searchDevice')?.value?.toLowerCase() || '';
+            const userKeyword = document.getElementById('searchUser')?.value?.toLowerCase() || '';
+            const type = document.getElementById('filterType')?.value || '';
+            const action = document.getElementById('filterAction')?.value || '';
+            const startDate = document.getElementById('startDate')?.value || '';
+            const endDate = document.getElementById('endDate')?.value || '';
+
+            let filtered = records;
+
+            if (deviceKeyword) {
+                filtered = filtered.filter(r => r.device_name && r.device_name.toLowerCase().includes(deviceKeyword));
+            }
+            if (userKeyword) {
+                filtered = filtered.filter(r => r.user_name && r.user_name.toLowerCase().includes(userKeyword));
+            }
+            if (type) {
+                filtered = filtered.filter(r => r.device_type === type);
+            }
+            if (action) {
+                filtered = filtered.filter(r => r.action_type === action);
+            }
+            if (startDate) {
+                filtered = filtered.filter(r => r.time && r.time >= startDate);
+            }
+            if (endDate) {
+                filtered = filtered.filter(r => r.time && r.time <= endDate + ' 23:59:59');
+            }
+
+            renderRecords(filtered);
+        }
+
+        function resetFilters() {
+            document.getElementById('searchDevice').value = '';
+            document.getElementById('searchUser').value = '';
+            document.getElementById('filterType').value = '';
+            document.getElementById('filterAction').value = '';
+            document.getElementById('startDate').value = '';
+            document.getElementById('endDate').value = '';
+            renderRecords(records);
+        }
+
+        // 导出记录
+        async function exportRecords() {
+            try {
+                const response = await fetch('/api/records/export', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        device_name: document.getElementById('searchDevice')?.value,
+                        user_name: document.getElementById('searchUser')?.value,
+                        device_type: document.getElementById('filterType')?.value,
+                        action_type: document.getElementById('filterAction')?.value,
+                        start_date: document.getElementById('startDate')?.value,
+                        end_date: document.getElementById('endDate')?.value
+                    })
+                });
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `借还记录_${new Date().toISOString().split('T')[0]}.xlsx`;
+                    a.click();
+                    showToast('导出成功', 'success');
+                } else {
+                    showToast('导出失败', 'error');
+                }
+            } catch (error) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        // 显示Toast
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type} show`;
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => loadRecords(1));
+    </script>
+</body>
+</html>

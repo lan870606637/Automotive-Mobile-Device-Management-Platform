@@ -108,10 +108,10 @@
             </div>
             <div class="card-body">
                 <div class="action-btns">
-                    <button class="btn btn-default btn-block" onclick="openReportLostModal()">丢失报备</button>
-                    <button class="btn btn-default btn-block" onclick="openReportDamageModal()">损坏报备</button>
+                    <button class="btn btn-error btn-block" onclick="openReportLostModal()">⚠️ 丢失报备</button>
+                    <button class="btn btn-warning btn-block" onclick="openReportDamageModal()">🔧 损坏报备</button>
                     {% if device.previous_borrower %}
-                    <button class="btn btn-error btn-block" onclick="confirmNotFound()">未找到</button>
+                    <button class="btn btn-error btn-block" onclick="confirmNotFound()">❔ 未找到</button>
                     {% else %}
                     <button class="btn btn-error btn-block" onclick="confirmNotFoundDirect()">未找到</button>
                     {% endif %}
@@ -194,6 +194,40 @@
         </div>
         {% endif %}
 
+        <!-- 用户备注 -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">📝 用户备注</span>
+                <button class="btn btn-primary btn-sm" onclick="openAddRemarkModal()">+ 添加备注</button>
+            </div>
+            <div class="card-body">
+                {% if remarks %}
+                <div class="remarks-list">
+                    {% for remark in remarks %}
+                    <div class="remark-item" data-remark-id="{{ remark.id }}">
+                        <div class="remark-content">{{ remark.content | e }}</div>
+                        <div class="remark-meta">
+                            <span class="remark-author">{{ remark.creator }}</span>
+                            <span>{{ remark.create_time }}</span>
+                            {% if remark.is_creator %}
+                            <div class="remark-actions">
+                                <a href="javascript:void(0)" onclick="openEditRemarkModalFromElement(this)">编辑</a>
+                                <a href="javascript:void(0)" class="delete" onclick="deleteRemarkFromElement(this)">删除</a>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="empty-state" style="padding: 40px;">
+                    <p class="empty-title">暂无备注</p>
+                    <button class="btn btn-primary" onclick="openAddRemarkModal()">添加第一条备注</button>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
         <!-- 查看记录 -->
         <div class="card">
             <div class="card-header">
@@ -208,7 +242,7 @@
                         <div class="timeline-dot"></div>
                         <div class="timeline-content">
                             <div class="timeline-header">
-                                <span class="timeline-device">{{ vr.viewer }}</span>
+                                <span class="timeline-device">{{ vr.viewer }}{% if is_admin_user(vr.viewer) %}<span class="status-tag status-lost" style="margin-left: 4px; font-size: 10px; padding: 1px 4px;">管</span>{% endif %}</span>
                                 <span class="timeline-time">{{ vr.view_time[:19] }}</span>
                             </div>
                         </div>
@@ -218,40 +252,6 @@
                 {% else %}
                 <div class="empty-state" style="padding: 40px;">
                     <p class="empty-title">暂无查看记录</p>
-                </div>
-                {% endif %}
-            </div>
-        </div>
-
-        <!-- 用户备注 -->
-        <div class="card">
-            <div class="card-header">
-                <span class="card-title">📝 用户备注</span>
-                <button class="btn btn-primary btn-sm" onclick="openAddRemarkModal()">+ 添加备注</button>
-            </div>
-            <div class="card-body">
-                {% if remarks %}
-                <div class="remarks-list">
-                    {% for remark in remarks %}
-                    <div class="remark-item">
-                        <div class="remark-content">{{ remark.content }}</div>
-                        <div class="remark-meta">
-                            <span class="remark-author">{{ remark.creator }}</span>
-                            <span>{{ remark.create_time }}</span>
-                            {% if remark.is_creator %}
-                            <div class="remark-actions">
-                                <a href="javascript:void(0)" onclick="openEditRemarkModal('{{ remark.id }}', '{{ remark.content|replace("'", "\\'") }}')">编辑</a>
-                                <a href="javascript:void(0)" class="delete" onclick="deleteRemark('{{ remark.id }}')">删除</a>
-                            </div>
-                            {% endif %}
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
-                {% else %}
-                <div class="empty-state" style="padding: 40px;">
-                    <p class="empty-title">暂无备注</p>
-                    <button class="btn btn-primary" onclick="openAddRemarkModal()">添加第一条备注</button>
                 </div>
                 {% endif %}
             </div>
@@ -287,6 +287,9 @@
                 <div class="info-row" style="background: #e6f7ff; padding: 12px; border-radius: 8px; margin-bottom: 12px;">
                     <span class="info-label">📍 {% if device_type == '手机' %}保管人{% else %}柜号{% endif %}</span>
                     <span class="info-value" style="color: #1890ff; font-size: 18px; font-weight: 600;">{{ device.cabinet_number }}</span>
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <button class="btn btn-primary" onclick="openCabinetMapModal()">🗺️ 查看柜子位置图</button>
                 </div>
                 {% endif %}
                 <div class="info-row">
@@ -358,8 +361,8 @@
                                 {% endif %}
                             </div>
                             {% if record.reason and record.reason != 'nan' %}
-                            <div style="margin-top: 4px;">
-                                <button class="btn btn-sm" style="padding: 2px 8px; font-size: 12px;" onclick="showReasonTooltip(this, '{{ record.reason|replace("'", "\\'") }}')" title="查看详情">查看原因</button>
+                            <div style="margin-top: 4px; font-size: 13px; color: #595959;">
+                                原因：{{ record.reason }}
                             </div>
                             {% endif %}
                         </div>
@@ -659,8 +662,21 @@
     </div>
 </div>
 
-<!-- 原因提示气泡 -->
-<div id="reasonTooltip" style="position: fixed; background: #333; color: #fff; padding: 12px 16px; border-radius: 8px; font-size: 13px; max-width: 280px; z-index: 3000; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.15);"></div>
+<!-- 弹窗：柜子位置图 -->
+<div class="modal-overlay" id="cabinetMapModal" style="align-items: flex-start; padding-top: 40px;">
+    <div class="modal" style="max-width: 90vw; width: auto;">
+        <div class="modal-header">
+            <span class="modal-title">🗺️ 柜子位置分布图</span>
+            <button class="modal-close" onclick="closeModal('cabinetMapModal')">×</button>
+        </div>
+        <div class="modal-body" style="padding: 0;">
+            <img src="{{ url_for('static', filename='images/cabinet_map.png') }}" alt="柜子位置图" style="max-width: 100%; height: auto; display: block;">
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="closeModal('cabinetMapModal')">关闭</button>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -669,14 +685,21 @@ const deviceId = '{{ device.id }}';
 const deviceType = '{{ device_type }}';
 let currentAction = '';
 let currentRemarkId = '';
-const allUsers = {{ all_users | tojson | safe }};
+let allUsers = [];
 
 // 页面加载完成后初始化
 document.addEventListener('DOMContentLoaded', function() {
-    // 设置默认归还日期为7天后
+    // 加载用户列表
+    fetch('/api/users').then(r => r.json()).then(data => {
+        if (data.success && data.users) {
+            allUsers = data.users;
+        }
+    }).catch(() => {});
+
+    // 设置默认归还日期为1天后
     const returnDateEl = document.getElementById('returnDate');
     if (returnDateEl) {
-        returnDateEl.value = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        returnDateEl.value = new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     }
 
     // 借用原因联动
@@ -731,6 +754,17 @@ function openEditRemarkModal(id, content) {
     openModal('editRemarkModal');
 }
 
+function openEditRemarkModalFromElement(element) {
+    const item = element.closest('.remark-item');
+    if (!item) return;
+    const id = item.dataset.remarkId;
+    const contentEl = item.querySelector('.remark-content');
+    const content = contentEl ? contentEl.textContent : '';
+    if (id) {
+        openEditRemarkModal(id, content);
+    }
+}
+
 function loadUsersToSelect(select) {
     fetch('/api/users').then(r => r.json()).then(data => {
         if (data.success) {
@@ -755,7 +789,10 @@ function loadUserSuggestions() {
         if (!keyword) { suggestions.style.display = 'none'; return; }
         const matched = allUsers.filter(u => u.borrower_name.toLowerCase().includes(keyword));
         if (matched.length > 0) {
-            suggestions.innerHTML = matched.map(u => `<div style="padding: 10px 12px; cursor: pointer;" onclick="selectUser('${u.borrower_name}')">${u.borrower_name}</div>`).join('');
+            suggestions.innerHTML = matched.map(u => {
+                const name = u.borrower_name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                return '<div style="padding: 10px 12px; cursor: pointer;" onclick="selectUser(\'' + name + '\')">' + u.borrower_name + '</div>';
+            }).join('');
             suggestions.style.display = 'block';
         } else {
             suggestions.innerHTML = '<div style="padding: 10px 12px; color: #999;">无匹配用户</div>';
@@ -944,7 +981,9 @@ function submitTransferToUser() {
 }
 
 function confirmTransferToMe() {
-    if (!confirm('确定要将 ' + {{ device.name | tojson }} + ' 从 ' + {{ device.borrower | tojson }} + ' 转借到自己名下吗？')) return;
+    const deviceName = document.querySelector('.detail-title h2')?.textContent || '此设备';
+    const borrower = document.querySelector('.info-value')?.textContent || '当前借用人';
+    if (!confirm('确定要将 ' + deviceName + ' 从 ' + borrower + ' 转借到自己名下吗？')) return;
     fetch('/api/transfer-to-me', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -956,7 +995,9 @@ function confirmTransferToMe() {
 }
 
 function confirmReturnByCustodian() {
-    if (!confirm('确定要收回 ' + {{ device.name | tojson }} + ' 吗？当前借用人为 ' + {{ device.borrower | tojson }}')) return;
+    const deviceName = document.querySelector('.detail-title h2')?.textContent || '此设备';
+    const borrower = document.querySelector('.info-value')?.textContent || '当前借用人';
+    if (!confirm('确定要收回 ' + deviceName + ' 吗？当前借用人为 ' + borrower)) return;
     fetch('/api/return-by-custodian', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -1037,6 +1078,10 @@ function submitEditRemark() {
     }).catch(() => showToast('提交失败，请重试'));
 }
 
+function openCabinetMapModal() {
+    openModal('cabinetMapModal');
+}
+
 function deleteRemark(id) {
     if (!confirm('确定要删除这条备注吗？')) return;
     fetch('/api/remark/delete', {
@@ -1049,20 +1094,50 @@ function deleteRemark(id) {
     }).catch(() => showToast('删除失败，请重试'));
 }
 
-function showReasonTooltip(btn, reason) {
-    const tooltip = document.getElementById('reasonTooltip');
-    if (!tooltip) return;
-    tooltip.textContent = reason;
-    const rect = btn.getBoundingClientRect();
-    tooltip.style.left = rect.left + 'px';
-    tooltip.style.top = (rect.bottom + 8) + 'px';
-    tooltip.style.display = 'block';
-    setTimeout(() => {
-        document.addEventListener('click', function hide() {
-            tooltip.style.display = 'none';
-            document.removeEventListener('click', hide);
-        });
-    }, 100);
+function deleteRemarkFromElement(element) {
+    const item = element.closest('.remark-item');
+    if (!item) return;
+    const id = item.dataset.remarkId;
+    if (id) {
+        deleteRemark(id);
+    }
 }
+
+// 将函数导出到全局作用域，确保 onclick 可以调用
+window.openBorrowModal = openBorrowModal;
+window.openReturnModal = openReturnModal;
+window.openTransferModal = openTransferModal;
+window.openRenewModal = openRenewModal;
+window.openReportLostModal = openReportLostModal;
+window.openReportDamageModal = openReportDamageModal;
+window.openFoundModal = openFoundModal;
+window.openRepairedModal = openRepairedModal;
+window.openAddRemarkModal = openAddRemarkModal;
+window.openTransferSelectModal = openTransferSelectModal;
+window.openTransferCustodianModal = openTransferCustodianModal;
+window.openEditRemarkModalFromElement = openEditRemarkModalFromElement;
+window.submitBorrow = submitBorrow;
+window.submitReturn = submitReturn;
+window.submitTransfer = submitTransfer;
+window.submitRenew = submitRenew;
+window.submitReportLost = submitReportLost;
+window.submitReportDamage = submitReportDamage;
+window.submitFound = submitFound;
+window.submitRepaired = submitRepaired;
+window.submitTransferToUser = submitTransferToUser;
+window.confirmTransferToMe = confirmTransferToMe;
+window.confirmReturnByCustodian = confirmReturnByCustodian;
+window.confirmNotFound = confirmNotFound;
+window.confirmNotFoundDirect = confirmNotFoundDirect;
+window.submitTransferCustodian = submitTransferCustodian;
+window.submitAddRemark = submitAddRemark;
+window.submitEditRemark = submitEditRemark;
+window.deleteRemark = deleteRemark;
+window.openCabinetMapModal = openCabinetMapModal;
+window.deleteRemarkFromElement = deleteRemarkFromElement;
+window.selectUser = selectUser;
+window.openModal = openModal;
+window.closeModal = closeModal;
+
 </script>
 {% endblock %}

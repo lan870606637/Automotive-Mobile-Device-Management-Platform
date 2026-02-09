@@ -24,9 +24,13 @@
                     <span class="nav-icon">📱</span>
                     <span class="nav-text">设备列表</span>
                 </a>
-                <a href="{{ url_for('pc_my_records') }}" class="nav-item {% if active_nav == 'records' %}active{% endif %}">
+                <a href="{{ url_for('pc_my_records') }}" class="nav-item {% if active_nav == 'my_records' %}active{% endif %}">
                     <span class="nav-icon">📋</span>
-                    <span class="nav-text">借用记录</span>
+                    <span class="nav-text">我的借用记录</span>
+                </a>
+                <a href="{{ url_for('pc_all_records') }}" class="nav-item {% if active_nav == 'all_records' %}active{% endif %}">
+                    <span class="nav-icon">🌍</span>
+                    <span class="nav-text">全部借用记录</span>
                 </a>
             </nav>
             <div class="sidebar-footer">

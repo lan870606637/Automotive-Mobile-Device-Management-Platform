@@ -347,7 +347,7 @@
             <div class="record-item">
                 <div class="record-main">
                     <span class="record-type type-view">查看</span>
-                    <span class="record-user">{{ vr.viewer }}</span>
+                    <span class="record-user">{{ vr.viewer }}{% if is_admin_user(vr.viewer) %}<span style="color: #ff4d4f; font-weight: bold; margin-left: 2px;">管</span>{% endif %}</span>
                 </div>
                 <div class="record-time">{{ vr.view_time }}</div>
             </div>

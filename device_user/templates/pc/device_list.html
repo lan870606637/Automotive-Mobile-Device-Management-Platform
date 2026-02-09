@@ -22,6 +22,7 @@
     <div class="search-input-wrap">
         <span class="search-icon">🔍</span>
         <input type="text" id="searchInput" class="search-input" placeholder="搜索设备名、型号..." onkeyup="handleSearch(event)">
+        <button class="clear-btn" id="clearSearchBtn" onclick="clearSearch()" style="display:none; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #999;">✕</button>
     </div>
 </div>
 
@@ -110,24 +111,115 @@
 {% block extra_js %}
 <script>
 let searchTimeout;
+let allDevices = []; // 缓存搜索结果
+let isSearching = false;
+
 function handleSearch(event) {
     clearTimeout(searchTimeout);
+    const keyword = event.target.value.trim();
+    
+    // 如果搜索框为空，恢复原始列表
+    if (!keyword) {
+        restoreOriginalList();
+        return;
+    }
+    
     searchTimeout = setTimeout(() => {
-        const keyword = event.target.value.trim().toLowerCase();
-        const rows = document.querySelectorAll('#deviceTable tbody tr');
-        
-        rows.forEach(row => {
-            const name = row.querySelector('.device-name').textContent.toLowerCase();
-            const type = row.querySelector('.device-type').textContent.toLowerCase();
-            const remark = row.cells[3].textContent.toLowerCase();
-            
-            if (!keyword || name.includes(keyword) || type.includes(keyword) || remark.includes(keyword)) {
-                row.style.display = '';
-            } else {
-                row.style.display = 'none';
-            }
-        });
+        doSearch(keyword);
     }, 300);
+}
+
+function doSearch(keyword) {
+    if (isSearching) return;
+    isSearching = true;
+    
+    fetch(`/api/search?keyword=${encodeURIComponent(keyword)}`)
+        .then(res => res.json())
+        .then(data => {
+            isSearching = false;
+            if (data.success) {
+                allDevices = data.devices;
+                renderSearchResults(allDevices);
+            } else {
+                showToast('搜索失败');
+            }
+        })
+        .catch(err => {
+            isSearching = false;
+            showToast('搜索失败，请重试');
+        });
+}
+
+function renderSearchResults(devices) {
+    const tbody = document.querySelector('#deviceTable tbody');
+    const pagination = document.querySelector('.pagination');
+    
+    // 隐藏分页
+    if (pagination) {
+        pagination.style.display = 'none';
+    }
+    
+    if (devices.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="5" class="empty-state" style="padding: 40px;">
+                    <div class="empty-icon">🔍</div>
+                    <p class="empty-title">未找到匹配的设备</p>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+    
+    tbody.innerHTML = devices.map(device => `
+        <tr ${device.status === '报废' ? 'class="disabled"' : ''}>
+            <td>
+                <span class="device-icon">${device.device_type === '车机' ? '🚗' : '📱'}</span>
+                ${device.status === '报废' 
+                    ? `<span class="device-name">${escapeHtml(device.name)}</span>`
+                    : `<a href="${device.no_cabinet || device.is_circulating ? '/pc/device/' + device.id + '/simple' : '/pc/device/' + device.id}" class="device-name" style="color: #1890ff; font-weight: 500;">${escapeHtml(device.name)}</a>`
+                }
+            </td>
+            <td class="device-type">${device.device_type}</td>
+            <td>
+                ${device.no_cabinet 
+                    ? '<span class="status-tag status-no-cabinet">无柜号</span>'
+                    : device.is_circulating
+                        ? '<span class="status-tag status-circulating">流通</span>'
+                        : `<span class="status-tag ${getStatusClass(device.status)}">${device.status}</span>`
+                }
+            </td>
+            <td style="color: #8c8c8c; font-size: 13px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${device.remark ? escapeHtml(device.remark) : '-'}</td>
+            <td>
+                ${device.status === '报废' 
+                    ? '<button class="btn btn-default btn-sm" disabled>已报废</button>'
+                    : `<a href="${device.no_cabinet || device.is_circulating ? '/pc/device/' + device.id + '/simple' : '/pc/device/' + device.id}" class="btn btn-primary btn-sm">查看详情</a>`
+                }
+            </td>
+        </tr>
+    `).join('');
+}
+
+function restoreOriginalList() {
+    location.reload();
+}
+
+function getStatusClass(status) {
+    const classMap = {
+        '在库': 'status-available',
+        '借出': 'status-borrowed',
+        '已寄出': 'status-shipped',
+        '已损坏': 'status-damaged',
+        '丢失': 'status-lost',
+        '报废': 'status-scrapped'
+    };
+    return classMap[status] || '';
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 </script>
 {% endblock %}

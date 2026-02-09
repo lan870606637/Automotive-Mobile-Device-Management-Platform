@@ -1,0 +1,528 @@
+<!-- 
+  手机端后台管理 - 设备查询页面
+  核心功能：搜索、底部弹窗详情、长按快捷操作、点击展开
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>设备查询 - 手机后台</title>
+    <link rel="stylesheet" href="/static/admin/admin_mobile.css">
+</head>
+<body>
+    <div class="mobile-admin-container">
+        <!-- 顶部标题栏 -->
+        <header class="mobile-header">
+            <a href="/admin/mobile/dashboard" class="back-btn">←</a>
+            <h1>设备查询</h1>
+            <a href="/admin/mobile/settings" class="settings-btn">⚙️</a>
+        </header>
+
+        <!-- 搜索栏 -->
+        <div class="search-section">
+            <div class="search-box">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="searchInput" placeholder="搜索设备名 / 借用人 / 柜号" autocomplete="off">
+                <button class="clear-btn" id="clearSearch" style="display:none;">✕</button>
+            </div>
+            <!-- 筛选标签 -->
+            <div class="filter-tags">
+                <select id="filterStatus" class="filter-select">
+                    <option value="">全部状态</option>
+                    <option value="在库">在库</option>
+                    <option value="借出">借出</option>
+                    <option value="已寄出">已寄出</option>
+                    <option value="维修中">维修中</option>
+                    <option value="已损坏">已损坏</option>
+                    <option value="报废">报废</option>
+                </select>
+                <select id="filterType" class="filter-select">
+                    <option value="">全部类型</option>
+                    <option value="手机">📱 手机</option>
+                    <option value="车机">🚗 车机</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- 设备列表 -->
+        <div class="device-list-section" id="deviceList">
+            <!-- 设备列表将通过JS动态加载 -->
+            <div class="loading-state">
+                <span class="loading-icon">⏳</span>
+                <p>加载中...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 底部导航 -->
+    <nav class="bottom-nav">
+        <a href="/admin/mobile/dashboard" class="nav-item">
+            <span class="nav-icon">🏠</span>
+            <span class="nav-text">首页</span>
+        </a>
+        <a href="/admin/mobile/devices" class="nav-item active">
+            <span class="nav-icon">📱</span>
+            <span class="nav-text">查询</span>
+        </a>
+        <a href="/admin/mobile/device/add" class="nav-item">
+            <span class="nav-icon">➕</span>
+            <span class="nav-text">录入</span>
+        </a>
+    </nav>
+
+    <!-- 底部弹窗 - 设备详情 -->
+    <div id="deviceModal" class="bottom-modal">
+        <div class="modal-overlay" onclick="closeModal()"></div>
+        <div class="modal-content">
+            <!-- 拖动指示条 -->
+            <div class="modal-drag-bar" onclick="closeModal()">
+                <div class="drag-line"></div>
+                <span class="drag-text">⬇️ 下滑收起</span>
+            </div>
+            
+            <!-- 设备基本信息 -->
+            <div class="modal-header">
+                <div class="device-icon" id="modalDeviceIcon">📱</div>
+                <div class="device-title">
+                    <h3 id="modalDeviceName">设备名称</h3>
+                    <span class="device-status" id="modalDeviceStatus">在库</span>
+                </div>
+            </div>
+
+            <!-- 设备信息 -->
+            <div class="modal-body">
+                <div class="info-grid">
+                    <div class="info-item">
+                        <span class="info-label">类型</span>
+                        <span class="info-value" id="modalDeviceType">手机</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">型号</span>
+                        <span class="info-value" id="modalDeviceModel">-</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">柜号</span>
+                        <span class="info-value" id="modalDeviceCabinet">A01</span>
+                    </div>
+                    <div class="info-item" id="modalBorrowerItem">
+                        <span class="info-label">借用人</span>
+                        <span class="info-value" id="modalDeviceBorrower">-</span>
+                    </div>
+                    <div class="info-item" id="modalBorrowTimeItem">
+                        <span class="info-label">借出时间</span>
+                        <span class="info-value" id="modalDeviceBorrowTime">-</span>
+                    </div>
+                    <div class="info-item" id="modalExpectReturnItem">
+                        <span class="info-label">预计归还</span>
+                        <span class="info-value" id="modalDeviceExpectReturn">-</span>
+                    </div>
+                </div>
+
+                <!-- 快速操作按钮 -->
+                <div class="quick-actions-section">
+                    <h4>快速操作</h4>
+                    <div class="action-buttons" id="modalQuickActions">
+                        <!-- 动态生成操作按钮 -->
+                    </div>
+                </div>
+
+                <!-- 备注 -->
+                <div class="device-remarks" id="modalRemarksSection">
+                    <h4>设备备注</h4>
+                    <p id="modalDeviceRemarks">暂无备注</p>
+                </div>
+
+                <!-- 最近借还记录 -->
+                <div class="recent-records-section">
+                    <h4>最近5条记录</h4>
+                    <div class="recent-records-list" id="modalRecentRecords">
+                        <!-- 动态加载 -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 快捷编辑弹窗 -->
+    <div id="editModal" class="edit-modal">
+        <div class="modal-overlay" onclick="closeEditModal()"></div>
+        <div class="edit-modal-content">
+            <div class="edit-modal-header">
+                <h3 id="editModalTitle">编辑</h3>
+                <button class="close-btn" onclick="closeEditModal()">✕</button>
+            </div>
+            <div class="edit-modal-body" id="editModalBody">
+                <!-- 动态生成编辑内容 -->
+            </div>
+            <div class="edit-modal-footer">
+                <button class="btn-cancel" onclick="closeEditModal()">取消</button>
+                <button class="btn-confirm" onclick="confirmEdit()">确认</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast提示 -->
+    <div id="toast" class="toast"></div>
+
+    <!-- 长按菜单 -->
+    <div id="longPressMenu" class="long-press-menu">
+        <div class="menu-overlay" onclick="closeLongPressMenu()"></div>
+        <div class="menu-content">
+            <div class="menu-header">
+                <span id="menuDeviceName">设备名称</span>
+            </div>
+            <div class="menu-items" id="menuItems">
+                <!-- 动态生成菜单项 -->
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/admin/admin_mobile.js"></script>
+    <script>
+        // 页面初始化
+        let devices = [];
+        let currentDevice = null;
+        let currentEditType = '';
+        let longPressTimer = null;
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            loadDevices();
+            initSearch();
+            initFilters();
+        });
+
+        // 加载设备列表
+        async function loadDevices() {
+            try {
+                const response = await fetch('/api/devices');
+                devices = await response.json();
+                renderDeviceList(devices);
+            } catch (error) {
+                showToast('加载设备列表失败');
+            }
+        }
+
+        // 渲染设备列表
+        function renderDeviceList(deviceList) {
+            const container = document.getElementById('deviceList');
+            
+            if (deviceList.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <span class="empty-icon">📱</span>
+                        <p>暂无设备</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = deviceList.map(device => `
+                <div class="device-item ${device.status === '借出' ? 'borrowed' : ''}" 
+                     data-id="${device.id}"
+                     onclick="handleDeviceClick('${device.id}', event)"
+                     ontouchstart="handleTouchStart('${device.id}', event)" 
+                     ontouchend="handleTouchEnd(event)"
+                     onmousedown="handleMouseDown('${device.id}', event)"
+                     onmouseup="handleMouseUp(event)"
+                     onmouseleave="handleMouseUp(event)">
+                    <div class="device-main">
+                        <div class="device-icon">${device.device_type === '手机' ? '📱' : '🚗'}</div>
+                        <div class="device-info">
+                            <h4>${device.device_name}</h4>
+                            <p class="device-meta">
+                                <span class="device-status-badge status-${getStatusClass(device.status)}">${device.status}</span>
+                                ${device.borrower ? `<span class="borrower">👤 ${device.borrower}</span>` : `<span class="cabinet">📦 ${device.cabinet || '无柜号'}</span>`}
+                            </p>
+                        </div>
+                        ${device.is_overdue ? '<span class="overdue-badge">逾期</span>' : ''}
+                    </div>
+                    <div class="device-expand ${device.expanded ? 'expanded' : ''}" id="expand-${device.id}">
+                        <div class="expand-actions">
+                            ${getActionButtons(device)}
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // 获取状态样式类
+        function getStatusClass(status) {
+            const statusMap = {
+                '在库': 'available',
+                '借出': 'borrowed',
+                '已寄出': 'sent',
+                '维修中': 'repairing',
+                '已损坏': 'damaged',
+                '报废': 'scrapped'
+            };
+            return statusMap[status] || 'available';
+        }
+
+        // 获取操作按钮
+        function getActionButtons(device) {
+            let buttons = '';
+            
+            if (device.status === '在库') {
+                buttons += `<button class="action-btn btn-borrow" onclick="showBorrowModal('${device.id}', event)">录入登记</button>`;
+            } else if (device.status === '借出') {
+                buttons += `<button class="action-btn btn-return" onclick="showReturnModal('${device.id}', event)">强制归还</button>`;
+                buttons += `<button class="action-btn btn-transfer" onclick="showTransferModal('${device.id}', event)">转借</button>`;
+            }
+            
+            buttons += `<button class="action-btn btn-edit" onclick="showEditModal('${device.id}', event)">编辑设备</button>`;
+            buttons += `<button class="action-btn btn-cabinet" onclick="showEditFieldModal('${device.id}', 'cabinet', event)">更改柜号</button>`;
+            buttons += `<button class="action-btn btn-status" onclick="showEditFieldModal('${device.id}', 'status', event)">设置状态</button>`;
+            
+            return buttons;
+        }
+
+        // 点击设备 - 切换展开/显示弹窗
+        function handleDeviceClick(deviceId, event) {
+            if (longPressTimer) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+            }
+            
+            // 如果点击的是按钮，不处理
+            if (event.target.tagName === 'BUTTON') {
+                return;
+            }
+            
+            // 先检查是否有展开的项
+            const expandedItem = document.querySelector('.device-expand.expanded');
+            const currentExpand = document.getElementById(`expand-${deviceId}`);
+            
+            if (expandedItem && expandedItem !== currentExpand) {
+                // 关闭其他展开的项
+                expandedItem.classList.remove('expanded');
+            }
+            
+            // 切换当前项的展开状态
+            if (currentExpand) {
+                if (currentExpand.classList.contains('expanded')) {
+                    // 已经展开，点击显示弹窗
+                    openDeviceModal(deviceId);
+                } else {
+                    // 未展开，点击展开
+                    currentExpand.classList.add('expanded');
+                }
+            }
+        }
+
+        // 触摸开始 - 长按检测
+        function handleTouchStart(deviceId, event) {
+            longPressTimer = setTimeout(() => {
+                showLongPressMenu(deviceId);
+            }, 600);
+        }
+
+        // 触摸结束
+        function handleTouchEnd(event) {
+            if (longPressTimer) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+            }
+        }
+
+        // 鼠标按下
+        function handleMouseDown(deviceId, event) {
+            longPressTimer = setTimeout(() => {
+                showLongPressMenu(deviceId);
+            }, 600);
+        }
+
+        // 鼠标抬起
+        function handleMouseUp(event) {
+            if (longPressTimer) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+            }
+        }
+
+        // 显示长按菜单
+        function showLongPressMenu(deviceId) {
+            const device = devices.find(d => d.id === deviceId);
+            if (!device) return;
+            
+            currentDevice = device;
+            
+            document.getElementById('menuDeviceName').textContent = device.device_name;
+            const menuItems = document.getElementById('menuItems');
+            
+            let itemsHtml = '';
+            
+            if (device.status === '在库') {
+                itemsHtml += `<div class="menu-item" onclick="showBorrowModal('${device.id}');closeLongPressMenu();"><span class="menu-icon">📤</span>录入登记</div>`;
+            } else if (device.status === '借出') {
+                itemsHtml += `<div class="menu-item" onclick="showReturnModal('${device.id}');closeLongPressMenu();"><span class="menu-icon">📥</span>强制归还</div>`;
+                itemsHtml += `<div class="menu-item" onclick="showTransferModal('${device.id}');closeLongPressMenu();"><span class="menu-icon">🔄</span>转借设备</div>`;
+                itemsHtml += `<div class="menu-item" onclick="showEditFieldModal('${device.id}', 'borrower');closeLongPressMenu();"><span class="menu-icon">👤</span>更改借用人</div>`;
+            }
+            
+            itemsHtml += `<div class="menu-item" onclick="showEditFieldModal('${device.id}', 'cabinet');closeLongPressMenu();"><span class="menu-icon">📦</span>更改柜号</div>`;
+            itemsHtml += `<div class="menu-item" onclick="showEditFieldModal('${device.id}', 'keeper');closeLongPressMenu();"><span class="menu-icon">🔑</span>更改保管人</div>`;
+            itemsHtml += `<div class="menu-item" onclick="showEditFieldModal('${device.id}', 'status');closeLongPressMenu();"><span class="menu-icon">📊</span>设置状态</div>`;
+            itemsHtml += `<div class="menu-item" onclick="openDeviceModal('${device.id}');closeLongPressMenu();"><span class="menu-icon">📋</span>查看详情</div>`;
+            
+            menuItems.innerHTML = itemsHtml;
+            
+            document.getElementById('longPressMenu').classList.add('show');
+        }
+
+        // 关闭长按菜单
+        function closeLongPressMenu() {
+            document.getElementById('longPressMenu').classList.remove('show');
+        }
+
+        // 打开设备详情弹窗
+        function openDeviceModal(deviceId) {
+            const device = devices.find(d => d.id === deviceId);
+            if (!device) return;
+            
+            currentDevice = device;
+            
+            // 填充基本信息
+            document.getElementById('modalDeviceIcon').textContent = device.device_type === '手机' ? '📱' : '🚗';
+            document.getElementById('modalDeviceName').textContent = device.device_name;
+            document.getElementById('modalDeviceStatus').textContent = device.status;
+            document.getElementById('modalDeviceStatus').className = `device-status status-${getStatusClass(device.status)}`;
+            document.getElementById('modalDeviceType').textContent = device.device_type;
+            document.getElementById('modalDeviceModel').textContent = device.model || '-';
+            document.getElementById('modalDeviceCabinet').textContent = device.cabinet || '-';
+            document.getElementById('modalDeviceBorrower').textContent = device.borrower || '-';
+            document.getElementById('modalDeviceBorrowTime').textContent = device.borrow_time || '-';
+            document.getElementById('modalDeviceExpectReturn').textContent = device.expect_return_time || '-';
+            
+            // 根据状态显示/隐藏借用人信息
+            const borrowerItems = ['modalBorrowerItem', 'modalBorrowTimeItem', 'modalExpectReturnItem'];
+            borrowerItems.forEach(id => {
+                document.getElementById(id).style.display = device.borrower ? 'flex' : 'none';
+            });
+            
+            // 生成快速操作按钮
+            generateQuickActions(device);
+            
+            // 备注
+            if (device.remarks) {
+                document.getElementById('modalRemarksSection').style.display = 'block';
+                document.getElementById('modalDeviceRemarks').textContent = device.remarks;
+            } else {
+                document.getElementById('modalRemarksSection').style.display = 'none';
+            }
+            
+            // 加载最近记录
+            loadRecentRecords(deviceId);
+            
+            document.getElementById('deviceModal').classList.add('show');
+        }
+
+        // 关闭弹窗
+        function closeModal() {
+            document.getElementById('deviceModal').classList.remove('show');
+        }
+
+        // 生成快速操作按钮
+        function generateQuickActions(device) {
+            const container = document.getElementById('modalQuickActions');
+            let buttons = '';
+            
+            if (device.status === '在库') {
+                buttons += `<button class="quick-btn btn-borrow" onclick="showBorrowModal('${device.id}')">📤 录入登记</button>`;
+            } else if (device.status === '借出') {
+                buttons += `<button class="quick-btn btn-return" onclick="showReturnModal('${device.id}')">📥 强制归还</button>`;
+                buttons += `<button class="quick-btn btn-transfer" onclick="showTransferModal('${device.id}')">🔄 转借</button>`;
+            }
+            
+            buttons += `<button class="quick-btn btn-edit" onclick="showEditModal('${device.id}')">✏️ 编辑</button>`;
+            buttons += `<button class="quick-btn btn-cabinet" onclick="showEditFieldModal('${device.id}', 'cabinet')">📦 改柜号</button>`;
+            buttons += `<button class="quick-btn btn-status" onclick="showEditFieldModal('${device.id}', 'status')">📊 改状态</button>`;
+            
+            container.innerHTML = buttons;
+        }
+
+        // 加载最近5条记录
+        async function loadRecentRecords(deviceId) {
+            try {
+                const response = await fetch(`/api/devices/${deviceId}/records?limit=5`);
+                const records = await response.json();
+                
+                const container = document.getElementById('modalRecentRecords');
+                if (records.length === 0) {
+                    container.innerHTML = '<p class="empty-records">暂无记录</p>';
+                    return;
+                }
+                
+                container.innerHTML = records.map(r => `
+                    <div class="recent-record-item">
+                        <span class="record-type">${r.action_type}</span>
+                        <span class="record-user">${r.user_name}</span>
+                        <span class="record-time">${r.time}</span>
+                    </div>
+                `).join('');
+            } catch (error) {
+                document.getElementById('modalRecentRecords').innerHTML = '<p class="empty-records">加载失败</p>';
+            }
+        }
+
+        // 初始化搜索
+        function initSearch() {
+            const searchInput = document.getElementById('searchInput');
+            const clearBtn = document.getElementById('clearSearch');
+            
+            searchInput.addEventListener('input', function() {
+                const keyword = this.value.toLowerCase();
+                clearBtn.style.display = keyword ? 'block' : 'none';
+                
+                const filtered = devices.filter(d => 
+                    (d.device_name && d.device_name.toLowerCase().includes(keyword)) ||
+                    (d.borrower && d.borrower.toLowerCase().includes(keyword)) ||
+                    (d.cabinet && d.cabinet.toLowerCase().includes(keyword))
+                );
+                renderDeviceList(filtered);
+            });
+            
+            clearBtn.addEventListener('click', function() {
+                searchInput.value = '';
+                this.style.display = 'none';
+                renderDeviceList(devices);
+            });
+        }
+
+        // 初始化筛选
+        function initFilters() {
+            const statusFilter = document.getElementById('filterStatus');
+            const typeFilter = document.getElementById('filterType');
+            
+            const applyFilters = () => {
+                const status = statusFilter.value;
+                const type = typeFilter.value;
+                
+                let filtered = devices;
+                
+                if (status) {
+                    filtered = filtered.filter(d => d.status === status);
+                }
+                if (type) {
+                    filtered = filtered.filter(d => d.device_type === type);
+                }
+                
+                renderDeviceList(filtered);
+            };
+            
+            statusFilter.addEventListener('change', applyFilters);
+            typeFilter.addEventListener('change', applyFilters);
+        }
+
+        // 显示Toast提示
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 2000);
+        }
+    </script>
+</body>
+</html>

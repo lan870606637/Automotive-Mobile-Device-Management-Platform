@@ -371,6 +371,7 @@ class ExcelDataStore:
                         borrower_name=str(row.get('借用人', '')),
                         borrow_count=int(row.get('借用次数', 0)),
                         is_frozen=str(row.get('状态', '正常')) == '已冻结',
+                        is_admin=str(row.get('是否管理员', '否')) == '是',
                         create_time=create_time,
                     )
                     users.append(user)
@@ -395,6 +396,7 @@ class ExcelDataStore:
                 '借用人': user.borrower_name,
                 '借用次数': user.borrow_count,
                 '状态': '已冻结' if user.is_frozen else '正常',
+                '是否管理员': '是' if user.is_admin else '否',
                 '注册时间': user.create_time.strftime('%Y-%m-%d') if user.create_time else '',
             })
         

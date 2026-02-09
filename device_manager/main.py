@@ -1092,9 +1092,15 @@ class DeviceManager(QMainWindow):
     def get_overdue_days(self, device):
         """计算设备逾期天数"""
         if device.status == DeviceStatus.BORROWED and device.expected_return_date:
-            from datetime import datetime
-            if datetime.now().date() > device.expected_return_date.date():
-                return (datetime.now().date() - device.expected_return_date.date()).days
+            from datetime import datetime, date
+            today = datetime.now().date()
+            # 兼容 date 和 datetime 两种类型
+            if isinstance(device.expected_return_date, datetime):
+                expected_date = device.expected_return_date.date()
+            else:
+                expected_date = device.expected_return_date
+            if today > expected_date:
+                return (today - expected_date).days
         return 0
     
     def update_filter_options(self):
@@ -1943,8 +1949,8 @@ class UserManagementDialog(QDialog):
         
         # 用户表格
         self.user_table = QTableWidget()
-        self.user_table.setColumnCount(7)
-        self.user_table.setHorizontalHeaderLabels(["借用人名称", "微信名", "手机号", "借用次数", "状态", "注册时间", "密码"])
+        self.user_table.setColumnCount(8)
+        self.user_table.setHorizontalHeaderLabels(["借用人名称", "微信名", "手机号", "借用次数", "状态", "管理员", "注册时间", "密码"])
         self.user_table.horizontalHeader().setStretchLastSection(True)
         self.user_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.user_table.setAlternatingRowColors(True)
@@ -1981,6 +1987,18 @@ class UserManagementDialog(QDialog):
         self.unfreeze_btn.clicked.connect(self.on_unfreeze)
         btn_layout.addWidget(self.unfreeze_btn)
         
+        btn_layout.addSpacing(20)
+        
+        self.set_admin_btn = QPushButton("设为管理员")
+        self.set_admin_btn.setStyleSheet("background-color: #9C27B0; color: white;")
+        self.set_admin_btn.clicked.connect(self.on_set_admin)
+        btn_layout.addWidget(self.set_admin_btn)
+        
+        self.cancel_admin_btn = QPushButton("取消管理员")
+        self.cancel_admin_btn.setStyleSheet("background-color: #607D8B; color: white;")
+        self.cancel_admin_btn.clicked.connect(self.on_cancel_admin)
+        btn_layout.addWidget(self.cancel_admin_btn)
+        
         close_btn = QPushButton("关闭")
         close_btn.clicked.connect(self.close)
         btn_layout.addWidget(close_btn)
@@ -2006,13 +2024,19 @@ class UserManagementDialog(QDialog):
             if user.is_frozen:
                 status_item.setForeground(QBrush(QColor("#FF5722")))
             self.user_table.setItem(i, 4, status_item)
-            
-            self.user_table.setItem(i, 5, QTableWidgetItem(
+
+            # 管理员标识
+            admin_item = QTableWidgetItem("是" if user.is_admin else "否")
+            if user.is_admin:
+                admin_item.setForeground(QBrush(QColor("#9C27B0")))  # 紫色高亮
+            self.user_table.setItem(i, 5, admin_item)
+
+            self.user_table.setItem(i, 6, QTableWidgetItem(
                 user.create_time.strftime("%Y-%m-%d") if user.create_time else ""
             ))
-            
+
             # 显示密码（管理员可见）
-            self.user_table.setItem(i, 6, QTableWidgetItem(user.password))
+            self.user_table.setItem(i, 7, QTableWidgetItem(user.password))
             
             # 保存用户ID到第一列
             self.user_table.item(i, 0).setData(Qt.UserRole, user.id)
@@ -2120,10 +2144,10 @@ class UserManagementDialog(QDialog):
         if row < 0:
             QMessageBox.warning(self, "警告", "请先选择一个用户")
             return
-        
+
         user_id = self.user_table.item(row, 0).data(Qt.UserRole)
         borrower_name = self.user_table.item(row, 0).text()
-        
+
         reply = QMessageBox.question(self, "确认", f"确定要解冻用户 {borrower_name} 吗？")
         if reply == QMessageBox.Yes:
             if api_client.unfreeze_user(user_id):
@@ -2131,6 +2155,42 @@ class UserManagementDialog(QDialog):
                 self.load_users()
             else:
                 QMessageBox.warning(self, "失败", "解冻用户失败")
+
+    def on_set_admin(self):
+        """设置用户为管理员"""
+        row = self.user_table.currentRow()
+        if row < 0:
+            QMessageBox.warning(self, "警告", "请先选择一个用户")
+            return
+
+        user_id = self.user_table.item(row, 0).data(Qt.UserRole)
+        borrower_name = self.user_table.item(row, 0).text()
+
+        reply = QMessageBox.question(self, "确认", f"确定要设置 {borrower_name} 为管理员吗？")
+        if reply == QMessageBox.Yes:
+            if api_client.set_user_admin(user_id):
+                QMessageBox.information(self, "成功", "已设置为管理员")
+                self.load_users()
+            else:
+                QMessageBox.warning(self, "失败", "设置管理员失败")
+
+    def on_cancel_admin(self):
+        """取消用户管理员权限"""
+        row = self.user_table.currentRow()
+        if row < 0:
+            QMessageBox.warning(self, "警告", "请先选择一个用户")
+            return
+
+        user_id = self.user_table.item(row, 0).data(Qt.UserRole)
+        borrower_name = self.user_table.item(row, 0).text()
+
+        reply = QMessageBox.question(self, "确认", f"确定要取消 {borrower_name} 的管理员权限吗？")
+        if reply == QMessageBox.Yes:
+            if api_client.cancel_user_admin(user_id):
+                QMessageBox.information(self, "成功", "已取消管理员权限")
+                self.load_users()
+            else:
+                QMessageBox.warning(self, "失败", "取消管理员权限失败")
 
 
 class RemarkManagementDialog(QDialog):
