@@ -918,10 +918,8 @@ def api_borrow():
     location = data.get('location', '').strip()
     reason = data.get('reason', '').strip()
     days = data.get('days', 7)
-    
+
     # 验证输入
-    if not location:
-        return jsonify({'success': False, 'message': '请输入借用地点'})
     if not reason:
         return jsonify({'success': False, 'message': '请输入借用原因'})
     
@@ -969,7 +967,6 @@ def api_borrow():
         operation_time=datetime.now(),
         borrower=user['borrower_name'],
         phone=user_phone,
-        location=location,
         reason=reason,
         entry_source=EntrySource.USER.value
     )
