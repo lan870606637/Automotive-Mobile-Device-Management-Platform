@@ -11,17 +11,23 @@ from enum import Enum
 class DeviceStatus(Enum):
     """设备状态"""
     IN_STOCK = "在库"
+    IN_CUSTODY = "保管中"  # 手机、手机卡、其它设备使用
     BORROWED = "借出"
     SHIPPED = "已寄出"
     DAMAGED = "已损坏"
     LOST = "丢失"
     SCRAPPED = "报废"
+    CIRCULATING = "流通"
+    NO_CABINET = "无柜号"
 
 
 class DeviceType(Enum):
     """设备类型"""
     CAR_MACHINE = "车机"
+    INSTRUMENT = "仪表"
     PHONE = "手机"
+    SIM_CARD = "手机卡"
+    OTHER_DEVICE = "其它设备"
 
 
 class OperationType(Enum):
@@ -35,9 +41,12 @@ class OperationType(Enum):
     REPORT_DAMAGE = "损坏报备"
     FOUND = "找回"
     REPAIRED = "修复"
+    SCRAP = "报废"
     CUSTODIAN_CHANGE = "保管人变更"
     NOT_FOUND = "借用人未找到"
     RENEW = "借用续期"
+    SHIP = "寄出"
+    STATUS_CHANGE = "状态变更"
 
 
 class EntrySource(Enum):
@@ -67,6 +76,18 @@ class Device:
     entry_source: str = ""
     expected_return_date: Optional[datetime] = None
     admin_operator: str = ""  # 管理员录入/转借时的操作人
+
+    # 寄出信息
+    ship_time: Optional[datetime] = None
+    ship_remark: str = ""
+    ship_by: str = ""
+
+    # 寄出前借用信息（用于还原）
+    pre_ship_borrower: str = ""
+    pre_ship_phone: str = ""
+    pre_ship_borrow_time: Optional[datetime] = None
+    pre_ship_expected_return_date: Optional[datetime] = None
+    pre_ship_reason: str = ""
     
     # 丢失/损坏信息
     lost_time: Optional[datetime] = None
@@ -102,10 +123,34 @@ class CarMachine(Device):
 
 
 @dataclass
+class Instrument(Device):
+    """仪表设备"""
+    def __init__(self, **kwargs):
+        kwargs['device_type'] = DeviceType.INSTRUMENT
+        super().__init__(**kwargs)
+
+
+@dataclass
 class Phone(Device):
     """手机设备"""
     def __init__(self, **kwargs):
         kwargs['device_type'] = DeviceType.PHONE
+        super().__init__(**kwargs)
+
+
+@dataclass
+class SimCard(Device):
+    """手机卡设备"""
+    def __init__(self, **kwargs):
+        kwargs['device_type'] = DeviceType.SIM_CARD
+        super().__init__(**kwargs)
+
+
+@dataclass
+class OtherDevice(Device):
+    """其它设备"""
+    def __init__(self, **kwargs):
+        kwargs['device_type'] = DeviceType.OTHER_DEVICE
         super().__init__(**kwargs)
 
 
@@ -147,6 +192,7 @@ class UserRemark:
     """用户备注"""
     id: str
     device_id: str
+    device_type: str
     content: str
     creator: str
     create_time: datetime
@@ -156,6 +202,7 @@ class UserRemark:
         return {
             "id": self.id,
             "device_id": self.device_id,
+            "device_type": self.device_type,
             "content": self.content,
             "creator": self.creator,
             "create_time": self.create_time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -232,13 +279,15 @@ class ViewRecord:
     """查看记录"""
     id: str
     device_id: str
+    device_type: str
     viewer: str
     view_time: datetime
-    
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,
             "device_id": self.device_id,
+            "device_type": self.device_type,
             "viewer": self.viewer,
             "view_time": self.view_time.strftime("%Y-%m-%d %H:%M:%S"),
         }

@@ -8,7 +8,11 @@
 <!-- 页面头部 -->
 <div class="detail-header">
     <div class="detail-icon">
-        {% if device_type == '车机' %}🚗{% else %}📱{% endif %}
+        {% if device_type == '车机' %}🚗
+        {% elif device_type == '手机' %}📱
+        {% elif device_type == '仪表' %}📊
+        {% elif device_type == '手机卡' %}📲
+        {% else %}🔧{% endif %}
     </div>
     <div class="detail-title">
         <h2>{{ device.name }}</h2>
@@ -40,7 +44,7 @@
                     <span class="info-value">{{ device.model or '-' }}</span>
                 </div>
                 <div class="info-row">
-                    <span class="info-label">柜号</span>
+                    <span class="info-label">{% if device_type == '车机' or device_type == '仪表' %}柜号{% else %}保管人{% endif %}</span>
                     <span class="info-value" style="color: {% if is_circulating %}#52c41a{% else %}#999{% endif %}; font-weight: 500;">
                         {{ '流通' if is_circulating else '无' }}
                     </span>

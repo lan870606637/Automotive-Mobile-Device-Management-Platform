@@ -56,8 +56,8 @@
                 <tr>
                     <td style="font-size: 13px; color: #8c8c8c;">{{ record.operation_time }}</td>
                     <td>
-                        <span style="font-size: 16px; margin-right: 4px;">{% if record.device_type == '车机' %}🚗{% else %}📱{% endif %}</span>
-                        <span style="font-weight: 500;">{{ record.device_name }}</span>
+                        <span style="font-size: 16px; margin-right: 4px;">{% if record.device_type == '车机' %}🚗{% elif record.device_type == '手机' %}📱{% elif record.device_type == '仪表' %}📊{% elif record.device_type == '手机卡' %}📲{% elif record.device_type == '其它设备' %}🔧{% else %}📦{% endif %}</span>
+                        <a href="{{ url_for('pc_device_detail', device_id=record.device_id, device_type=record.device_type) }}" style="font-weight: 500; color: #1890ff; text-decoration: none;">{{ record.device_name }}</a>
                     </td>
                     <td>{{ record.device_type }}</td>
                     <td>
@@ -65,7 +65,10 @@
                             {% if '借出' in record.operation_type.value %}status-borrowed
                             {% elif '归还' in record.operation_type.value %}status-available
                             {% elif '丢失' in record.operation_type.value or '损坏' in record.operation_type.value or '未找到' in record.operation_type.value %}status-lost
+                            {% elif '报废' in record.operation_type.value %}status-scrapped
                             {% elif '续期' in record.operation_type.value %}status-no-cabinet
+                            {% elif '状态变更' in record.operation_type.value %}status-borrowed
+                            {% elif '保管人变更' in record.operation_type.value %}status-no-cabinet
                             {% else %}status-borrowed{% endif %}">
                             {{ record.operation_type.value }}
                         </span>
@@ -75,8 +78,15 @@
                     <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #595959;">
                         {% if record.reason and record.reason != 'nan' %}
                         {{ record.reason }}
+                        {% if record.remark and record.remark != 'nan' %}
+                        <span style="color: #8c8c8c;"> | {{ record.remark }}</span>
+                        {% endif %}
+                        {% else %}
+                        {% if record.remark and record.remark != 'nan' %}
+                        {{ record.remark }}
                         {% else %}
                         -
+                        {% endif %}
                         {% endif %}
                     </td>
                 </tr>

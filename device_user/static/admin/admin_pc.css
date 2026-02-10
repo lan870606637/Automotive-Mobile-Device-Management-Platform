@@ -662,6 +662,7 @@ body {
 }
 
 .status-tag.status-在库 { background: #f6ffed; color: #52c41a; }
+.status-tag.status-保管中 { background: #e6f7ff; color: #1890ff; }
 .status-tag.status-借出 { background: #fffbe6; color: #faad14; }
 .status-tag.status-已寄出 { background: #e6f7ff; color: #1890ff; }
 .status-tag.status-维修中 { background: #f9f0ff; color: #722ed1; }

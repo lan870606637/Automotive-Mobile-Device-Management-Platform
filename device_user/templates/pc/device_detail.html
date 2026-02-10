@@ -8,13 +8,18 @@
 <!-- 页面头部 -->
 <div class="detail-header">
     <div class="detail-icon">
-        {% if device_type == '车机' %}🚗{% else %}📱{% endif %}
+        {% if device_type == '车机' %}🚗
+        {% elif device_type == '手机' %}📱
+        {% elif device_type == '仪表' %}📊
+        {% elif device_type == '手机卡' %}📲
+        {% else %}🔧{% endif %}
     </div>
     <div class="detail-title">
         <h2>{{ device.name }}</h2>
         <div class="detail-meta">
             <span class="status-tag
                 {% if device.status.value == '在库' %}status-available
+                {% elif device.status.value == '保管中' %}status-custody
                 {% elif device.status.value == '借出' %}status-borrowed
                 {% elif device.status.value == '已寄出' %}status-shipped
                 {% elif device.status.value == '已损坏' %}status-damaged
@@ -70,22 +75,30 @@
         </div>
 
         <!-- 操作区 -->
-        {% if device.status.value == '在库' %}
+        {% if device.status.value in ['在库', '保管中'] and is_custodian %}
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">⚡ 保管人操作</span>
+            </div>
+            <div class="card-body">
+                <div class="action-btns">
+                    <button class="btn btn-primary btn-lg btn-block" onclick="openTransferModal()">转借他人</button>
+                    <button class="btn btn-error btn-block" onclick="openReportLostModal()">⚠️ 丢失报备</button>
+                    <button class="btn btn-warning btn-block" onclick="openReportDamageModal()">🔧 损坏报备</button>
+                </div>
+            </div>
+        </div>
+
+        {% elif device.status.value in ['在库', '保管中'] %}
         <div class="card">
             <div class="card-header">
                 <span class="card-title">⚡ 操作</span>
             </div>
             <div class="card-body">
-                {% if is_custodian %}
-                <div class="action-btns">
-                    <button class="btn btn-primary btn-lg btn-block" onclick="openTransferModal()">转借他人</button>
-                </div>
-                {% else %}
                 <div class="action-btns">
                     <button class="btn btn-primary btn-lg btn-block" onclick="openBorrowModal()">我要借用</button>
                 </div>
                 <p style="font-size: 13px; color: #8c8c8c; margin-top: 12px; text-align: center;">借用后可查看柜号信息</p>
-                {% endif %}
             </div>
         </div>
 
@@ -98,7 +111,11 @@
                 <div class="action-btns">
                     <button class="btn btn-warning btn-lg btn-block" onclick="openReturnModal()">立即归还</button>
                     <button class="btn btn-primary btn-block" onclick="openTransferModal()">转借他人</button>
+                    {% if can_renew %}
                     <button class="btn btn-success btn-block" onclick="openRenewModal()">借用续期</button>
+                    {% else %}
+                    <button class="btn btn-block" onclick="showToast('{{ renew_disabled_reason }}')" style="background: #d9d9d9; border-color: #d9d9d9; color: #8c8c8c; cursor: not-allowed;" title="{{ renew_disabled_reason }}">借用续期</button>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -126,10 +143,10 @@
             </div>
             <div class="card-body">
                 <div class="action-btns">
-                    <button class="btn btn-warning btn-lg btn-block" onclick="confirmReturnByCustodian()">收回借用</button>
-                    {% if device_type == '手机' %}
-                    <button class="btn btn-primary btn-block" onclick="openTransferCustodianModal()">转让保管人</button>
-                    {% endif %}
+                    <button class="btn btn-warning btn-lg btn-block" onclick="confirmReturnByCustodian()">强制归还</button>
+                    <button class="btn btn-primary btn-block" onclick="openTransferModal()">转借他人</button>
+                    <button class="btn btn-error btn-block" onclick="openReportLostModal()">⚠️ 丢失报备</button>
+                    <button class="btn btn-warning btn-block" onclick="openReportDamageModal()">🔧 损坏报备</button>
                 </div>
             </div>
         </div>
@@ -174,12 +191,34 @@
         </div>
 
         {% elif device.status.value == '已寄出' %}
+        <!-- 已寄出状态：寄出信息 -->
         <div class="card">
             <div class="card-header">
-                <span class="card-title">📦 设备状态</span>
+                <span class="card-title">📦 寄出信息</span>
             </div>
             <div class="card-body">
-                <button class="btn btn-default btn-lg btn-block" disabled>设备已寄出</button>
+                <div class="info-row">
+                    <span class="info-label">状态</span>
+                    <span class="info-value"><span class="status-tag status-shipped">已寄出</span></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">借用人</span>
+                    <span class="info-value">{{ device.pre_ship_borrower or '-' }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">寄出人</span>
+                    <span class="info-value">{{ device.ship_by or '-' }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">寄出时间</span>
+                    <span class="info-value">{{ device.ship_time.strftime('%Y-%m-%d %H:%M') if device.ship_time else '-' }}</span>
+                </div>
+                {% if device.ship_remark %}
+                <div class="info-row">
+                    <span class="info-label">备注</span>
+                    <span class="info-value">{{ device.ship_remark }}</span>
+                </div>
+                {% endif %}
             </div>
         </div>
 
@@ -260,16 +299,31 @@
 
     <!-- 右侧：登记后查看/借用信息 + 借用记录 -->
     <div class="detail-sidebar">
-        {% if device.status.value == '在库' %}
-        <!-- 在库状态：锁定信息 -->
+        {% if device.status.value in ['在库', '保管中'] and not is_custodian %}
+        <!-- 在库/保管中状态：锁定信息 -->
         <div class="card">
             <div class="card-header">
                 <span class="card-title">🔒 登记后查看</span>
             </div>
             <div class="card-body" style="color: #8c8c8c; background: #fafafa; border-radius: 8px;">
-                <p>• {% if device_type == '手机' %}保管人{% else %}柜号{% endif %}：***</p>
+                <p>• {% if device_type == '车机' or device_type == '仪表' %}柜号{% else %}保管人{% endif %}：***</p>
                 <p>• 借用记录：***</p>
                 <p style="color: #1890ff; margin-top: 12px;">借用成功后可查看完整信息</p>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if device.status.value in ['在库', '保管中'] and is_custodian %}
+        <!-- 保管人查看在库设备：显示完整信息 -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">📋 设备信息</span>
+            </div>
+            <div class="card-body">
+                <div class="info-row">
+                    <span class="info-label">{% if device_type == '车机' or device_type == '仪表' %}柜号{% else %}保管人{% endif %}</span>
+                    <span class="info-value" style="color: #1890ff; font-size: 16px; font-weight: 600;">{{ device.cabinet_number }}</span>
+                </div>
             </div>
         </div>
         {% endif %}
@@ -285,7 +339,7 @@
             <div class="card-body">
                 {% if is_borrower %}
                 <div class="info-row" style="background: #e6f7ff; padding: 12px; border-radius: 8px; margin-bottom: 12px;">
-                    <span class="info-label">📍 {% if device_type == '手机' %}保管人{% else %}柜号{% endif %}</span>
+                    <span class="info-label">📍 {% if device_type == '车机' or device_type == '仪表' %}柜号{% else %}保管人{% endif %}</span>
                     <span class="info-value" style="color: #1890ff; font-size: 18px; font-weight: 600;">{{ device.cabinet_number }}</span>
                 </div>
                 <div style="margin-bottom: 16px;">
@@ -308,10 +362,11 @@
                 <div class="info-row">
                     <span class="info-label">预计归还</span>
                     <span class="info-value {% if is_overdue %}" style="color: #ff4d4f; font-weight: 500;{% endif %}">
+                        {{ device.expected_return_date.strftime('%Y-%m-%d %H:%M') }}
                         {% if is_overdue %}
-                        ⚠️ 已逾期 {% if overdue_hours < 24 %}{{ overdue_hours }} 小时{% else %}{{ overdue_days }} 天{% endif %}
+                        <span style="margin-left: 8px;">⚠️ 已逾期 {% if overdue_hours < 24 %}{{ overdue_hours }} 小时{% else %}{{ overdue_days }} 天{% endif %}</span>
                         {% else %}
-                        {{ device.expected_return_date.strftime('%Y-%m-%d') }}
+                        <span style="margin-left: 8px; color: #52c41a;">⏰ 还剩{% if remaining_days > 0 %}{{ remaining_days }} 天{% else %}{{ remaining_hours }} 小时{% endif %}</span>
                         {% endif %}
                     </span>
                 </div>
@@ -339,6 +394,7 @@
                         <div class="timeline-dot
                             {% if '借出' in record.operation_type %}borrow
                             {% elif '归还' in record.operation_type %}return
+                            {% elif '报废' in record.operation_type %}scrapped
                             {% else %}lost{% endif %}"></div>
                         <div class="timeline-content">
                             <div class="timeline-header">
@@ -347,6 +403,7 @@
                                         {% if '借出' in record.operation_type %}status-borrowed
                                         {% elif '归还' in record.operation_type %}status-available
                                         {% elif '丢失' in record.operation_type or '损坏' in record.operation_type %}status-lost
+                                        {% elif '报废' in record.operation_type %}status-scrapped
                                         {% elif '续期' in record.operation_type %}status-available
                                         {% else %}status-borrowed{% endif %}">
                                         {{ record.operation_type }}
@@ -363,6 +420,11 @@
                             {% if record.reason and record.reason != 'nan' %}
                             <div style="margin-top: 4px; font-size: 13px; color: #595959;">
                                 原因：{{ record.reason }}
+                            </div>
+                            {% endif %}
+                            {% if record.remark and record.remark != 'nan' %}
+                            <div style="margin-top: 4px; font-size: 13px; color: #595959;">
+                                备注：{{ record.remark }}
                             </div>
                             {% endif %}
                         </div>
@@ -554,7 +616,7 @@
             <p style="margin-bottom: 16px;">请选择后续操作：</p>
             <div style="display: flex; flex-direction: column; gap: 10px;">
                 <button class="btn btn-primary btn-lg" onclick="submitFound('keep')">转给自己</button>
-                <button class="btn btn-warning btn-lg" onclick="submitFound('return')">{% if device_type == '手机' %}转给保管人{% else %}归还入库{% endif %}</button>
+                <button class="btn btn-warning btn-lg" onclick="submitFound('return')">{% if device_type == '车机' or device_type == '仪表' %}归还入库{% else %}转给保管人{% endif %}</button>
                 <button class="btn btn-default btn-lg" onclick="closeModal('foundModal'); openTransferSelectModal('found')">转给别人</button>
             </div>
         </div>
@@ -572,7 +634,7 @@
             <p style="margin-bottom: 16px;">请选择后续操作：</p>
             <div style="display: flex; flex-direction: column; gap: 10px;">
                 <button class="btn btn-primary btn-lg" onclick="submitRepaired('keep')">转给自己</button>
-                <button class="btn btn-warning btn-lg" onclick="submitRepaired('return')">{% if device_type == '手机' %}转给保管人{% else %}归还入库{% endif %}</button>
+                <button class="btn btn-warning btn-lg" onclick="submitRepaired('return')">{% if device_type == '车机' or device_type == '仪表' %}归还入库{% else %}转给保管人{% endif %}</button>
                 <button class="btn btn-default btn-lg" onclick="closeModal('repairedModal'); openTransferSelectModal('repaired')">转给别人</button>
             </div>
         </div>
@@ -721,9 +783,13 @@ function openTransferModal() { openModal('transferModal'); loadUserSuggestions()
 function openRenewModal() {
     const renewDateEl = document.getElementById('renewDate');
     if (renewDateEl) {
-        const today = new Date().toISOString().split('T')[0];
-        renewDateEl.min = today;
-        renewDateEl.value = today;
+        const today = new Date();
+        const tomorrow = new Date(today);
+        tomorrow.setDate(today.getDate() + 1);
+        const tomorrowStr = tomorrow.toISOString().split('T')[0];
+        const todayStr = today.toISOString().split('T')[0];
+        renewDateEl.min = todayStr;
+        renewDateEl.value = tomorrowStr;
     }
     openModal('renewModal');
 }
@@ -787,11 +853,11 @@ function loadUserSuggestions() {
     input.addEventListener('input', function() {
         const keyword = this.value.trim().toLowerCase();
         if (!keyword) { suggestions.style.display = 'none'; return; }
-        const matched = allUsers.filter(u => u.borrower_name.toLowerCase().includes(keyword));
+        const matched = allUsers.filter(u => u.name.toLowerCase().includes(keyword));
         if (matched.length > 0) {
             suggestions.innerHTML = matched.map(u => {
-                const name = u.borrower_name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                return '<div style="padding: 10px 12px; cursor: pointer;" onclick="selectUser(\'' + name + '\')">' + u.borrower_name + '</div>';
+                const name = u.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                return '<div style="padding: 10px 12px; cursor: pointer;" onclick="selectUser(\'' + name + '\')">' + u.name + '</div>';
             }).join('');
             suggestions.style.display = 'block';
         } else {
@@ -873,7 +939,12 @@ function submitTransfer() {
     const to = toEl.value.trim();
     const remark = remarkEl ? remarkEl.value.trim() : '';
     if (!to) { showToast('请选择转借人'); return; }
-    if (!allUsers.some(u => u.borrower_name === to)) { showToast('该用户不存在，请从列表中选择'); return; }
+    
+    // 检查不能转借给自己
+    const currentUserName = '{{ user.borrower_name }}';
+    if (to === currentUserName) { showToast('不能转借给自己'); return; }
+    
+    if (!allUsers.some(u => u.name === to)) { showToast('该用户不存在，请从列表中选择'); return; }
 
     fetch('/api/transfer', {
         method: 'POST',

@@ -93,8 +93,8 @@
 </div>
 
 <script>
-// 设置默认归还日期为7天后
-document.getElementById('returnDate').value = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+// 设置默认归还日期为1天后
+document.getElementById('returnDate').value = new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
 // 借用原因选择联动
 const reasonInputs = document.querySelectorAll('input[name="reason"]');

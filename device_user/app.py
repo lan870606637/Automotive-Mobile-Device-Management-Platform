@@ -15,11 +15,11 @@ from functools import wraps
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, make_response
 from dotenv import load_dotenv
 
-# 从管理端导入模型和API客户端
+# 从 common 导入模型和API客户端
 import sys
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'device_manager'))
-from models import DeviceStatus, DeviceType, OperationType, EntrySource, CarMachine, Phone, Record, UserRemark, User, ViewRecord
-from api_client import api_client
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from common.models import DeviceStatus, DeviceType, OperationType, EntrySource, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, ViewRecord
+from common.api_client import api_client
 
 # 尝试导入qrcode，如果没有安装则使用备用方案
 try:
@@ -76,6 +76,42 @@ def get_current_user():
 def is_admin_user(borrower_name):
     """检查指定借用人是否为管理员"""
     return api_client.is_user_admin(borrower_name)
+
+
+def get_device_type_str(device):
+    """获取设备类型字符串"""
+    if isinstance(device, CarMachine):
+        return "车机"
+    elif isinstance(device, Instrument):
+        return "仪表"
+    elif isinstance(device, Phone):
+        return "手机"
+    elif isinstance(device, SimCard):
+        return "手机卡"
+    elif isinstance(device, OtherDevice):
+        return "其它设备"
+    return "未知"
+
+
+def get_device_stats():
+    """获取设备统计数据"""
+    api_client.reload_data()
+    all_devices = api_client.get_all_devices()
+    total_devices = len(all_devices)
+    available_devices = len([d for d in all_devices if d.status in [DeviceStatus.IN_STOCK, DeviceStatus.IN_CUSTODY]])
+    borrowed_devices_count = len([d for d in all_devices if d.status == DeviceStatus.BORROWED])
+    return {
+        'total_devices': total_devices,
+        'available_devices': available_devices,
+        'borrowed_devices_count': borrowed_devices_count
+    }
+
+
+def get_default_status_for_device(device):
+    """根据设备类型获取默认状态（在库/保管中）"""
+    if isinstance(device, (Phone, SimCard, OtherDevice)):
+        return DeviceStatus.IN_CUSTODY
+    return DeviceStatus.IN_STOCK
 
 
 @app.context_processor
@@ -387,9 +423,8 @@ def device_list():
     device_list = []
     
     for device in devices:
-        cabinet = device.cabinet_number or ''
-        is_no_cabinet = not cabinet.strip()
-        is_circulating = cabinet.strip() == '流通'
+        is_no_cabinet = device.status == DeviceStatus.NO_CABINET
+        is_circulating = device.status == DeviceStatus.CIRCULATING
         
         # 如果是无柜号筛选，只显示柜号为空的设备
         if no_cabinet == '1':
@@ -438,12 +473,15 @@ def device_detail(device_id):
     # 检查设备是否已报废
     if device.status == DeviceStatus.SCRAPPED:
         return render_template('error.html', message='设备已报废，请联系管理员'), 403
-    
+
+    # 获取设备类型字符串
+    device_type_str = get_device_type_str(device)
+
     # 记录查看记录
-    api_client.add_view_record(device_id, user['borrower_name'])
-    
+    api_client.add_view_record(device_id, user['borrower_name'], device_type_str)
+
     # 获取设备备注
-    remarks = api_client.get_remarks(device_id)
+    remarks = api_client.get_remarks(device_id, device_type_str)
     remark_list = []
     for remark in remarks:
         remark_list.append({
@@ -453,9 +491,9 @@ def device_detail(device_id):
             'create_time': remark.create_time.strftime('%Y-%m-%d %H:%M'),
             'is_creator': remark.creator == user['borrower_name']
         })
-    
+
     # 获取借用记录
-    records = api_client.get_records(device_name=device.name)
+    records = api_client.get_records(device_type=device_type_str, device_name=device.name)
     record_list = []
     for record in records[:50]:  # 显示最近50条
         record_list.append({
@@ -464,10 +502,11 @@ def device_detail(device_id):
             'operation_time': record.operation_time.strftime('%Y-%m-%d %H:%M:%S'),
             'entry_source': record.entry_source,
             'reason': record.reason,
+            'remark': record.remark,
         })
-    
+
     # 获取查看记录
-    view_records = api_client.get_view_records(device_id, limit=50)
+    view_records = api_client.get_view_records(device_id, device_type_str, limit=50)
     view_record_list = []
     for vr in view_records:
         view_record_list.append({
@@ -484,21 +523,44 @@ def device_detail(device_id):
     is_overdue = False
     overdue_days = 0
     overdue_hours = 0
+    remaining_days = 0
+    remaining_hours = 0
+    can_renew = False
+    renew_disabled_reason = ''
     if device.expected_return_date and device.status.value == '借出':
         time_diff = datetime.now() - device.expected_return_date
         if time_diff.total_seconds() > 3600:  # 超过1小时算逾期
             is_overdue = True
             overdue_hours = int(time_diff.total_seconds() // 3600)
             overdue_days = int(time_diff.total_seconds() // (24 * 3600))
+            # 逾期超过3天不能续借
+            if overdue_days > 3:
+                can_renew = False
+                renew_disabled_reason = '逾期超过3天，不能续借'
+            else:
+                can_renew = True
+        else:
+            # 计算剩余时间
+            remaining_seconds = device.expected_return_date.timestamp() - datetime.now().timestamp()
+            remaining_hours = int(remaining_seconds // 3600)
+            remaining_days = int(remaining_seconds // (24 * 3600))
+            # 剩余时间小于24小时才能续借
+            can_renew = remaining_hours < 24
+            if not can_renew:
+                renew_disabled_reason = '剩余时间大于24小时，暂不需要续借'
 
     return render_template('device_detail.html',
                          device=device,
-                         device_type='车机' if isinstance(device, CarMachine) else '手机',
+                         device_type=get_device_type_str(device),
                          is_borrower=is_borrower,
                          is_custodian=is_custodian,
                          is_overdue=is_overdue,
                          overdue_days=overdue_days,
                          overdue_hours=overdue_hours,
+                         remaining_days=remaining_days,
+                         remaining_hours=remaining_hours,
+                         can_renew=can_renew,
+                         renew_disabled_reason=renew_disabled_reason,
                          remarks=remark_list,
                          records=record_list,
                          view_records=view_record_list,
@@ -515,21 +577,23 @@ def device_detail_simple(device_id):
     
     if not device:
         return render_template('error.html', message='设备不存在'), 404
-    
-    cabinet = device.cabinet_number or ''
-    is_no_cabinet = not cabinet.strip()
-    is_circulating = cabinet.strip() == '流通'
+
+    is_no_cabinet = device.status == DeviceStatus.NO_CABINET
+    is_circulating = device.status == DeviceStatus.CIRCULATING
     
     # 检查是否真的是无柜号或流通设备
     if not is_no_cabinet and not is_circulating:
         # 正常设备跳转到正常详情页
         return redirect(url_for('device_detail', device_id=device_id))
-    
+
+    # 获取设备类型字符串
+    device_type_str = get_device_type_str(device)
+
     # 记录查看记录
-    api_client.add_view_record(device_id, user['borrower_name'])
-    
+    api_client.add_view_record(device_id, user['borrower_name'], device_type_str)
+
     # 获取设备备注
-    remarks = api_client.get_remarks(device_id)
+    remarks = api_client.get_remarks(device_id, device_type_str)
     remark_list = []
     for remark in remarks:
         remark_list.append({
@@ -539,19 +603,19 @@ def device_detail_simple(device_id):
             'create_time': remark.create_time.strftime('%Y-%m-%d %H:%M'),
             'is_creator': remark.creator == user['borrower_name']
         })
-    
+
     # 获取查看记录
-    view_records = api_client.get_view_records(device_id, limit=50)
+    view_records = api_client.get_view_records(device_id, device_type_str, limit=50)
     view_record_list = []
     for vr in view_records:
         view_record_list.append({
             'viewer': vr.viewer,
             'view_time': vr.view_time.strftime('%Y-%m-%d %H:%M:%S')
         })
-    
+
     return render_template('device_detail_simple.html',
                          device=device,
-                         device_type='车机' if isinstance(device, CarMachine) else '手机',
+                         device_type=device_type_str,
                          remarks=remark_list,
                          view_records=view_record_list,
                          is_circulating=is_circulating)
@@ -567,12 +631,12 @@ def borrow_page(device_id):
     if not device:
         return render_template('error.html', message='设备不存在'), 404
     
-    if device.status != DeviceStatus.IN_STOCK:
+    if device.status not in [DeviceStatus.IN_STOCK, DeviceStatus.IN_CUSTODY]:
         return render_template('error.html', message='该设备已被借出'), 400
     
     return render_template('borrow.html',
                          device=device,
-                         device_type='车机' if isinstance(device, CarMachine) else '手机',
+                         device_type=get_device_type_str(device),
                          user=user,
                          phone_mask=mask_phone(user['phone']))
 
@@ -598,7 +662,7 @@ def return_page(device_id):
     
     return render_template('return.html',
                          device=device,
-                         device_type='车机' if isinstance(device, CarMachine) else '手机',
+                         device_type=get_device_type_str(device),
                          user=user,
                          is_borrower=is_borrower)
 
@@ -631,7 +695,7 @@ def transfer_page(device_id):
     
     return render_template('transfer.html',
                          device=device,
-                         device_type='车机' if isinstance(device, CarMachine) else '手机',
+                         device_type=get_device_type_str(device),
                          all_users=all_users)
 
 
@@ -645,7 +709,7 @@ def add_remark_page(device_id):
     
     return render_template('remark_add.html', 
                          device=device,
-                         device_type='车机' if isinstance(device, CarMachine) else '手机')
+                         device_type=get_device_type_str(device))
 
 
 @app.route('/remark/edit/<remark_id>')
@@ -754,8 +818,26 @@ def api_borrow():
     if device.status == DeviceStatus.DAMAGED:
         return jsonify({'success': False, 'message': '设备已损坏，暂不可借用'})
     
-    if device.status != DeviceStatus.IN_STOCK:
+    if device.status not in [DeviceStatus.IN_STOCK, DeviceStatus.IN_CUSTODY]:
         return jsonify({'success': False, 'message': '设备已被借出'})
+    
+    # 检查用户借用数量限制
+    user_borrowed_count = 0
+    all_devices = api_client.get_all_devices()
+    for d in all_devices:
+        if d.borrower == user['borrower_name'] and d.status == DeviceStatus.BORROWED:
+            user_borrowed_count += 1
+    
+    borrow_limit = 10  # 最大借用数量（车机+手机）
+    if user_borrowed_count >= borrow_limit:
+        return jsonify({'success': False, 'message': '您已超出可借设备上限，请归还后再借'})
+    
+    # 计算预计归还时间
+    if expected_return_date:
+        # 使用前端传递的日期，时间设为当前时间
+        date_part = datetime.strptime(expected_return_date, '%Y-%m-%d')
+        now = datetime.now()
+        device.expected_return_date = date_part.replace(hour=now.hour, minute=now.minute, second=now.second)
     
     # 更新设备信息
     device.status = DeviceStatus.BORROWED
@@ -764,8 +846,7 @@ def api_borrow():
     device.borrow_time = datetime.now()
     device.reason = reason
     device.entry_source = EntrySource.USER.value
-    if expected_return_date:
-        device.expected_return_date = datetime.strptime(expected_return_date, '%Y-%m-%d')
+    device.previous_borrower = ''  # 清空上一个借用人，因为从在库借用
     
     api_client.update_device(device)
     
@@ -779,7 +860,7 @@ def api_borrow():
         id=str(uuid.uuid4()),
         device_id=device.id,
         device_name=device.name,
-        device_type='车机' if isinstance(device, CarMachine) else '手机',
+        device_type=get_device_type_str(device),
         operation_type=OperationType.BORROW,
         operator=user['borrower_name'],
         operation_time=datetime.now(),
@@ -829,8 +910,8 @@ def api_return():
     
     borrower = device.borrower
     
-    # 清空借用信息
-    device.status = DeviceStatus.IN_STOCK
+    # 清空借用信息，根据设备类型设置默认状态
+    device.status = get_default_status_for_device(device)
     device.borrower = ''
     device.phone = ''
     device.borrow_time = None
@@ -879,6 +960,10 @@ def api_transfer():
     if not device_id or not transfer_to:
         return jsonify({'success': False, 'message': '请选择转借人'})
     
+    # 检查不能转借给自己
+    if transfer_to == user['borrower_name']:
+        return jsonify({'success': False, 'message': '不能转借给自己'})
+    
     device = api_client.get_device_by_id(device_id)
     if not device:
         return jsonify({'success': False, 'message': '设备不存在'})
@@ -904,6 +989,7 @@ def api_transfer():
     device.borrower = transfer_to
     device.phone = transfer_phone
     device.entry_source = EntrySource.USER.value
+    device.expected_return_date = datetime.now() + timedelta(days=1)  # 转借后预计归还时间刷新为当前时间+1天
     
     api_client.update_device(device)
     
@@ -918,7 +1004,8 @@ def api_transfer():
         operation_time=datetime.now(),
         borrower=f"转借：{original_borrower}——>{transfer_to}",
         phone=transfer_phone,
-        reason=remark or '用户转借',
+        reason='用户转借',
+        remark=remark,
         entry_source=EntrySource.USER.value
     )
     api_client._records.append(record)
@@ -936,23 +1023,32 @@ def api_add_remark():
     """添加备注API"""
     user = get_current_user()
     data = request.json
-    
+
     device_id = data.get('device_id')
     content = data.get('content', '').strip()
-    
+
     if not content:
         return jsonify({'success': False, 'message': '备注内容不能为空'})
-    
+
+    # 获取设备
+    device = api_client.get_device_by_id(device_id)
+    if not device:
+        return jsonify({'success': False, 'message': '设备不存在'})
+
+    # 获取设备类型
+    device_type = get_device_type_str(device)
+
     remark = UserRemark(
         id=str(uuid.uuid4()),
         device_id=device_id,
+        device_type=device_type,
         content=content,
         creator=user['borrower_name'],
         create_time=datetime.now()
     )
     api_client._remarks.append(remark)
     api_client._save_data()
-    
+
     return jsonify({'success': True, 'message': '备注已添加'})
 
 
@@ -979,6 +1075,17 @@ def api_transfer_to_me():
     if device.borrower == user['borrower_name']:
         return jsonify({'success': False, 'message': '该设备已在您名下'})
     
+    # 检查用户借用数量限制
+    user_borrowed_count = 0
+    all_devices = api_client.get_all_devices()
+    for d in all_devices:
+        if d.borrower == user['borrower_name'] and d.status == DeviceStatus.BORROWED:
+            user_borrowed_count += 1
+    
+    borrow_limit = 10  # 最大借用数量（车机+手机）
+    if user_borrowed_count >= borrow_limit:
+        return jsonify({'success': False, 'message': f'您已借用 {user_borrowed_count} 台设备，达到上限 ({borrow_limit}台)，无法接受转借'})
+    
     original_borrower = device.borrower
     
     # 保存上一个借用人
@@ -988,6 +1095,7 @@ def api_transfer_to_me():
     device.borrower = user['borrower_name']
     device.phone = user['phone']
     device.entry_source = EntrySource.USER.value
+    device.expected_return_date = datetime.now() + timedelta(days=1)  # 转借后预计归还时间刷新为当前时间+1天
     
     api_client.update_device(device)
     
@@ -1039,8 +1147,8 @@ def api_return_by_custodian():
     
     original_borrower = device.borrower
     
-    # 归还设备
-    device.status = DeviceStatus.IN_STOCK
+    # 归还设备，根据设备类型设置默认状态
+    device.status = get_default_status_for_device(device)
     device.borrower = ''
     device.phone = ''
     device.borrow_time = None
@@ -1057,7 +1165,7 @@ def api_return_by_custodian():
         id=str(uuid.uuid4()),
         device_id=device.id,
         device_name=device.name,
-        device_type='车机' if isinstance(device, CarMachine) else '手机',
+        device_type=get_device_type_str(device),
         operation_type=OperationType.RETURN,
         operator=user['borrower_name'],
         operation_time=datetime.now(),
@@ -1160,7 +1268,7 @@ def api_users():
     for u in api_client._users:
         if u.borrower_name and u.borrower_name != user['borrower_name'] and not u.is_frozen:
             users.append({
-                'borrower_name': u.borrower_name,
+                'name': u.borrower_name,
                 'phone': u.phone
             })
     return jsonify({'success': True, 'users': users})
@@ -1288,14 +1396,25 @@ def api_found_device():
     original_borrower = device.borrower
     
     if action == 'keep':
+        # 检查用户借用数量限制
+        user_borrowed_count = 0
+        all_devices = api_client.get_all_devices()
+        for d in all_devices:
+            if d.borrower == user['borrower_name'] and d.status == DeviceStatus.BORROWED:
+                user_borrowed_count += 1
+        
+        borrow_limit = 10  # 最大借用数量（车机+手机）
+        if user_borrowed_count >= borrow_limit:
+            return jsonify({'success': False, 'message': f'您已借用 {user_borrowed_count} 台设备，达到上限 ({borrow_limit}台)，无法保留设备'})
+        
         # 转给自己，保持借出状态
         device.status = DeviceStatus.BORROWED
         device.borrower = user['borrower_name']
         device.phone = user['phone']
         device.lost_time = None
     elif action == 'return':
-        # 归还入库
-        device.status = DeviceStatus.IN_STOCK
+        # 归还入库，根据设备类型设置默认状态
+        device.status = get_default_status_for_device(device)
         device.borrower = ''
         device.phone = ''
         device.borrow_time = None
@@ -1324,6 +1443,13 @@ def api_found_device():
     api_client.update_device(device)
     
     # 添加记录
+    if action == 'return':
+        borrower_desc = f"找回并归还：{original_borrower or '丢失状态'}"
+    else:
+        from_desc = original_borrower or '丢失状态'
+        to_desc = device.borrower
+        borrower_desc = f"找回：{from_desc}——>{to_desc}"
+    
     record = Record(
         id=str(uuid.uuid4()),
         device_id=device.id,
@@ -1332,7 +1458,7 @@ def api_found_device():
         operation_type=OperationType.FOUND,
         operator=user['borrower_name'],
         operation_time=datetime.now(),
-        borrower=f"找回：{original_borrower}——>{device.borrower}" if action != 'return' else f"找回并归还：{original_borrower}",
+        borrower=borrower_desc,
         phone=device.phone,
         reason='设备已找到',
         entry_source=EntrySource.USER.value
@@ -1365,6 +1491,17 @@ def api_repair_device():
     original_borrower = device.borrower
     
     if action == 'keep':
+        # 检查用户借用数量限制
+        user_borrowed_count = 0
+        all_devices = api_client.get_all_devices()
+        for d in all_devices:
+            if d.borrower == user['borrower_name'] and d.status == DeviceStatus.BORROWED:
+                user_borrowed_count += 1
+        
+        borrow_limit = 10  # 最大借用数量（车机+手机）
+        if user_borrowed_count >= borrow_limit:
+            return jsonify({'success': False, 'message': f'您已借用 {user_borrowed_count} 台设备，达到上限 ({borrow_limit}台)，无法保留设备'})
+        
         # 转给自己，保持借出状态
         device.status = DeviceStatus.BORROWED
         device.borrower = user['borrower_name']
@@ -1372,8 +1509,8 @@ def api_repair_device():
         device.damage_reason = ''
         device.damage_time = None
     elif action == 'return':
-        # 归还入库
-        device.status = DeviceStatus.IN_STOCK
+        # 归还入库，根据设备类型设置默认状态
+        device.status = get_default_status_for_device(device)
         device.borrower = ''
         device.phone = ''
         device.borrow_time = None
@@ -1460,16 +1597,16 @@ def api_not_found():
         
         api_client.update_device(device)
         
-        # 添加记录
+        # 添加记录 - 使用 NOT_FOUND 类型
         record = Record(
             id=str(uuid.uuid4()),
             device_id=device.id,
             device_name=device.name,
             device_type='车机' if isinstance(device, CarMachine) else '手机',
-            operation_type=OperationType.TRANSFER,
+            operation_type=OperationType.NOT_FOUND,
             operator=user['borrower_name'],
             operation_time=datetime.now(),
-            borrower=f"未找到退回：{user['borrower_name']}——>{previous_borrower}",
+            borrower=f"未找到：{user['borrower_name']}——>{previous_borrower}",
             phone=prev_phone,
             reason='设备未找到，退回给上一个借用人',
             entry_source=EntrySource.USER.value
@@ -1523,10 +1660,12 @@ def api_not_found_direct():
         if device.borrower != user['borrower_name']:
             return jsonify({'success': False, 'message': '只有当前借用人可以操作'})
 
-        # 设备转为丢失状态
+        # 设备转为丢失状态，清空借用人信息
         device.status = DeviceStatus.LOST
         device.previous_borrower = device.borrower
         device.lost_time = datetime.now()
+        device.borrower = ''  # 清空借用人，设备不在任何人名下
+        device.phone = ''
 
         api_client.update_device(device)
 
@@ -1539,9 +1678,9 @@ def api_not_found_direct():
             operation_type=OperationType.NOT_FOUND,
             operator=user['borrower_name'],
             operation_time=datetime.now(),
-            borrower=user['borrower_name'],
+            borrower='未找到：库中未找到',
             phone='',
-            reason='借用人未找到设备，设备转为丢失状态',
+            reason='借用人未找到设备，设备转为丢失状态，不在任何人名下',
             entry_source=EntrySource.USER.value
         )
         api_client._records.append(record)
@@ -1628,6 +1767,15 @@ def api_renew():
     if device.borrower != user['borrower_name']:
         return jsonify({'success': False, 'message': '只有借用人可以续期'})
     
+    # 检查是否逾期超过3天
+    if device.expected_return_date:
+        from datetime import datetime
+        now = datetime.now()
+        if now > device.expected_return_date:
+            overdue_days = (now.date() - device.expected_return_date.date()).days
+            if overdue_days > 3:
+                return jsonify({'success': False, 'message': '无法续期，设备已逾期超过3天，请先归还后再借用'})
+    
     # 验证新日期是否有效（不能早于今天）
     try:
         new_date = datetime.strptime(new_return_date, '%Y-%m-%d').date()
@@ -1640,8 +1788,10 @@ def api_renew():
     # 保存旧的预计归还日期用于记录
     old_return_date = device.expected_return_date.strftime('%Y-%m-%d') if device.expected_return_date else '无'
     
-    # 更新预计归还日期
-    device.expected_return_date = datetime.strptime(new_return_date, '%Y-%m-%d')
+    # 更新预计归还日期（使用前端日期 + 当前时间）
+    date_part = datetime.strptime(new_return_date, '%Y-%m-%d')
+    now = datetime.now()
+    device.expected_return_date = date_part.replace(hour=now.hour, minute=now.minute, second=now.second)
     api_client.update_device(device)
     
     # 添加续期记录
@@ -1678,10 +1828,11 @@ def pc_dashboard():
     # 获取统计数据
     all_devices = api_client.get_all_devices()
     total_devices = len(all_devices)
-    available_devices = len([d for d in all_devices if d.status == DeviceStatus.IN_STOCK])
+    # 在库、保管、流通、无柜号都算可用
+    available_devices = len([d for d in all_devices if d.status in [DeviceStatus.IN_STOCK, DeviceStatus.IN_CUSTODY, DeviceStatus.CIRCULATING, DeviceStatus.NO_CABINET]])
     borrowed_devices_count = len([d for d in all_devices if d.status == DeviceStatus.BORROWED])
     
-    # 获取用户当前借用的设备
+    # 获取用户当前借用的设备（排除已报废的设备）
     my_borrowed_devices = []
     for device in all_devices:
         if device.borrower == user['borrower_name'] and device.status == DeviceStatus.BORROWED:
@@ -1689,12 +1840,31 @@ def pc_dashboard():
             overdue_days = 0
             overdue_hours = 0
             is_overdue = False
+            remaining_days = 0
+            remaining_hours = 0
+            can_renew = False
+            renew_disabled_reason = ''
             if device.expected_return_date:
                 time_diff = datetime.now() - device.expected_return_date
                 if time_diff.total_seconds() > 3600:  # 超过1小时算逾期
                     is_overdue = True
                     overdue_hours = int(time_diff.total_seconds() // 3600)
                     overdue_days = int(time_diff.total_seconds() // (24 * 3600))
+                    # 逾期超过3天不能续借
+                    if overdue_days > 3:
+                        can_renew = False
+                        renew_disabled_reason = '逾期超过3天，不能续借，需要归还后才能再次借用'
+                    else:
+                        can_renew = True
+                else:
+                    # 计算剩余时间
+                    remaining_seconds = device.expected_return_date.timestamp() - datetime.now().timestamp()
+                    remaining_hours = int(remaining_seconds // 3600)
+                    remaining_days = int(remaining_seconds // (24 * 3600))
+                    # 剩余时间小于24小时才能续借
+                    can_renew = remaining_hours < 24
+                    if not can_renew:
+                        renew_disabled_reason = '剩余时间大于24小时，暂不需要续借'
 
             my_borrowed_devices.append({
                 'id': device.id,
@@ -1704,8 +1874,107 @@ def pc_dashboard():
                 'expected_return_date': device.expected_return_date.strftime('%Y-%m-%d') if device.expected_return_date else None,
                 'is_overdue': is_overdue,
                 'overdue_days': overdue_days,
-                'overdue_hours': overdue_hours
+                'overdue_hours': overdue_hours,
+                'remaining_days': remaining_days,
+                'remaining_hours': remaining_hours,
+                'can_renew': can_renew,
+                'renew_disabled_reason': renew_disabled_reason
             })
+
+    # 获取通知信息（我保管/借用但被借走的信息，最近20条）
+    notifications = []
+    all_records = api_client.get_records()
+    for record in all_records:
+        device = api_client.get_device_by_id(record.device_id)
+        if not device:
+            continue
+
+        # 借出/转借相关通知
+        if '借出' in record.operation_type.value or '转借' in record.operation_type.value:
+            # 显示最终借用人（设备当前借用人）
+            final_borrower = device.borrower if device.borrower else record.borrower
+            item = {
+                'device_name': device.name,
+                'device_type': get_device_type_str(device),
+                'borrower': final_borrower,
+                'time': record.operation_time,
+                'type': ''
+            }
+            # 我保管的设备被别人借走（排除自己操作的）
+            if device.cabinet_number == user['borrower_name'] and device.borrower and device.borrower != user['borrower_name'] and record.borrower != user['borrower_name']:
+                item['type'] = '保管-被动'
+                notifications.append(item)
+            # 我正在借用的设备被别人转借走（排除自己操作的）
+            elif hasattr(device, 'previous_borrower') and device.previous_borrower == user['borrower_name'] and device.borrower and device.borrower != user['borrower_name'] and record.borrower != user['borrower_name']:
+                item['type'] = '借用-被动'
+                notifications.append(item)
+            # 我主动转借给别人（自己操作的转借）
+            elif hasattr(device, 'previous_borrower') and device.previous_borrower == user['borrower_name'] and device.borrower and device.borrower != user['borrower_name'] and record.borrower == user['borrower_name']:
+                item['type'] = '借用-主动'
+                notifications.append(item)
+
+        # 处理报废通知 - 如果我是该设备的借用人
+        elif '报废' in record.operation_type.value:
+            # 检查报废记录中的借用人是否是当前用户
+            if record.borrower == user['borrower_name']:
+                item = {
+                    'device_name': device.name,
+                    'device_type': get_device_type_str(device),
+                    'borrower': record.borrower,
+                    'time': record.operation_time,
+                    'type': '设备报废'
+                }
+                notifications.append(item)
+
+        # 处理状态变更通知 - 如果我是该设备的借用人或保管人
+        elif '状态变更' in record.operation_type.value:
+            if record.borrower == user['borrower_name']:
+                item = {
+                    'device_name': device.name,
+                    'device_type': get_device_type_str(device),
+                    'borrower': record.borrower,
+                    'time': record.operation_time,
+                    'type': '状态变更',
+                    'reason': record.reason
+                }
+                notifications.append(item)
+            elif device.cabinet_number == user['borrower_name']:
+                item = {
+                    'device_name': device.name,
+                    'device_type': get_device_type_str(device),
+                    'borrower': record.borrower,
+                    'time': record.operation_time,
+                    'type': '状态变更',
+                    'reason': record.reason
+                }
+                notifications.append(item)
+
+        # 处理保管人变更通知 - 如果我是原保管人或新保管人
+        elif '保管人变更' in record.operation_type.value:
+            # 检查 reason 中是否包含用户名
+            if user['borrower_name'] in record.reason:
+                item = {
+                    'device_name': device.name,
+                    'device_type': get_device_type_str(device),
+                    'borrower': record.borrower,
+                    'time': record.operation_time,
+                    'type': '保管人变更',
+                    'reason': record.reason
+                }
+                notifications.append(item)
+            # 检查 remark 中是否包含用户名（原保管人）
+            elif record.remark and user['borrower_name'] in record.remark:
+                item = {
+                    'device_name': device.name,
+                    'device_type': get_device_type_str(device),
+                    'borrower': record.borrower,
+                    'time': record.operation_time,
+                    'type': '保管人变更',
+                    'reason': record.reason
+                }
+                notifications.append(item)
+    
+    notifications = sorted(notifications, key=lambda x: x['time'], reverse=True)[:20]
 
     return render_template('pc/dashboard.html',
                          user=user,
@@ -1713,7 +1982,10 @@ def pc_dashboard():
                          available_devices=available_devices,
                          borrowed_devices_count=borrowed_devices_count,
                          my_borrowed_count=len(my_borrowed_devices),
-                         my_borrowed_devices=my_borrowed_devices)
+                         my_borrowed_devices=my_borrowed_devices,
+                         notifications=notifications,
+                         notification_count=len(notifications),
+                         active_nav='dashboard')
 
 
 @app.route('/pc/devices')
@@ -1730,14 +2002,19 @@ def pc_device_list():
         filter_type = '车机'
     elif device_type == 'phone':
         filter_type = '手机'
+    elif device_type == 'instrument':
+        filter_type = '仪表'
+    elif device_type == 'simcard':
+        filter_type = '手机卡'
+    elif device_type == 'other':
+        filter_type = '其它设备'
     
     devices = api_client.get_all_devices(filter_type)
     device_list = []
     
     for device in devices:
-        cabinet = device.cabinet_number or ''
-        is_no_cabinet = not cabinet.strip()
-        is_circulating = cabinet.strip() == '流通'
+        is_no_cabinet = device.status == DeviceStatus.NO_CABINET
+        is_circulating = device.status == DeviceStatus.CIRCULATING
         
         if no_cabinet == '1':
             if not is_no_cabinet:
@@ -1746,7 +2023,7 @@ def pc_device_list():
         device_list.append({
             'id': device.id,
             'name': device.name,
-            'type': '车机' if isinstance(device, CarMachine) else '手机',
+            'type': get_device_type_str(device),
             'status': device.status.value,
             'remark': device.remark or '-',
             'no_cabinet': is_no_cabinet,
@@ -1760,6 +2037,8 @@ def pc_device_list():
     end = start + per_page
     paginated_devices = device_list[start:end]
     
+    stats = get_device_stats()
+    
     return render_template('pc/device_list.html',
                          devices=paginated_devices,
                          device_type=device_type,
@@ -1767,7 +2046,9 @@ def pc_device_list():
                          page=page,
                          total_pages=total_pages,
                          total=total,
-                         user=get_current_user())
+                         user=get_current_user(),
+                         **stats,
+                         active_nav='devices')
 
 
 @app.route('/pc/device/<device_id>')
@@ -1779,18 +2060,36 @@ def pc_device_detail(device_id):
     if not user or not user.get('borrower_name'):
         return redirect(url_for('login'))
     api_client.reload_data()
-    device = api_client.get_device_by_id(device_id)
+
+    # 获取设备类型参数，用于区分不同类型设备的相同ID
+    device_type_param = request.args.get('device_type')
+
+    # 先尝试根据设备类型查找
+    device = None
+    if device_type_param:
+        devices = api_client.get_all_devices(device_type_param)
+        for d in devices:
+            if d.id == device_id and not d.is_deleted:
+                device = d
+                break
+
+    # 如果没找到，使用默认查找方式
+    if not device:
+        device = api_client.get_device_by_id(device_id)
     
     if not device:
         return render_template('error.html', message='设备不存在'), 404
     
     if device.status == DeviceStatus.SCRAPPED:
         return render_template('error.html', message='设备已报废，请联系管理员'), 403
-    
-    api_client.add_view_record(device_id, user['borrower_name'])
-    
+
+    # 获取设备类型字符串
+    device_type_str = get_device_type_str(device)
+
+    api_client.add_view_record(device_id, user['borrower_name'], device_type_str)
+
     # 获取备注
-    remarks = api_client.get_remarks(device_id)
+    remarks = api_client.get_remarks(device_id, device_type_str)
     remark_list = []
     for remark in remarks:
         remark_list.append({
@@ -1800,9 +2099,9 @@ def pc_device_detail(device_id):
             'create_time': remark.create_time.strftime('%Y-%m-%d %H:%M'),
             'is_creator': remark.creator == user['borrower_name']
         })
-    
+
     # 获取借用记录
-    records = api_client.get_records(device_name=device.name)
+    records = api_client.get_records(device_type=device_type_str, device_name=device.name)
     record_list = []
     for record in records[:50]:
         record_list.append({
@@ -1812,9 +2111,9 @@ def pc_device_detail(device_id):
             'entry_source': record.entry_source,
             'reason': record.reason
         })
-    
+
     # 获取查看记录
-    view_records = api_client.get_view_records(device_id, limit=20)
+    view_records = api_client.get_view_records(device_id, device_type_str, limit=20)
     view_record_list = []
     for vr in view_records:
         view_record_list.append({
@@ -1845,9 +2144,11 @@ def pc_device_detail(device_id):
             clean_name = u.borrower_name.replace('\\', '\\\\').replace('"', '\\"').replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
             all_users.append({'borrower_name': clean_name, 'phone': u.phone})
 
+    stats = get_device_stats()
+    
     return render_template('pc/device_detail.html',
                          device=device,
-                         device_type='车机' if isinstance(device, CarMachine) else '手机',
+                         device_type=get_device_type_str(device),
                          is_borrower=is_borrower,
                          is_custodian=is_custodian,
                          is_overdue=is_overdue,
@@ -1856,6 +2157,7 @@ def pc_device_detail(device_id):
                          remarks=remark_list,
                          records=record_list,
                          view_records=view_record_list,
+                         **stats,
                          user=user,
                          all_users=all_users,
                          now=datetime.now().strftime('%Y-%m-%d %H:%M'))
@@ -1867,21 +2169,38 @@ def pc_device_detail_simple(device_id):
     """PC端无柜号/流通设备详情"""
     user = get_current_user()
     api_client.reload_data()
-    device = api_client.get_device_by_id(device_id)
+
+    # 获取设备类型参数，用于区分不同类型设备的相同ID
+    device_type_param = request.args.get('device_type')
+
+    # 先尝试根据设备类型查找
+    device = None
+    if device_type_param:
+        devices = api_client.get_all_devices(device_type_param)
+        for d in devices:
+            if d.id == device_id and not d.is_deleted:
+                device = d
+                break
+
+    # 如果没找到，使用默认查找方式
+    if not device:
+        device = api_client.get_device_by_id(device_id)
     
     if not device:
         return render_template('error.html', message='设备不存在'), 404
-    
-    cabinet = device.cabinet_number or ''
-    is_no_cabinet = not cabinet.strip()
-    is_circulating = cabinet.strip() == '流通'
+
+    is_no_cabinet = device.status == DeviceStatus.NO_CABINET
+    is_circulating = device.status == DeviceStatus.CIRCULATING
     
     if not is_no_cabinet and not is_circulating:
         return redirect(url_for('pc_device_detail', device_id=device_id))
-    
-    api_client.add_view_record(device_id, user['borrower_name'])
-    
-    remarks = api_client.get_remarks(device_id)
+
+    # 获取设备类型字符串
+    device_type_str = get_device_type_str(device)
+
+    api_client.add_view_record(device_id, user['borrower_name'], device_type_str)
+
+    remarks = api_client.get_remarks(device_id, device_type_str)
     remark_list = []
     for remark in remarks:
         remark_list.append({
@@ -1891,8 +2210,8 @@ def pc_device_detail_simple(device_id):
             'create_time': remark.create_time.strftime('%Y-%m-%d %H:%M'),
             'is_creator': remark.creator == user['borrower_name']
         })
-    
-    view_records = api_client.get_view_records(device_id, limit=20)
+
+    view_records = api_client.get_view_records(device_id, device_type_str, limit=20)
     view_record_list = []
     for vr in view_records:
         view_record_list.append({
@@ -1900,13 +2219,89 @@ def pc_device_detail_simple(device_id):
             'view_time': vr.view_time.strftime('%Y-%m-%d %H:%M:%S')
         })
 
+    stats = get_device_stats()
+    
     return render_template('pc/device_detail_simple.html',
                          device=device,
-                         device_type='车机' if isinstance(device, CarMachine) else '手机',
+                         device_type=device_type_str,
                          remarks=remark_list,
                          view_records=view_record_list,
                          is_circulating=is_circulating,
-                         user=user)
+                         user=user,
+                         **stats)
+
+
+@app.route('/pc/my-custodian-devices')
+@login_required
+def pc_my_custodian_devices():
+    """PC端我的保管设备"""
+    from datetime import datetime
+    user = get_current_user()
+    
+    # 获取当前用户保管的设备（cabinet_number等于用户名称）
+    all_devices = api_client.get_all_devices()
+    custodian_devices = []
+    
+    for device in all_devices:
+        if device.cabinet_number == user['borrower_name']:
+            # 计算借用时间和逾期情况
+            borrow_time_str = ''
+            expected_return_str = ''
+            time_remaining = ''
+            is_overdue = False
+            
+            if device.borrow_time:
+                borrow_time_str = device.borrow_time.strftime('%Y-%m-%d %H:%M')
+            
+            if device.expected_return_date:
+                expected_return_str = device.expected_return_date.strftime('%Y-%m-%d %H:%M')
+                now = datetime.now()
+                time_diff = device.expected_return_date - now
+                
+                if time_diff.total_seconds() > 0:
+                    # 剩余时间（向上取整，使显示更合理）
+                    total_seconds = time_diff.total_seconds()
+                    days = int(total_seconds // (24 * 3600))
+                    remaining_seconds = total_seconds % (24 * 3600)
+                    hours = int(remaining_seconds // 3600)
+                    minutes = int((remaining_seconds % 3600) // 60)
+                    # 如果有分钟，小时数+1（向上取整）
+                    if minutes > 0 and days == 0:
+                        hours += 1
+                    if days > 0:
+                        time_remaining = f'剩余 {days}天{hours}小时'
+                    else:
+                        time_remaining = f'剩余 {hours}小时'
+                else:
+                    # 已逾期
+                    is_overdue = True
+                    overdue_hours = int(abs(time_diff.total_seconds()) // 3600)
+                    overdue_days = int(abs(time_diff.total_seconds()) // (24 * 3600))
+                    if overdue_days > 0:
+                        time_remaining = f'逾期 {overdue_days}天{overdue_hours % 24}小时'
+                    else:
+                        time_remaining = f'逾期 {overdue_hours}小时'
+            
+            custodian_devices.append({
+                'id': device.id,
+                'name': device.name,
+                'type': '车机' if isinstance(device, CarMachine) else '手机',
+                'borrower': device.borrower or '未借用',
+                'status': device.status.value,
+                'borrow_time': borrow_time_str,
+                'expected_return_date': expected_return_str,
+                'time_remaining': time_remaining,
+                'is_overdue': is_overdue
+            })
+    
+    stats = get_device_stats()
+    
+    return render_template('pc/my_custodian_devices.html',
+                         devices=custodian_devices,
+                         total_count=len(custodian_devices),
+                         user=user,
+                         **stats,
+                         active_nav='my_custodian')
 
 
 @app.route('/pc/records')
@@ -1914,19 +2309,42 @@ def pc_device_detail_simple(device_id):
 def pc_my_records():
     """PC端我的借用记录"""
     user = get_current_user()
-    
+
     all_records = api_client.get_records()
     user_records = []
     for r in all_records:
+        # 记录与当前用户相关的情况：
+        # 1. 当前用户是借用者
+        # 2. 当前用户是保管人（通过 remark 或 reason 判断保管人变更）
+        # 3. 当前用户是操作者（转借等）
+        # 4. 记录的原因/备注中包含用户名（管理员操作相关）
+        should_include = False
+
         if r.borrower == user['borrower_name']:
-            user_records.append(r)
+            should_include = True
         elif r.operator == user['borrower_name'] and r.operation_type.value == '转借':
-            user_records.append(r)
+            should_include = True
         elif user['borrower_name'] in r.borrower and ('转借' in r.borrower or '被转借' in r.borrower):
+            should_include = True
+
+        # 检查管理员操作是否与当前用户相关
+        if not should_include:
+            # 状态变更记录：如果借用人是当前用户，或者保管人变更中包含当前用户名
+            if r.operation_type.value == '状态变更' and r.borrower == user['borrower_name']:
+                should_include = True
+            elif r.operation_type.value == '保管人变更':
+                # 检查 reason 和 remark 中是否包含用户名
+                if user['borrower_name'] in r.reason or user['borrower_name'] in r.remark:
+                    should_include = True
+            # 其他管理员操作：如果借用人是当前用户
+            elif r.borrower == user['borrower_name']:
+                should_include = True
+
+        if should_include:
             user_records.append(r)
-    
+
     user_records.sort(key=lambda x: (x.operation_time, x.id), reverse=True)
-    
+
     record_list = []
     for record in user_records:
         record_list.append({
@@ -1935,10 +2353,11 @@ def pc_my_records():
             'operation_type': record.operation_type.value,
             'operation_time': record.operation_time.strftime('%Y-%m-%d %H:%M:%S'),
             'borrower': record.borrower,
+            'operator': record.operator,
             'reason': record.reason,
             'remark': record.remark
         })
-    
+
     total_records = len(record_list)
     borrow_count = len([r for r in record_list if '借出' in r['operation_type']])
     return_count = len([r for r in record_list if '归还' in r['operation_type']])
@@ -1959,6 +2378,8 @@ def pc_my_records():
     end = start + per_page
     paginated_records = record_list[start:end]
     
+    stats = get_device_stats()
+    
     return render_template('pc/my_records.html',
                          records=paginated_records,
                          total_records=total_records,
@@ -1966,7 +2387,9 @@ def pc_my_records():
                          return_count=return_count,
                          page=page,
                          total_pages=total_pages,
-                         user=user)
+                         user=user,
+                         **stats,
+                         active_nav='my_records')
 
 
 @app.route('/pc/all-records')
@@ -2012,6 +2435,8 @@ def pc_all_records():
     end = start + per_page
     paginated_records = all_records_data[start:end]
     
+    stats = get_device_stats()
+    
     return render_template('pc/all_records.html',
                          records=paginated_records,
                          total_records=total_records,
@@ -2019,7 +2444,9 @@ def pc_all_records():
                          return_count=return_count,
                          page=page,
                          total_pages=total_pages,
-                         user=user)
+                         user=user,
+                         **stats,
+                         active_nav='all_records')
 
 
 # ==================== 后台管理系统 ====================
@@ -2069,7 +2496,8 @@ def admin_mobile_dashboard():
     # 获取统计数据
     all_devices = api_client.get_all_devices()
     total_devices = len(all_devices)
-    available_devices = len([d for d in all_devices if d.status == DeviceStatus.IN_STOCK])
+    # 在库、保管、流通、无柜号都算可用
+    available_devices = len([d for d in all_devices if d.status in [DeviceStatus.IN_STOCK, DeviceStatus.IN_CUSTODY, DeviceStatus.CIRCULATING, DeviceStatus.NO_CABINET]])
     borrowed_devices = len([d for d in all_devices if d.status == DeviceStatus.BORROWED])
     
     # 计算逾期设备
@@ -2155,7 +2583,8 @@ def admin_pc_dashboard():
     # 获取统计数据
     all_devices = api_client.get_all_devices()
     total_devices = len(all_devices)
-    available_devices = len([d for d in all_devices if d.status == DeviceStatus.IN_STOCK])
+    # 在库、保管、流通、无柜号都算可用
+    available_devices = len([d for d in all_devices if d.status in [DeviceStatus.IN_STOCK, DeviceStatus.IN_CUSTODY, DeviceStatus.CIRCULATING, DeviceStatus.NO_CABINET]])
     borrowed_devices = len([d for d in all_devices if d.status == DeviceStatus.BORROWED])
     
     phone_count = len([d for d in all_devices if d.device_type == DeviceType.PHONE])
@@ -2517,7 +2946,7 @@ def api_device_borrow(device_id):
         api_client.borrow_device(
             device_id=device_id,
             borrower=data.get('user'),
-            days=int(data.get('days', 7)),
+            days=int(data.get('days', 1)),
             cabinet=data.get('cabinet', '流通'),
             remarks=data.get('remarks', ''),
             operator=session.get('admin_name', '管理员')

@@ -16,7 +16,7 @@
     <div class="device-info-card">
         <div class="device-header">
             <span class="device-icon-large">
-                {% if device_type == '车机' %}🚗{% else %}📱{% endif %}
+                {% if device_type == '车机' %}🚗{% elif device_type == '手机' %}📱{% elif device_type == '仪表' %}📊{% elif device_type == '手机卡' %}📲{% elif device_type == '其它设备' %}🔧{% else %}📦{% endif %}
             </span>
             <div class="device-title">
                 <h2>{{ device.name }}</h2>
@@ -242,6 +242,13 @@ function handleTransfer(event) {
     
     if (!transferTo) {
         showToast('请输入转借人');
+        return false;
+    }
+    
+    // 验证不能转借给自己
+    const currentUserName = {{ user.borrower_name | tojson }};
+    if (transferTo === currentUserName) {
+        showToast('不能转借给自己');
         return false;
     }
     

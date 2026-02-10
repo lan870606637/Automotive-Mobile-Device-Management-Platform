@@ -8,13 +8,16 @@ import pandas as pd
 from datetime import datetime
 from typing import List, Optional
 
-from .models import Device, CarMachine, Phone, Record, UserRemark, User, OperationLog, Admin
+from .models import Device, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, OperationLog, Admin
 from .models import DeviceStatus, DeviceType, OperationType, EntrySource
 
 # Excel文件路径
 EXCEL_DIR = os.path.join(os.path.dirname(__file__), '..', 'excel_templates')
 CAR_FILE = os.path.join(EXCEL_DIR, '车机表.xlsx')
+INSTRUMENT_FILE = os.path.join(EXCEL_DIR, '仪表表.xlsx')
 PHONE_FILE = os.path.join(EXCEL_DIR, '手机表.xlsx')
+SIM_CARD_FILE = os.path.join(EXCEL_DIR, '手机卡表.xlsx')
+OTHER_DEVICE_FILE = os.path.join(EXCEL_DIR, '其它设备表.xlsx')
 RECORD_FILE = os.path.join(EXCEL_DIR, '记录表.xlsx')
 REMARK_FILE = os.path.join(EXCEL_DIR, '用户备注表.xlsx')
 USER_FILE = os.path.join(EXCEL_DIR, '用户表.xlsx')
@@ -91,11 +94,124 @@ class ExcelDataStore:
                         pass
                 if pd.notna(row.get('上一个借用人')):
                     device.previous_borrower = str(row['上一个借用人'])
+                # 寄出信息
+                if pd.notna(row.get('寄出时间')):
+                    try:
+                        device.ship_time = pd.to_datetime(row['寄出时间'])
+                    except:
+                        pass
+                if pd.notna(row.get('寄出备注')):
+                    device.ship_remark = str(row['寄出备注'])
+                if pd.notna(row.get('寄出人')):
+                    device.ship_by = str(row['寄出人'])
+                if pd.notna(row.get('寄出前借用人')):
+                    device.pre_ship_borrower = str(row['寄出前借用人'])
+                if pd.notna(row.get('寄出前借用时间')):
+                    try:
+                        device.pre_ship_borrow_time = pd.to_datetime(row['寄出前借用时间'])
+                    except:
+                        pass
+                if pd.notna(row.get('寄出前预计归还')):
+                    try:
+                        device.pre_ship_expected_return_date = pd.to_datetime(row['寄出前预计归还'])
+                    except:
+                        pass
                 
                 if not device.is_deleted:
                     devices.append(device)
         except Exception as e:
             print(f"加载车机数据失败: {e}")
+        
+        return devices
+
+    @staticmethod
+    def load_instruments() -> List[Instrument]:
+        """从Excel加载仪表数据（与车机表结构一致）"""
+        devices = []
+        if not os.path.exists(INSTRUMENT_FILE):
+            return devices
+        
+        try:
+            df = pd.read_excel(INSTRUMENT_FILE)
+            for _, row in df.iterrows():
+                if pd.isna(row.get('设备ID')):
+                    continue
+                
+                def safe_str(val):
+                    if pd.isna(val) or str(val).lower() == 'nan':
+                        return ''
+                    return str(val)
+                
+                device = Instrument(
+                    id=str(row['设备ID']),
+                    name=str(row['设备名']),
+                    model=safe_str(row.get('型号', '')),
+                    cabinet_number=safe_str(row.get('柜号', '')),
+                    status=DeviceStatus(row['状态']) if pd.notna(row.get('状态')) else DeviceStatus.IN_STOCK,
+                    remark=safe_str(row.get('备注', '')),
+                    is_deleted=str(row.get('是否删除', '否')) == '是',
+                )
+                
+                if pd.notna(row.get('借用人')):
+                    device.borrower = safe_str(row['借用人'])
+                if pd.notna(row.get('手机号')):
+                    device.phone = safe_str(row['手机号'])
+                if pd.notna(row.get('借用时间')):
+                    try:
+                        device.borrow_time = pd.to_datetime(row['借用时间'])
+                    except:
+                        pass
+                if pd.notna(row.get('借用地点')):
+                    device.location = safe_str(row['借用地点'])
+                if pd.notna(row.get('借用原因')):
+                    device.reason = safe_str(row['借用原因'])
+                if pd.notna(row.get('录入者')):
+                    device.entry_source = safe_str(row['录入者'])
+                if pd.notna(row.get('预计归还日期')):
+                    try:
+                        device.expected_return_date = pd.to_datetime(row['预计归还日期'])
+                    except:
+                        pass
+                if pd.notna(row.get('丢失时间')):
+                    try:
+                        device.lost_time = pd.to_datetime(row['丢失时间'])
+                    except:
+                        pass
+                if pd.notna(row.get('损坏原因')):
+                    device.damage_reason = str(row['损坏原因'])
+                if pd.notna(row.get('损坏时间')):
+                    try:
+                        device.damage_time = pd.to_datetime(row['损坏时间'])
+                    except:
+                        pass
+                if pd.notna(row.get('上一个借用人')):
+                    device.previous_borrower = str(row['上一个借用人'])
+                if pd.notna(row.get('寄出时间')):
+                    try:
+                        device.ship_time = pd.to_datetime(row['寄出时间'])
+                    except:
+                        pass
+                if pd.notna(row.get('寄出备注')):
+                    device.ship_remark = str(row['寄出备注'])
+                if pd.notna(row.get('寄出人')):
+                    device.ship_by = str(row['寄出人'])
+                if pd.notna(row.get('寄出前借用人')):
+                    device.pre_ship_borrower = str(row['寄出前借用人'])
+                if pd.notna(row.get('寄出前借用时间')):
+                    try:
+                        device.pre_ship_borrow_time = pd.to_datetime(row['寄出前借用时间'])
+                    except:
+                        pass
+                if pd.notna(row.get('寄出前预计归还')):
+                    try:
+                        device.pre_ship_expected_return_date = pd.to_datetime(row['寄出前预计归还'])
+                    except:
+                        pass
+                
+                if not device.is_deleted:
+                    devices.append(device)
+        except Exception as e:
+            print(f"加载仪表数据失败: {e}")
         
         return devices
     
@@ -118,12 +234,16 @@ class ExcelDataStore:
                         return ''
                     return str(val)
                 
+                # 手机默认状态为保管中，如果Excel中是'在库'则转换为'保管中'
+                status_value = row['状态'] if pd.notna(row.get('状态')) else None
+                if status_value == '在库':
+                    status_value = '保管中'
                 device = Phone(
                     id=str(row['设备ID']),
                     name=str(row['设备名']),
                     model=safe_str(row.get('型号', '')),
                     cabinet_number=safe_str(row.get('保管人', '')),
-                    status=DeviceStatus(row['状态']) if pd.notna(row.get('状态')) else DeviceStatus.IN_STOCK,
+                    status=DeviceStatus(status_value) if status_value else DeviceStatus.IN_CUSTODY,
                     remark=safe_str(row.get('备注', '')),
                     is_deleted=str(row.get('是否删除', '否')) == '是',
                 )
@@ -164,11 +284,223 @@ class ExcelDataStore:
                         pass
                 if pd.notna(row.get('上一个借用人')):
                     device.previous_borrower = str(row['上一个借用人'])
+                # 寄出信息
+                if pd.notna(row.get('寄出时间')):
+                    try:
+                        device.ship_time = pd.to_datetime(row['寄出时间'])
+                    except:
+                        pass
+                if pd.notna(row.get('寄出备注')):
+                    device.ship_remark = str(row['寄出备注'])
+                if pd.notna(row.get('寄出人')):
+                    device.ship_by = str(row['寄出人'])
+                if pd.notna(row.get('寄出前借用人')):
+                    device.pre_ship_borrower = str(row['寄出前借用人'])
+                if pd.notna(row.get('寄出前借用时间')):
+                    try:
+                        device.pre_ship_borrow_time = pd.to_datetime(row['寄出前借用时间'])
+                    except:
+                        pass
+                if pd.notna(row.get('寄出前预计归还')):
+                    try:
+                        device.pre_ship_expected_return_date = pd.to_datetime(row['寄出前预计归还'])
+                    except:
+                        pass
                 
                 if not device.is_deleted:
                     devices.append(device)
         except Exception as e:
             print(f"加载手机数据失败: {e}")
+        
+        return devices
+
+    @staticmethod
+    def load_sim_cards() -> List[SimCard]:
+        """从Excel加载手机卡数据（与手机表结构一致，但型号字段对应号码）"""
+        devices = []
+        if not os.path.exists(SIM_CARD_FILE):
+            return devices
+        
+        try:
+            df = pd.read_excel(SIM_CARD_FILE)
+            for _, row in df.iterrows():
+                if pd.isna(row.get('设备ID')):
+                    continue
+                
+                def safe_str(val):
+                    if pd.isna(val) or str(val).lower() == 'nan':
+                        return ''
+                    return str(val)
+                
+                # 手机卡默认状态为保管中，如果Excel中是'在库'则转换为'保管中'
+                status_value = row['状态'] if pd.notna(row.get('状态')) else None
+                if status_value == '在库':
+                    status_value = '保管中'
+                device = SimCard(
+                    id=str(row['设备ID']),
+                    name=str(row['设备名']),
+                    model=safe_str(row.get('号码', '')),
+                    cabinet_number=safe_str(row.get('保管人', '')),
+                    status=DeviceStatus(status_value) if status_value else DeviceStatus.IN_CUSTODY,
+                    remark=safe_str(row.get('备注', '')),
+                    is_deleted=str(row.get('是否删除', '否')) == '是',
+                )
+                
+                if pd.notna(row.get('借用人')):
+                    device.borrower = safe_str(row['借用人'])
+                if pd.notna(row.get('手机号')):
+                    device.phone = safe_str(row['手机号'])
+                if pd.notna(row.get('借用时间')):
+                    try:
+                        device.borrow_time = pd.to_datetime(row['借用时间'])
+                    except:
+                        pass
+                if pd.notna(row.get('借用地点')):
+                    device.location = safe_str(row['借用地点'])
+                if pd.notna(row.get('借用原因')):
+                    device.reason = safe_str(row['借用原因'])
+                if pd.notna(row.get('录入者')):
+                    device.entry_source = safe_str(row['录入者'])
+                if pd.notna(row.get('预计归还日期')):
+                    try:
+                        device.expected_return_date = pd.to_datetime(row['预计归还日期'])
+                    except:
+                        pass
+                if pd.notna(row.get('丢失时间')):
+                    try:
+                        device.lost_time = pd.to_datetime(row['丢失时间'])
+                    except:
+                        pass
+                if pd.notna(row.get('损坏原因')):
+                    device.damage_reason = str(row['损坏原因'])
+                if pd.notna(row.get('损坏时间')):
+                    try:
+                        device.damage_time = pd.to_datetime(row['损坏时间'])
+                    except:
+                        pass
+                if pd.notna(row.get('上一个借用人')):
+                    device.previous_borrower = str(row['上一个借用人'])
+                if pd.notna(row.get('寄出时间')):
+                    try:
+                        device.ship_time = pd.to_datetime(row['寄出时间'])
+                    except:
+                        pass
+                if pd.notna(row.get('寄出备注')):
+                    device.ship_remark = str(row['寄出备注'])
+                if pd.notna(row.get('寄出人')):
+                    device.ship_by = str(row['寄出人'])
+                if pd.notna(row.get('寄出前借用人')):
+                    device.pre_ship_borrower = str(row['寄出前借用人'])
+                if pd.notna(row.get('寄出前借用时间')):
+                    try:
+                        device.pre_ship_borrow_time = pd.to_datetime(row['寄出前借用时间'])
+                    except:
+                        pass
+                if pd.notna(row.get('寄出前预计归还')):
+                    try:
+                        device.pre_ship_expected_return_date = pd.to_datetime(row['寄出前预计归还'])
+                    except:
+                        pass
+                
+                if not device.is_deleted:
+                    devices.append(device)
+        except Exception as e:
+            print(f"加载手机卡数据失败: {e}")
+        
+        return devices
+
+    @staticmethod
+    def load_other_devices() -> List[OtherDevice]:
+        """从Excel加载其它设备数据（与手机表结构一致）"""
+        devices = []
+        if not os.path.exists(OTHER_DEVICE_FILE):
+            return devices
+        
+        try:
+            df = pd.read_excel(OTHER_DEVICE_FILE)
+            for _, row in df.iterrows():
+                if pd.isna(row.get('设备ID')):
+                    continue
+                
+                def safe_str(val):
+                    if pd.isna(val) or str(val).lower() == 'nan':
+                        return ''
+                    return str(val)
+                
+                # 其它设备默认状态为保管中，如果Excel中是'在库'则转换为'保管中'
+                status_value = row['状态'] if pd.notna(row.get('状态')) else None
+                if status_value == '在库':
+                    status_value = '保管中'
+                device = OtherDevice(
+                    id=str(row['设备ID']),
+                    name=str(row['设备名']),
+                    model=safe_str(row.get('型号', '')),
+                    cabinet_number=safe_str(row.get('保管人', '')),
+                    status=DeviceStatus(status_value) if status_value else DeviceStatus.IN_CUSTODY,
+                    remark=safe_str(row.get('备注', '')),
+                    is_deleted=str(row.get('是否删除', '否')) == '是',
+                )
+                
+                if pd.notna(row.get('借用人')):
+                    device.borrower = safe_str(row['借用人'])
+                if pd.notna(row.get('手机号')):
+                    device.phone = safe_str(row['手机号'])
+                if pd.notna(row.get('借用时间')):
+                    try:
+                        device.borrow_time = pd.to_datetime(row['借用时间'])
+                    except:
+                        pass
+                if pd.notna(row.get('借用地点')):
+                    device.location = safe_str(row['借用地点'])
+                if pd.notna(row.get('借用原因')):
+                    device.reason = safe_str(row['借用原因'])
+                if pd.notna(row.get('录入者')):
+                    device.entry_source = safe_str(row['录入者'])
+                if pd.notna(row.get('预计归还日期')):
+                    try:
+                        device.expected_return_date = pd.to_datetime(row['预计归还日期'])
+                    except:
+                        pass
+                if pd.notna(row.get('丢失时间')):
+                    try:
+                        device.lost_time = pd.to_datetime(row['丢失时间'])
+                    except:
+                        pass
+                if pd.notna(row.get('损坏原因')):
+                    device.damage_reason = str(row['损坏原因'])
+                if pd.notna(row.get('损坏时间')):
+                    try:
+                        device.damage_time = pd.to_datetime(row['损坏时间'])
+                    except:
+                        pass
+                if pd.notna(row.get('上一个借用人')):
+                    device.previous_borrower = str(row['上一个借用人'])
+                if pd.notna(row.get('寄出时间')):
+                    try:
+                        device.ship_time = pd.to_datetime(row['寄出时间'])
+                    except:
+                        pass
+                if pd.notna(row.get('寄出备注')):
+                    device.ship_remark = str(row['寄出备注'])
+                if pd.notna(row.get('寄出人')):
+                    device.ship_by = str(row['寄出人'])
+                if pd.notna(row.get('寄出前借用人')):
+                    device.pre_ship_borrower = str(row['寄出前借用人'])
+                if pd.notna(row.get('寄出前借用时间')):
+                    try:
+                        device.pre_ship_borrow_time = pd.to_datetime(row['寄出前借用时间'])
+                    except:
+                        pass
+                if pd.notna(row.get('寄出前预计归还')):
+                    try:
+                        device.pre_ship_expected_return_date = pd.to_datetime(row['寄出前预计归还'])
+                    except:
+                        pass
+                
+                if not device.is_deleted:
+                    devices.append(device)
+        except Exception as e:
+            print(f"加载其它设备数据失败: {e}")
         
         return devices
     
@@ -190,17 +522,58 @@ class ExcelDataStore:
                 '借用地点': device.location,
                 '借用原因': device.reason,
                 '录入者': device.entry_source,
-                '预计归还日期': device.expected_return_date.strftime('%Y-%m-%d') if device.expected_return_date else '',
+                '预计归还日期': device.expected_return_date.strftime('%Y-%m-%d %H:%M:%S') if device.expected_return_date else '',
                 '是否删除': '是' if device.is_deleted else '否',
                 '丢失时间': device.lost_time.strftime('%Y-%m-%d %H:%M') if device.lost_time else '',
                 '损坏原因': device.damage_reason,
                 '损坏时间': device.damage_time.strftime('%Y-%m-%d %H:%M') if device.damage_time else '',
                 '上一个借用人': device.previous_borrower,
+                '寄出时间': device.ship_time.strftime('%Y-%m-%d %H:%M') if device.ship_time else '',
+                '寄出备注': device.ship_remark,
+                '寄出人': device.ship_by,
+                '寄出前借用人': device.pre_ship_borrower,
+                '寄出前借用时间': device.pre_ship_borrow_time.strftime('%Y-%m-%d %H:%M') if device.pre_ship_borrow_time else '',
+                '寄出前预计归还': device.pre_ship_expected_return_date.strftime('%Y-%m-%d %H:%M:%S') if device.pre_ship_expected_return_date else '',
             })
-        
+
         df = pd.DataFrame(data)
         df.to_excel(CAR_FILE, index=False)
-    
+
+    @staticmethod
+    def save_instruments(devices: List[Instrument]):
+        """保存仪表数据到Excel（与车机表结构一致）"""
+        data = []
+        for device in devices:
+            data.append({
+                '设备ID': device.id,
+                '设备名': device.name,
+                '型号': device.model,
+                '柜号': device.cabinet_number,
+                '状态': device.status.value,
+                '备注': device.remark,
+                '借用人': device.borrower,
+                '手机号': device.phone,
+                '借用时间': device.borrow_time.strftime('%Y-%m-%d %H:%M') if device.borrow_time else '',
+                '借用地点': device.location,
+                '借用原因': device.reason,
+                '录入者': device.entry_source,
+                '预计归还日期': device.expected_return_date.strftime('%Y-%m-%d %H:%M:%S') if device.expected_return_date else '',
+                '是否删除': '是' if device.is_deleted else '否',
+                '丢失时间': device.lost_time.strftime('%Y-%m-%d %H:%M') if device.lost_time else '',
+                '损坏原因': device.damage_reason,
+                '损坏时间': device.damage_time.strftime('%Y-%m-%d %H:%M') if device.damage_time else '',
+                '上一个借用人': device.previous_borrower,
+                '寄出时间': device.ship_time.strftime('%Y-%m-%d %H:%M') if device.ship_time else '',
+                '寄出备注': device.ship_remark,
+                '寄出人': device.ship_by,
+                '寄出前借用人': device.pre_ship_borrower,
+                '寄出前借用时间': device.pre_ship_borrow_time.strftime('%Y-%m-%d %H:%M') if device.pre_ship_borrow_time else '',
+                '寄出前预计归还': device.pre_ship_expected_return_date.strftime('%Y-%m-%d %H:%M:%S') if device.pre_ship_expected_return_date else '',
+            })
+
+        df = pd.DataFrame(data)
+        df.to_excel(INSTRUMENT_FILE, index=False)
+
     @staticmethod
     def save_phones(devices: List[Phone]):
         """保存手机数据到Excel"""
@@ -219,16 +592,92 @@ class ExcelDataStore:
                 '借用地点': device.location,
                 '借用原因': device.reason,
                 '录入者': device.entry_source,
-                '预计归还日期': device.expected_return_date.strftime('%Y-%m-%d') if device.expected_return_date else '',
+                '预计归还日期': device.expected_return_date.strftime('%Y-%m-%d %H:%M:%S') if device.expected_return_date else '',
                 '是否删除': '是' if device.is_deleted else '否',
                 '丢失时间': device.lost_time.strftime('%Y-%m-%d %H:%M') if device.lost_time else '',
                 '损坏原因': device.damage_reason,
                 '损坏时间': device.damage_time.strftime('%Y-%m-%d %H:%M') if device.damage_time else '',
                 '上一个借用人': device.previous_borrower,
+                '寄出时间': device.ship_time.strftime('%Y-%m-%d %H:%M') if device.ship_time else '',
+                '寄出备注': device.ship_remark,
+                '寄出人': device.ship_by,
+                '寄出前借用人': device.pre_ship_borrower,
+                '寄出前借用时间': device.pre_ship_borrow_time.strftime('%Y-%m-%d %H:%M') if device.pre_ship_borrow_time else '',
+                '寄出前预计归还': device.pre_ship_expected_return_date.strftime('%Y-%m-%d %H:%M:%S') if device.pre_ship_expected_return_date else '',
             })
-        
+
         df = pd.DataFrame(data)
         df.to_excel(PHONE_FILE, index=False)
+
+    @staticmethod
+    def save_sim_cards(devices: List[SimCard]):
+        """保存手机卡数据到Excel（与手机表一致，但型号字段改为号码）"""
+        data = []
+        for device in devices:
+            data.append({
+                '设备ID': device.id,
+                '设备名': device.name,
+                '号码': device.model,
+                '保管人': device.cabinet_number,
+                '状态': device.status.value,
+                '备注': device.remark,
+                '借用人': device.borrower,
+                '手机号': device.phone,
+                '借用时间': device.borrow_time.strftime('%Y-%m-%d %H:%M') if device.borrow_time else '',
+                '借用地点': device.location,
+                '借用原因': device.reason,
+                '录入者': device.entry_source,
+                '预计归还日期': device.expected_return_date.strftime('%Y-%m-%d %H:%M:%S') if device.expected_return_date else '',
+                '是否删除': '是' if device.is_deleted else '否',
+                '丢失时间': device.lost_time.strftime('%Y-%m-%d %H:%M') if device.lost_time else '',
+                '损坏原因': device.damage_reason,
+                '损坏时间': device.damage_time.strftime('%Y-%m-%d %H:%M') if device.damage_time else '',
+                '上一个借用人': device.previous_borrower,
+                '寄出时间': device.ship_time.strftime('%Y-%m-%d %H:%M') if device.ship_time else '',
+                '寄出备注': device.ship_remark,
+                '寄出人': device.ship_by,
+                '寄出前借用人': device.pre_ship_borrower,
+                '寄出前借用时间': device.pre_ship_borrow_time.strftime('%Y-%m-%d %H:%M') if device.pre_ship_borrow_time else '',
+                '寄出前预计归还': device.pre_ship_expected_return_date.strftime('%Y-%m-%d %H:%M:%S') if device.pre_ship_expected_return_date else '',
+            })
+
+        df = pd.DataFrame(data)
+        df.to_excel(SIM_CARD_FILE, index=False)
+
+    @staticmethod
+    def save_other_devices(devices: List[OtherDevice]):
+        """保存其它设备数据到Excel（与手机表结构一致）"""
+        data = []
+        for device in devices:
+            data.append({
+                '设备ID': device.id,
+                '设备名': device.name,
+                '型号': device.model,
+                '保管人': device.cabinet_number,
+                '状态': device.status.value,
+                '备注': device.remark,
+                '借用人': device.borrower,
+                '手机号': device.phone,
+                '借用时间': device.borrow_time.strftime('%Y-%m-%d %H:%M') if device.borrow_time else '',
+                '借用地点': device.location,
+                '借用原因': device.reason,
+                '录入者': device.entry_source,
+                '预计归还日期': device.expected_return_date.strftime('%Y-%m-%d %H:%M:%S') if device.expected_return_date else '',
+                '是否删除': '是' if device.is_deleted else '否',
+                '丢失时间': device.lost_time.strftime('%Y-%m-%d %H:%M') if device.lost_time else '',
+                '损坏原因': device.damage_reason,
+                '损坏时间': device.damage_time.strftime('%Y-%m-%d %H:%M') if device.damage_time else '',
+                '上一个借用人': device.previous_borrower,
+                '寄出时间': device.ship_time.strftime('%Y-%m-%d %H:%M') if device.ship_time else '',
+                '寄出备注': device.ship_remark,
+                '寄出人': device.ship_by,
+                '寄出前借用人': device.pre_ship_borrower,
+                '寄出前借用时间': device.pre_ship_borrow_time.strftime('%Y-%m-%d %H:%M') if device.pre_ship_borrow_time else '',
+                '寄出前预计归还': device.pre_ship_expected_return_date.strftime('%Y-%m-%d %H:%M:%S') if device.pre_ship_expected_return_date else '',
+            })
+
+        df = pd.DataFrame(data)
+        df.to_excel(OTHER_DEVICE_FILE, index=False)
     
     @staticmethod
     def load_records() -> List[Record]:
@@ -467,6 +916,7 @@ class ExcelDataStore:
                     record = ViewRecord(
                         id=str(row['记录ID']),
                         device_id=str(row['设备ID']),
+                        device_type=str(row.get('设备类型', '')),
                         viewer=str(row['查看人']),
                         view_time=pd.to_datetime(row['查看时间'])
                     )
@@ -487,6 +937,7 @@ class ExcelDataStore:
             data.append({
                 '记录ID': record.id,
                 '设备ID': record.device_id,
+                '设备类型': record.device_type,
                 '查看人': record.viewer,
                 '查看时间': record.view_time.strftime('%Y-%m-%d %H:%M'),
             })

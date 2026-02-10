@@ -174,7 +174,8 @@ function renderDevicesWithPagination(devices, page) {
     
     let html = '<div class="device-grid">';
     paginatedDevices.forEach(device => {
-        const icon = device.type === '车机' ? '🚗' : '📱';
+        const iconMap = {'车机': '🚗', '手机': '📱', '仪表': '📊', '手机卡': '📲', '其它设备': '🔧'};
+            const icon = iconMap[device.type] || '📦';
         let statusClass = 'status-borrowed';
         let statusText = device.status;
         if (device.no_cabinet) {

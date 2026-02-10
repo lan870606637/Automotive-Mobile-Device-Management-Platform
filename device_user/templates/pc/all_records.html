@@ -65,7 +65,10 @@
                             {% if '借出' in record.operation_type %}status-borrowed
                             {% elif '归还' in record.operation_type %}status-available
                             {% elif '丢失' in record.operation_type or '损坏' in record.operation_type or '未找到' in record.operation_type %}status-lost
+                            {% elif '报废' in record.operation_type %}status-scrapped
                             {% elif '续期' in record.operation_type %}status-no-cabinet
+                            {% elif '状态变更' in record.operation_type %}status-borrowed
+                            {% elif '保管人变更' in record.operation_type %}status-no-cabinet
                             {% else %}status-borrowed{% endif %}">
                             {{ record.operation_type }}
                         </span>
@@ -75,8 +78,15 @@
                     <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #595959;">
                         {% if record.reason and record.reason != 'nan' %}
                         {{ record.reason }}
+                        {% if record.remark and record.remark != 'nan' %}
+                        <span style="color: #8c8c8c;"> | {{ record.remark }}</span>
+                        {% endif %}
+                        {% else %}
+                        {% if record.remark and record.remark != 'nan' %}
+                        {{ record.remark }}
                         {% else %}
                         -
+                        {% endif %}
                         {% endif %}
                     </td>
                 </tr>

@@ -15,7 +15,7 @@
     <!-- 设备信息 -->
     <div class="info-card">
         <div class="device-mini">
-            <span class="mini-icon">{% if device_type == '车机' %}🚗{% else %}📱{% endif %}</span>
+            <span class="mini-icon">{% if device_type == '车机' %}🚗{% elif device_type == '手机' %}📱{% elif device_type == '仪表' %}📊{% elif device_type == '手机卡' %}📲{% elif device_type == '其它设备' %}🔧{% else %}📦{% endif %}</span>
             <div class="mini-info">
                 <span class="mini-name">{{ device.name }}</span>
                 <span class="mini-type">{{ device_type }}</span>
@@ -93,8 +93,8 @@
 </div>
 
 <script>
-// 设置默认归还日期为7天后
-document.getElementById('returnDate').value = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+// 设置默认归还日期为1天后
+document.getElementById('returnDate').value = new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
 // 借用原因选择联动
 const reasonInputs = document.querySelectorAll('input[name="reason"]');

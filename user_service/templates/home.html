@@ -51,7 +51,7 @@
             {% for device in borrowed_devices %}
             <a href="{{ url_for('device_detail', device_id=device.id) }}" class="device-item {% if device.is_overdue %}device-overdue{% endif %}">
                 <div class="device-icon">
-                    {% if device.device_type.value == '车机' %}🚗{% else %}📱{% endif %}
+                    {% if device.device_type.value == '车机' %}🚗{% elif device.device_type.value == '手机' %}📱{% elif device.device_type.value == '仪表' %}📊{% elif device.device_type.value == '手机卡' %}📲{% elif device.device_type.value == '其它设备' %}🔧{% else %}📦{% endif %}
                 </div>
                 <div class="device-info">
                     <div class="device-name">{{ device.name }}</div>

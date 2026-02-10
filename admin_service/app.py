@@ -20,7 +20,7 @@ from flask import Flask, render_template, request, jsonify, session, redirect, u
 from dotenv import load_dotenv
 
 # 从 common 导入
-from common.models import DeviceStatus, DeviceType, OperationType, EntrySource, CarMachine, Phone, Record, UserRemark, User, Admin
+from common.models import DeviceStatus, DeviceType, OperationType, EntrySource, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, Admin
 from common.api_client import api_client
 from common.utils import mask_phone, is_mobile_device
 from common.config import SECRET_KEY, SERVER_URL, ADMIN_SERVICE_PORT
@@ -85,6 +85,21 @@ def admin_mobile_login():
     return render_template('admin/mobile/login.html')
 
 
+def get_device_type_str(device):
+    """获取设备类型字符串"""
+    if isinstance(device, CarMachine):
+        return "车机"
+    elif isinstance(device, Instrument):
+        return "仪表"
+    elif isinstance(device, Phone):
+        return "手机"
+    elif isinstance(device, SimCard):
+        return "手机卡"
+    elif isinstance(device, OtherDevice):
+        return "其它设备"
+    return "未知"
+
+
 @app.route('/admin/mobile/dashboard')
 @admin_required
 def admin_mobile_dashboard():
@@ -92,7 +107,7 @@ def admin_mobile_dashboard():
     # 获取统计数据
     all_devices = api_client.get_all_devices()
     total_devices = len(all_devices)
-    available_devices = len([d for d in all_devices if d.status == DeviceStatus.IN_STOCK])
+    available_devices = len([d for d in all_devices if d.status in [DeviceStatus.IN_STOCK, DeviceStatus.IN_CUSTODY, DeviceStatus.CIRCULATING, DeviceStatus.NO_CABINET]])
     borrowed_devices = len([d for d in all_devices if d.status == DeviceStatus.BORROWED])
     
     # 计算逾期设备
@@ -209,7 +224,7 @@ def admin_pc_dashboard():
     # 获取统计数据
     all_devices = api_client.get_all_devices()
     total_devices = len(all_devices)
-    available_devices = len([d for d in all_devices if d.status == DeviceStatus.IN_STOCK])
+    available_devices = len([d for d in all_devices if d.status in [DeviceStatus.IN_STOCK, DeviceStatus.IN_CUSTODY, DeviceStatus.CIRCULATING, DeviceStatus.NO_CABINET]])
     borrowed_devices = len([d for d in all_devices if d.status == DeviceStatus.BORROWED])
     damaged_devices = len([d for d in all_devices if d.status == DeviceStatus.DAMAGED])
     lost_devices = len([d for d in all_devices if d.status == DeviceStatus.LOST])
@@ -305,7 +320,7 @@ def admin_pc_devices():
     
     # 状态过滤
     if status == 'available':
-        devices = [d for d in devices if d.status == DeviceStatus.IN_STOCK]
+        devices = [d for d in devices if d.status in [DeviceStatus.IN_STOCK, DeviceStatus.IN_CUSTODY]]
     elif status == 'borrowed':
         devices = [d for d in devices if d.status == DeviceStatus.BORROWED]
     elif status == 'damaged':
@@ -672,7 +687,8 @@ def api_device_detail(device_id):
     elif request.method == 'PUT':
         data = request.get_json()
         try:
-            api_client.update_device_by_id(device_id, data)
+            operator = session.get('admin_name', '管理员')
+            api_client.update_device_by_id(device_id, data, operator)
             return jsonify({'success': True})
         except Exception as e:
             return jsonify({'success': False, 'message': str(e)})
@@ -691,22 +707,25 @@ def api_admin_borrow(device_id):
     """管理员录入借出API"""
     data = request.get_json()
     borrower = data.get('borrower')
-    days = data.get('days', 7)
+    days = data.get('days', 1)
     cabinet = data.get('cabinet', '流通')
     remarks = data.get('remarks', '')
-    
+
     if not borrower:
         return jsonify({'success': False, 'message': '请选择借用人'})
-    
-    success = api_client.borrow_device(
-        device_id=device_id,
-        borrower=borrower,
-        days=int(days),
-        cabinet=cabinet,
-        remarks=remarks,
-        operator=session.get('admin_name', '管理员')
-    )
-    
+
+    try:
+        success = api_client.borrow_device(
+            device_id=device_id,
+            borrower=borrower,
+            days=int(days),
+            cabinet=cabinet,
+            remarks=remarks,
+            operator=session.get('admin_name', '管理员')
+        )
+    except ValueError as e:
+        return jsonify({'success': False, 'message': str(e)})
+
     if success:
         return jsonify({'success': True, 'message': '录入成功'})
     else:
@@ -739,7 +758,7 @@ def api_admin_return(device_id):
         id=str(uuid.uuid4()),
         device_id=device.id,
         device_name=device.name,
-        device_type='车机' if isinstance(device, CarMachine) else '手机',
+        device_type=get_device_type_str(device),
         operation_type=OperationType.FORCE_RETURN,
         operator=session.get('admin_name', '管理员'),
         operation_time=datetime.now(),
@@ -789,7 +808,7 @@ def api_admin_transfer(device_id):
         id=str(uuid.uuid4()),
         device_id=device.id,
         device_name=device.name,
-        device_type='车机' if isinstance(device, CarMachine) else '手机',
+        device_type=get_device_type_str(device),
         operation_type=OperationType.TRANSFER,
         operator=session.get('admin_name', '管理员'),
         operation_time=datetime.now(),
@@ -812,7 +831,7 @@ def api_force_borrow(device_id):
     phone = data.get('phone', '')
     location = data.get('location', '')
     reason = data.get('reason', '')
-    days = data.get('days', 7)
+    days = data.get('days', 1)
     remark = data.get('remark', '')
     
     if not borrower:

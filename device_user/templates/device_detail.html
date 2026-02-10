@@ -16,12 +16,17 @@
     <div class="detail-card">
         <div class="device-header">
             <span class="device-icon-large">
-                {% if device_type == '车机' %}🚗{% else %}📱{% endif %}
+                {% if device_type == '车机' %}🚗
+                {% elif device_type == '手机' %}📱
+                {% elif device_type == '仪表' %}📊
+                {% elif device_type == '手机卡' %}📲
+                {% else %}🔧{% endif %}
             </span>
             <div class="device-title">
                 <h2>{{ device.name }}</h2>
                 <span class="status-badge 
                     {% if device.status.value == '在库' %}status-available
+                    {% elif device.status.value == '保管中' %}status-custody
                     {% elif device.status.value == '借出' %}status-borrowed
                     {% elif device.status.value == '已寄出' %}status-shipped
                     {% elif device.status.value == '已损坏' %}status-damaged
@@ -84,7 +89,7 @@
 
     <div class="info-list" style="margin-top: 20px;">
         <div class="info-item">
-            <span class="info-label">📍 {% if device_type == '手机' %}保管人{% else %}柜号{% endif %}</span>
+            <span class="info-label">📍 {% if device_type == '车机' or device_type == '仪表' %}柜号{% else %}保管人{% endif %}</span>
             <span class="info-value">{{ device.cabinet_number }}</span>
         </div>
     </div>
@@ -111,7 +116,9 @@
                         <span class="admin-badge">管</span>
                         {% endif %}
                         {% if record.reason and record.reason != 'nan' %}
-                        <button class="reason-btn" onclick="showReason(this, '{{ record.reason|replace("'", "\\'") }}', event)" title="查看详情">?</button>
+                        <button class="reason-btn" onclick="showReason(this, '{{ record.reason|replace("'", "\\'") }}{% if record.remark and record.remark != 'nan' %}\n备注：{{ record.remark|replace("'", "\\'") }}{% endif %}', event)" title="查看详情">?</button>
+                        {% elif record.remark and record.remark != 'nan' %}
+                        <button class="reason-btn" onclick="showReason(this, '备注：{{ record.remark|replace("'", "\\'") }}', event)" title="查看详情">?</button>
                         {% endif %}
                     </span>
                 </div>
@@ -155,7 +162,9 @@
                         <span class="admin-badge">管</span>
                         {% endif %}
                         {% if record.reason and record.reason != 'nan' %}
-                        <button class="reason-btn" onclick="showReason(this, '{{ record.reason|replace("'", "\\'") }}', event)" title="查看详情">?</button>
+                        <button class="reason-btn" onclick="showReason(this, '{{ record.reason|replace("'", "\\'") }}{% if record.remark and record.remark != 'nan' %}\n备注：{{ record.remark|replace("'", "\\'") }}{% endif %}', event)" title="查看详情">?</button>
+                        {% elif record.remark and record.remark != 'nan' %}
+                        <button class="reason-btn" onclick="showReason(this, '备注：{{ record.remark|replace("'", "\\'") }}', event)" title="查看详情">?</button>
                         {% endif %}
                     </span>
                 </div>
@@ -168,8 +177,8 @@
         {% endif %}
     </div>
 
-    {% elif device.status.value == '在库' %}
-    <!-- 情况A：设备在库 -->
+    {% elif device.status.value in ['在库', '保管中'] %}
+    <!-- 情况A：设备在库或保管中 -->
     {% if is_custodian %}
     <div class="action-section">
         <a href="{{ url_for('transfer_page', device_id=device.id) }}" class="btn btn-info btn-large btn-block">
@@ -191,7 +200,7 @@
             <span>登记后查看</span>
         </div>
         <div class="hidden-content">
-            <p>• {% if device_type == '手机' %}保管人{% else %}柜号{% endif %}：***</p>
+            <p>• {% if device_type == '车机' or device_type == '仪表' %}柜号{% else %}保管人{% endif %}：***</p>
             <p>• 借用记录：***</p>
             <p class="tip">借用成功后可查看完整信息</p>
         </div>
@@ -211,7 +220,7 @@
         <div class="info-list">
             {% if is_borrower %}
             <div class="info-item highlight">
-                <span class="info-label">📍 {% if device_type == '手机' %}保管人{% else %}柜号{% endif %}</span>
+                <span class="info-label">📍 {% if device_type == '车机' or device_type == '仪表' %}柜号{% else %}保管人{% endif %}</span>
                 <span class="info-value">{{ device.cabinet_number }}</span>
             </div>
             {% endif %}
@@ -235,7 +244,7 @@
             {% if device.expected_return_date %}
             <div class="info-item">
                 <span class="info-label">预计归还</span>
-                <span class="info-value">{{ device.expected_return_date.strftime('%Y-%m-%d') }}</span>
+                <span class="info-value">{{ device.expected_return_date.strftime('%Y-%m-%d %H:%M') }}</span>
             </div>
             {% endif %}
             
@@ -286,7 +295,7 @@
             <button onclick="confirmReturnByCustodian('{{ device.id }}', '{{ device.borrower }}', '{{ device.name }}')" class="btn btn-warning btn-large btn-block">
                 收回借用
             </button>
-            {% if device_type == '手机' %}
+            {% if device_type != '车机' %}
             <button onclick="showTransferCustodian('{{ device.id }}')" class="btn btn-info btn-large btn-block" style="margin-top: 10px;">
                 转让保管人
             </button>
@@ -324,7 +333,9 @@
                         <span class="admin-badge">管</span>
                         {% endif %}
                         {% if record.reason and record.reason != 'nan' %}
-                        <button class="reason-btn" onclick="showReason(this, '{{ record.reason|replace("'", "\\'") }}', event)" title="查看详情">?</button>
+                        <button class="reason-btn" onclick="showReason(this, '{{ record.reason|replace("'", "\\'") }}{% if record.remark and record.remark != 'nan' %}\n备注：{{ record.remark|replace("'", "\\'") }}{% endif %}', event)" title="查看详情">?</button>
+                        {% elif record.remark and record.remark != 'nan' %}
+                        <button class="reason-btn" onclick="showReason(this, '备注：{{ record.remark|replace("'", "\\'") }}', event)" title="查看详情">?</button>
                         {% endif %}
                     </span>
                 </div>
@@ -483,8 +494,13 @@
 <div id="renewModal" class="modal" style="display: none;">
     <div class="modal-content">
         <h3>借用续期</h3>
-        <p style="color: #666; font-size: 14px; margin-bottom: 10px;">请选择新的预计归还日期（只能往后选择）：</p>
-        <input type="date" id="renewDate" style="width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; font-size: 16px;">
+        <p style="color: #666; font-size: 14px; margin-bottom: 10px;">确认要在当前预计归还时间基础上延长1天吗？</p>
+        <div style="background: #f6ffed; padding: 12px; border-radius: 8px; border: 1px solid #b7eb8f; margin: 10px 0;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="color: #52c41a; font-size: 18px;">⏰</span>
+                <span style="color: #389e0d; font-size: 14px;">预计归还时间将延长 <strong>24小时</strong></span>
+            </div>
+        </div>
         <div class="modal-actions">
             <button onclick="closeModal('renewModal')" class="btn btn-default">取消</button>
             <button onclick="submitRenew()" class="btn btn-success">确认续期</button>
@@ -663,8 +679,8 @@ function showTransferSelect(action) {
                 select.innerHTML = '<option value="">请选择</option>';
                 data.users.forEach(u => {
                     const option = document.createElement('option');
-                    option.value = u.borrower_name;
-                    option.textContent = u.borrower_name + ' (' + u.phone.substring(0, 3) + '****' + u.phone.substring(7) + ')';
+                    option.value = u.name;
+                    option.textContent = u.name + ' (' + u.phone.substring(0, 3) + '****' + u.phone.substring(7) + ')';
                     select.appendChild(option);
                 });
             }
@@ -789,8 +805,8 @@ function showTransferCustodian(deviceId) {
                 select.innerHTML = '<option value="">请选择新保管人</option>';
                 data.users.forEach(u => {
                     const option = document.createElement('option');
-                    option.value = u.borrower_name;
-                    option.textContent = u.borrower_name;
+                    option.value = u.name;
+                    option.textContent = u.name;
                     select.appendChild(option);
                 });
             }
@@ -867,47 +883,18 @@ function confirmTransferToMe(deviceId, currentBorrower, deviceName) {
     .catch(() => showToast('转借失败，请重试'));
 }
 
-let currentExpectedReturnDate = '';
-
 function showRenewModal(deviceId, expectedDate) {
     currentDeviceId = deviceId;
-    currentExpectedReturnDate = expectedDate;
-    const dateInput = document.getElementById('renewDate');
-    
-    // 设置最小日期为当前日期（只能往后选择）
-    const today = new Date().toISOString().split('T')[0];
-    dateInput.min = today;
-    
-    // 如果有当前预计归还日期，默认设置为该日期
-    if (expectedDate) {
-        dateInput.value = expectedDate;
-    } else {
-        dateInput.value = today;
-    }
-    
     document.getElementById('renewModal').style.display = 'flex';
 }
 
 function submitRenew() {
-    const newDate = document.getElementById('renewDate').value;
-    if (!newDate) {
-        showToast('请选择续期日期');
-        return;
-    }
-    
-    // 验证日期是否大于等于今天
-    const today = new Date().toISOString().split('T')[0];
-    if (newDate < today) {
-        showToast('续期日期不能早于今天');
-        return;
-    }
-    
     fetch('/api/renew', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
             device_id: currentDeviceId,
-            new_return_date: newDate
+            days: 1
         })
     })
     .then(res => res.json())

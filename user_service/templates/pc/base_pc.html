@@ -15,14 +15,37 @@
                 <span class="logo">🚗</span>
                 <span class="logo-text">设备管理</span>
             </div>
+            
+            <!-- 总设备迷你数据 -->
+            {% if total_devices is defined %}
+            <div class="sidebar-stats">
+                <div class="stat-row">
+                    <span class="stat-label-mini">📦 总设备</span>
+                    <span class="stat-value-mini">{{ total_devices }}</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label-mini">✅ 在库</span>
+                    <span class="stat-value-mini stat-green">{{ available_devices }}</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label-mini">📤 借出</span>
+                    <span class="stat-value-mini stat-orange">{{ borrowed_devices_count }}</span>
+                </div>
+            </div>
+            {% endif %}
+            
             <nav class="sidebar-nav">
                 <a href="{{ url_for('pc_dashboard') }}" class="nav-item {% if active_nav == 'dashboard' %}active{% endif %}">
                     <span class="nav-icon">📊</span>
-                    <span class="nav-text">仪表盘</span>
+                    <span class="nav-text">我的设备详情</span>
                 </a>
                 <a href="{{ url_for('pc_device_list') }}" class="nav-item {% if active_nav == 'devices' %}active{% endif %}">
                     <span class="nav-icon">📱</span>
-                    <span class="nav-text">设备列表</span>
+                    <span class="nav-text">借用设备列表</span>
+                </a>
+                <a href="{{ url_for('pc_my_custodian_devices') }}" class="nav-item {% if active_nav == 'my_custodian' %}active{% endif %}">
+                    <span class="nav-icon">🛡️</span>
+                    <span class="nav-text">我的保管设备</span>
                 </a>
                 <a href="{{ url_for('pc_records') }}" class="nav-item {% if active_nav == 'my_records' %}active{% endif %}">
                     <span class="nav-icon">📋</span>

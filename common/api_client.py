@@ -8,7 +8,7 @@ import os
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 
-from .models import Device, CarMachine, Phone, Record, UserRemark, User, OperationLog, ViewRecord
+from .models import Device, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, OperationLog, ViewRecord
 from .models import DeviceStatus, DeviceType, OperationType, EntrySource, Admin
 from .excel_data_store import ExcelDataStore
 
@@ -36,7 +36,10 @@ class APIClient:
         """保存数据到Excel文件"""
         try:
             ExcelDataStore.save_car_machines(self._car_machines)
+            ExcelDataStore.save_instruments(self._instruments)
             ExcelDataStore.save_phones(self._phones)
+            ExcelDataStore.save_sim_cards(self._sim_cards)
+            ExcelDataStore.save_other_devices(self._other_devices)
             ExcelDataStore.save_records(self._records)
             ExcelDataStore.save_remarks(self._remarks)
             ExcelDataStore.save_users(self._users)
@@ -53,18 +56,21 @@ class APIClient:
         try:
             # 从Excel加载数据
             self._car_machines = ExcelDataStore.load_car_machines()
+            self._instruments = ExcelDataStore.load_instruments()
             self._phones = ExcelDataStore.load_phones()
+            self._sim_cards = ExcelDataStore.load_sim_cards()
+            self._other_devices = ExcelDataStore.load_other_devices()
             self._records = ExcelDataStore.load_records()
             self._remarks = ExcelDataStore.load_remarks()
             self._users = ExcelDataStore.load_users()
             
             # 如果没有数据，使用默认数据
-            if not self._car_machines and not self._phones:
+            if not self._car_machines and not self._instruments and not self._phones and not self._sim_cards and not self._other_devices:
                 print("Excel文件为空，使用默认数据")
                 self._init_mock_data()
                 self._save_data()
             else:
-                print(f"从Excel加载: 车机{len(self._car_machines)}台, 手机{len(self._phones)}台, 记录{len(self._records)}条")
+                print(f"从Excel加载: 车机{len(self._car_machines)}台, 仪表{len(self._instruments)}台, 手机{len(self._phones)}台, 手机卡{len(self._sim_cards)}张, 其它设备{len(self._other_devices)}台, 记录{len(self._records)}条")
                 print(f"从Excel加载: 用户{len(self._users)}个")
                 # 如果用户列表为空，使用默认用户数据
                 if not self._users:
@@ -118,6 +124,14 @@ class APIClient:
             'reason': device.reason,
             'entry_source': device.entry_source,
             'expected_return_date': device.expected_return_date.isoformat() if device.expected_return_date else None,
+            # 寄出信息
+            'ship_time': device.ship_time.isoformat() if device.ship_time else None,
+            'ship_remark': device.ship_remark,
+            'ship_by': device.ship_by,
+            # 寄出前借用信息（用于还原）
+            'pre_ship_borrower': device.pre_ship_borrower,
+            'pre_ship_borrow_time': device.pre_ship_borrow_time.isoformat() if device.pre_ship_borrow_time else None,
+            'pre_ship_expected_return_date': device.pre_ship_expected_return_date.isoformat() if device.pre_ship_expected_return_date else None,
         }
     
     def _dict_to_device(self, data: dict, cls) -> Device:
@@ -140,6 +154,17 @@ class APIClient:
         device.entry_source = data.get('entry_source', '')
         if data.get('expected_return_date'):
             device.expected_return_date = datetime.fromisoformat(data['expected_return_date'])
+        # 寄出信息
+        device.ship_remark = data.get('ship_remark', '')
+        device.ship_by = data.get('ship_by', '')
+        if data.get('ship_time'):
+            device.ship_time = datetime.fromisoformat(data['ship_time'])
+        # 寄出前借用信息（用于还原）
+        device.pre_ship_borrower = data.get('pre_ship_borrower', '')
+        if data.get('pre_ship_borrow_time'):
+            device.pre_ship_borrow_time = datetime.fromisoformat(data['pre_ship_borrow_time'])
+        if data.get('pre_ship_expected_return_date'):
+            device.pre_ship_expected_return_date = datetime.fromisoformat(data['pre_ship_expected_return_date'])
         return device
     
     def _record_to_dict(self, record: Record) -> dict:
@@ -192,6 +217,7 @@ class APIClient:
         remark = UserRemark(
             id=data['id'],
             device_id=data['device_id'],
+            device_type=data.get('device_type', ''),
             content=data['content'],
             creator=data['creator'],
             create_time=datetime.fromisoformat(data['create_time']),
@@ -243,6 +269,20 @@ class APIClient:
             operation_content=data['operation_content'],
             device_info=data['device_info'],
         )
+
+    def _get_device_type_str(self, device: Device) -> str:
+        """获取设备类型字符串"""
+        if isinstance(device, CarMachine):
+            return "车机"
+        elif isinstance(device, Instrument):
+            return "仪表"
+        elif isinstance(device, Phone):
+            return "手机"
+        elif isinstance(device, SimCard):
+            return "手机卡"
+        elif isinstance(device, OtherDevice):
+            return "其它设备"
+        return "未知"
 
     def _init_default_users(self):
         """初始化默认用户数据"""
@@ -503,20 +543,26 @@ class APIClient:
         devices = []
         if device_type is None or device_type == "车机":
             devices.extend([d for d in self._car_machines if not d.is_deleted])
+        if device_type is None or device_type == "仪表":
+            devices.extend([d for d in self._instruments if not d.is_deleted])
         if device_type is None or device_type == "手机":
             devices.extend([d for d in self._phones if not d.is_deleted])
+        if device_type is None or device_type == "手机卡":
+            devices.extend([d for d in self._sim_cards if not d.is_deleted])
+        if device_type is None or device_type == "其它设备":
+            devices.extend([d for d in self._other_devices if not d.is_deleted])
         return devices
     
     def get_device_by_id(self, device_id: str) -> Optional[Device]:
         """根据ID获取设备"""
-        for device in self._car_machines + self._phones:
+        for device in self._car_machines + self._instruments + self._phones + self._sim_cards + self._other_devices:
             if device.id == device_id and not device.is_deleted:
                 return device
         return None
     
     def get_device_by_name(self, device_name: str) -> Optional[Device]:
         """根据名称获取设备"""
-        for device in self._car_machines + self._phones:
+        for device in self._car_machines + self._instruments + self._phones + self._sim_cards + self._other_devices:
             if device.name == device_name and not device.is_deleted:
                 return device
         return None
@@ -524,15 +570,21 @@ class APIClient:
     def add_device(self, device: Device) -> bool:
         """新增设备"""
         # 检查设备名是否唯一
-        all_devices = self._car_machines + self._phones
+        all_devices = self._car_machines + self._instruments + self._phones + self._sim_cards + self._other_devices
         for d in all_devices:
             if d.name == device.name and not d.is_deleted:
                 return False
         
         if isinstance(device, CarMachine):
             self._car_machines.append(device)
+        elif isinstance(device, Instrument):
+            self._instruments.append(device)
         elif isinstance(device, Phone):
             self._phones.append(device)
+        elif isinstance(device, SimCard):
+            self._sim_cards.append(device)
+        elif isinstance(device, OtherDevice):
+            self._other_devices.append(device)
         
         # 添加操作日志
         self.add_operation_log(f"新增设备", device.name)
@@ -541,7 +593,19 @@ class APIClient:
     
     def update_device(self, device: Device) -> bool:
         """更新设备信息"""
-        devices = self._car_machines if isinstance(device, CarMachine) else self._phones
+        if isinstance(device, CarMachine):
+            devices = self._car_machines
+        elif isinstance(device, Instrument):
+            devices = self._instruments
+        elif isinstance(device, Phone):
+            devices = self._phones
+        elif isinstance(device, SimCard):
+            devices = self._sim_cards
+        elif isinstance(device, OtherDevice):
+            devices = self._other_devices
+        else:
+            return False
+        
         for i, d in enumerate(devices):
             if d.id == device.id:
                 devices[i] = device
@@ -552,7 +616,7 @@ class APIClient:
     
     def delete_device(self, device_id: str) -> bool:
         """软删除设备"""
-        for device in self._car_machines + self._phones:
+        for device in self._car_machines + self._instruments + self._phones + self._sim_cards + self._other_devices:
             if device.id == device_id:
                 device.is_deleted = True
                 self.add_operation_log(f"删除设备", device.name)
@@ -562,12 +626,23 @@ class APIClient:
     
     # ==================== 录入登记/强制归还 ====================
     
+    def _get_default_status_for_device(self, device) -> DeviceStatus:
+        """根据设备类型获取默认状态（在库/保管中）"""
+        from .models import DeviceType
+        if device.device_type in [DeviceType.PHONE, DeviceType.SIM_CARD, DeviceType.OTHER_DEVICE]:
+            return DeviceStatus.IN_CUSTODY
+        return DeviceStatus.IN_STOCK
+    
+    def _is_available_for_borrow(self, device) -> bool:
+        """检查设备是否可借用（在库或保管中）"""
+        return device.status in [DeviceStatus.IN_STOCK, DeviceStatus.IN_CUSTODY]
+    
     def force_borrow(self, device_id: str, borrower: str, phone: str, 
                      location: str, reason: str, expected_return_date: datetime,
                      remark: str = "") -> bool:
         """强制借出（管理员录入）"""
         device = self.get_device_by_id(device_id)
-        if not device or device.status != DeviceStatus.IN_STOCK:
+        if not device or not self._is_available_for_borrow(device):
             return False
         
         device.status = DeviceStatus.BORROWED
@@ -585,8 +660,8 @@ class APIClient:
             id=str(uuid.uuid4()),
             device_id=device.id,
             device_name=device.name,
-            device_type="车机" if isinstance(device, CarMachine) else "手机",
-            operation_type=OperationType.FORCE_BORROW,
+            device_type=self._get_device_type_str(device),
+                operation_type=OperationType.FORCE_BORROW,
             operator=self._current_admin,
             operation_time=datetime.now(),
             borrower=borrower,
@@ -611,8 +686,8 @@ class APIClient:
         
         borrower = device.borrower
         
-        # 清空借用信息
-        device.status = DeviceStatus.IN_STOCK
+        # 清空借用信息，根据设备类型设置默认状态
+        device.status = self._get_default_status_for_device(device)
         device.borrower = ""
         device.phone = ""
         device.borrow_time = None
@@ -626,8 +701,8 @@ class APIClient:
             id=str(uuid.uuid4()),
             device_id=device.id,
             device_name=device.name,
-            device_type="车机" if isinstance(device, CarMachine) else "手机",
-            operation_type=OperationType.FORCE_RETURN,
+            device_type=self._get_device_type_str(device),
+                operation_type=OperationType.FORCE_RETURN,
             operator=self._current_admin,
             operation_time=datetime.now(),
             borrower=return_person,
@@ -670,8 +745,8 @@ class APIClient:
             id=str(uuid.uuid4()),
             device_id=device.id,
             device_name=device.name,
-            device_type="车机" if isinstance(device, CarMachine) else "手机",
-            operation_type=OperationType.TRANSFER,
+            device_type=self._get_device_type_str(device),
+                operation_type=OperationType.TRANSFER,
             operator=self._current_admin,
             operation_time=datetime.now(),
             borrower=f"转借：{original_borrower}——>{transfer_to}",
@@ -798,20 +873,23 @@ class APIClient:
     
     def get_device(self, device_id: str) -> Optional[Device]:
         """根据ID获取设备"""
-        for device in self._car_machines + self._phones:
+        for device in self._car_machines + self._instruments + self._phones + self._sim_cards + self._other_devices:
             if device.id == device_id and not device.is_deleted:
                 return device
         return None
     
-    def get_device_records(self, device_id: str, limit: int = 10) -> List[Record]:
+    def get_device_records(self, device_id: str, device_type: str = None, limit: int = 10) -> List[Record]:
         """获取设备的操作记录"""
-        records = [r for r in self._records if r.device_id == device_id]
+        if device_type:
+            records = [r for r in self._records if r.device_id == device_id and r.device_type == device_type]
+        else:
+            records = [r for r in self._records if r.device_id == device_id]
         return sorted(records, key=lambda x: x.operation_time, reverse=True)[:limit]
     
     def create_device(self, device_type, device_name: str, model: str = '', 
                      cabinet: str = '', status: str = '在库', remarks: str = '') -> Device:
         """创建新设备"""
-        from .models import DeviceStatus, CarMachine, Phone
+        from .models import DeviceStatus, CarMachine, Instrument, Phone, SimCard, OtherDevice
         
         device_id = str(uuid.uuid4())
         device_status = DeviceStatus(status) if status else DeviceStatus.IN_STOCK
@@ -826,6 +904,36 @@ class APIClient:
                 remark=remarks
             )
             self._phones.append(device)
+        elif device_type == DeviceType.INSTRUMENT or str(device_type) == 'DeviceType.INSTRUMENT':
+            device = Instrument(
+                id=device_id,
+                name=device_name,
+                model=model,
+                cabinet_number=cabinet,
+                status=device_status,
+                remark=remarks
+            )
+            self._instruments.append(device)
+        elif device_type == DeviceType.SIM_CARD or str(device_type) == 'DeviceType.SIM_CARD':
+            device = SimCard(
+                id=device_id,
+                name=device_name,
+                model=model,
+                cabinet_number=cabinet,
+                status=device_status,
+                remark=remarks
+            )
+            self._sim_cards.append(device)
+        elif device_type == DeviceType.OTHER_DEVICE or str(device_type) == 'DeviceType.OTHER_DEVICE':
+            device = OtherDevice(
+                id=device_id,
+                name=device_name,
+                model=model,
+                cabinet_number=cabinet,
+                status=device_status,
+                remark=remarks
+            )
+            self._other_devices.append(device)
         else:
             device = CarMachine(
                 id=device_id,
@@ -841,11 +949,27 @@ class APIClient:
         self._save_data()
         return device
     
-    def update_device_by_id(self, device_id: str, data: dict) -> bool:
+    def update_device_by_id(self, device_id: str, data: dict, operator: str = '管理员') -> bool:
         """通过ID更新设备信息"""
+        from datetime import datetime
+        from .models import Record, OperationType
+
         device = self.get_device(device_id)
         if not device:
             return False
+
+        # 保存原始状态和保管人
+        original_status = device.status
+        original_custodian = device.cabinet_number
+        original_borrower = device.borrower
+
+        # 检查是否改为报废状态
+        is_scrapped = data.get('status') == '报废'
+        was_borrowed = device.status == DeviceStatus.BORROWED
+
+        # 追踪哪些字段发生了变化
+        status_changed = False
+        custodian_changed = False
 
         if 'device_name' in data:
             device.name = data['device_name']
@@ -853,14 +977,82 @@ class APIClient:
             device.model = data['model']
         if 'cabinet' in data:
             device.cabinet_number = data['cabinet']
+            if device.cabinet_number != original_custodian:
+                custodian_changed = True
         if 'status' in data:
-            device.status = DeviceStatus(data['status'])
+            new_status = DeviceStatus(data['status'])
+            if new_status != original_status:
+                status_changed = True
+                device.status = new_status
         if 'remarks' in data:
             device.remark = data['remarks']
         if 'borrower' in data:
             device.borrower = data['borrower']
 
-        self.add_operation_log("编辑设备", device.name)
+        # 添加状态变更记录（不包括报废，报废有单独处理）
+        if status_changed and not is_scrapped:
+            record = Record(
+                id=str(uuid.uuid4()),
+                device_id=device.id,
+                device_name=device.name,
+                device_type=self._get_device_type_str(device),
+                operation_type=OperationType.STATUS_CHANGE,
+                operator=operator,
+                operation_time=datetime.now(),
+                borrower=device.borrower or original_borrower,
+                reason=f'管理员将状态从{original_status.value}改成了{device.status.value}',
+                remark=''
+            )
+            self._records.append(record)
+
+        # 添加保管人变更记录
+        if custodian_changed:
+            record = Record(
+                id=str(uuid.uuid4()),
+                device_id=device.id,
+                device_name=device.name,
+                device_type=self._get_device_type_str(device),
+                operation_type=OperationType.CUSTODIAN_CHANGE,
+                operator=operator,
+                operation_time=datetime.now(),
+                borrower=device.borrower,
+                reason=f'管理员将保管人更改成{device.cabinet_number}',
+                remark=f'原保管人: {original_custodian}'
+            )
+            self._records.append(record)
+
+        # 如果设备被报废且之前是借出状态，清空借用人信息并添加报废记录
+        if is_scrapped and was_borrowed and original_borrower:
+            # 清空借用人信息
+            device.borrower = ''
+            device.phone = ''
+            device.borrow_time = None
+            device.expected_return_date = None
+            device.location = ''
+            device.reason = ''
+
+            # 添加报废记录
+            record = Record(
+                id=str(uuid.uuid4()),
+                device_id=device.id,
+                device_name=device.name,
+                device_type=self._get_device_type_str(device),
+                operation_type=OperationType.SCRAP,
+                operator=operator,
+                operation_time=datetime.now(),
+                borrower=original_borrower,
+                reason='设备被管理员报废'
+            )
+            self._records.append(record)
+            self.add_operation_log(f"报废设备(原借用人: {original_borrower})", device.name)
+        else:
+            if status_changed:
+                self.add_operation_log(f"状态变更: {original_status.value} -> {device.status.value}", device.name)
+            elif custodian_changed:
+                self.add_operation_log(f"保管人变更: {original_custodian} -> {device.cabinet_number}", device.name)
+            else:
+                self.add_operation_log("编辑设备", device.name)
+
         self._save_data()
         return True
     
@@ -912,19 +1104,35 @@ class APIClient:
                 return True
         return False
     
-    def borrow_device(self, device_id: str, borrower: str, days: int = 7, 
+    def borrow_device(self, device_id: str, borrower: str, days: int = 1,
                      cabinet: str = '流通', remarks: str = '', operator: str = '管理员') -> bool:
         """借出设备"""
         device = self.get_device(device_id)
         if not device:
             return False
-        
+
+        # 检查用户借用数量限制（管理员借出也要检查）
+        user_borrowed_count = 0
+        all_devices = self.get_all_devices()
+        for d in all_devices:
+            if d.borrower == borrower and d.status == DeviceStatus.BORROWED:
+                user_borrowed_count += 1
+
+        borrow_limit = 10  # 最大借用数量
+        if user_borrowed_count >= borrow_limit:
+            # 抛出异常以便调用方处理
+            raise ValueError(f'{borrower}已超出可借设备上限，请归还后再借')
+
+        # 计算预计归还时间：当前时间 + 天数
+        now = datetime.now()
+        expected_return = now + timedelta(days=days)
+
         device.borrower = borrower
         device.cabinet_number = cabinet
         device.status = DeviceStatus.BORROWED
-        device.borrow_time = datetime.now()
-        device.expected_return_date = datetime.now() + timedelta(days=days)
-        
+        device.borrow_time = now
+        device.expected_return_date = expected_return
+
         # 创建记录
         record = Record(
             id=str(uuid.uuid4()),
@@ -939,13 +1147,13 @@ class APIClient:
             remark=remarks
         )
         self._records.append(record)
-        
+
         # 更新用户借用次数
         for user in self._users:
             if user.borrower_name == borrower:
                 user.borrow_count += 1
                 break
-        
+
         self.add_operation_log("录入登记", device.name)
         self._save_data()
         return True
@@ -959,7 +1167,8 @@ class APIClient:
         borrower = device.borrower
         device.borrower = ''
         device.cabinet_number = 'A01'  # 默认柜号
-        device.status = DeviceStatus.IN_STOCK
+        # 根据设备类型设置默认状态（在库或保管中）
+        device.status = self._get_default_status_for_device(device)
         device.borrow_time = None
         device.expected_return_date = None
         
@@ -982,9 +1191,11 @@ class APIClient:
 
     # ==================== 备注管理 ====================
     
-    def get_remarks(self, device_id: Optional[str] = None) -> List[UserRemark]:
+    def get_remarks(self, device_id: Optional[str] = None, device_type: str = None) -> List[UserRemark]:
         """获取备注列表"""
         if device_id:
+            if device_type:
+                return [r for r in self._remarks if r.device_id == device_id and r.device_type == device_type]
             return [r for r in self._remarks if r.device_id == device_id]
         return self._remarks
     
@@ -1067,11 +1278,12 @@ class APIClient:
     
     # ==================== 查看记录 ====================
     
-    def add_view_record(self, device_id: str, viewer: str):
+    def add_view_record(self, device_id: str, viewer: str, device_type: str = ""):
         """添加查看记录"""
         record = ViewRecord(
             id=str(uuid.uuid4()),
             device_id=device_id,
+            device_type=device_type,
             viewer=viewer,
             view_time=datetime.now()
         )
@@ -1080,10 +1292,13 @@ class APIClient:
         if len(self._view_records) > 100:
             self._view_records = self._view_records[-100:]
         self._save_data()
-    
-    def get_view_records(self, device_id: str, limit: int = 20) -> List[ViewRecord]:
+
+    def get_view_records(self, device_id: str, device_type: str = None, limit: int = 20) -> List[ViewRecord]:
         """获取设备的查看记录"""
-        records = [r for r in self._view_records if r.device_id == device_id]
+        if device_type:
+            records = [r for r in self._view_records if r.device_id == device_id and r.device_type == device_type]
+        else:
+            records = [r for r in self._view_records if r.device_id == device_id]
         return sorted(records, key=lambda x: x.view_time, reverse=True)[:limit]
 
 

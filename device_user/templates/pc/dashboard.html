@@ -1,45 +1,129 @@
 {% extends "pc/base_pc.html" %}
 
-{% block title %}仪表盘 - 设备管理系统{% endblock %}
+{% block title %}我的设备详情 - 设备管理系统{% endblock %}
 
 {% set active_nav = 'dashboard' %}
 
 {% block content %}
-<h1 class="page-title">📊 仪表盘</h1>
+<style>
+.notification-item {
+    padding: 14px 20px;
+    border-bottom: 1px solid #f0f0f0;
+    transition: background 0.3s;
+}
+.notification-item:hover {
+    background: #fafafa;
+}
+.notification-item:last-child {
+    border-bottom: none;
+}
+.notification-content {
+    font-size: 14px;
+    color: var(--text-primary);
+    line-height: 1.6;
+}
+.notification-content strong {
+    color: var(--primary);
+}
+.notification-time {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 6px;
+}
+.notification-empty {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-muted);
+}
+.notification-empty .empty-icon {
+    font-size: 64px;
+    margin-bottom: 16px;
+    opacity: 0.5;
+}
+.notification-empty p {
+    font-size: 14px;
+}
+</style>
 
-<!-- 统计卡片 -->
-<div class="stats-grid">
-    <div class="stat-card">
-        <div class="stat-header">
-            <span class="stat-icon blue">📦</span>
-            <span class="stat-label">设备总数</span>
+<!-- 通知铃铛 -->
+<div class="notification-bell-wrapper">
+    <button class="notification-bell" onclick="toggleNotificationModal()">
+        <span class="bell-icon">🔔</span>
+        <span class="notification-badge" id="notificationBadge" style="display: none;">0</span>
+    </button>
+</div>
+
+<!-- 通知弹窗 -->
+<div class="notification-modal" id="notificationModal">
+    <div class="notification-modal-content">
+        <div class="notification-modal-header">
+            <h3>🔔 通知</h3>
+            <button class="close-btn" onclick="toggleNotificationModal()">&times;</button>
         </div>
-        <div class="stat-value">{{ total_devices }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-header">
-            <span class="stat-icon green">✅</span>
-            <span class="stat-label">在库设备</span>
+        <div class="notification-modal-body" id="notificationBody">
+            <!-- 通知内容将通过JS动态渲染 -->
         </div>
-        <div class="stat-value">{{ available_devices }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-header">
-            <span class="stat-icon orange">📤</span>
-            <span class="stat-label">借出设备</span>
-        </div>
-        <div class="stat-value">{{ borrowed_devices_count }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-header">
-            <span class="stat-icon red">⚠️</span>
-            <span class="stat-label">我的借用</span>
-        </div>
-        <div class="stat-value">{{ my_borrowed_count }}</div>
     </div>
 </div>
 
-<!-- 我的借用设备 -->
+<h1 class="page-title">📊 我的设备详情</h1>
+
+<!-- 主布局：左边快捷操作，右边我的借用设备 -->
+<div class="dashboard-main-layout">
+    <!-- 左侧：我的设备和快捷操作 -->
+    <div class="dashboard-left">
+        <!-- 我的设备 -->
+        <h2 style="font-size: 16px; color: #666; margin: 0 0 12px 0; font-weight: 500;">👤 我的设备</h2>
+        <div class="my-devices-grid">
+            <a href="{{ url_for('pc_my_custodian_devices') }}" style="text-decoration: none;">
+                <div class="my-device-card">
+                    <span class="my-device-icon">🔐</span>
+                    <span class="my-device-title">我的保管</span>
+                    <span class="my-device-count">{{ my_custodian_count }}</span>
+                </div>
+            </a>
+            <a href="{{ url_for('pc_device_list') }}" style="text-decoration: none;">
+                <div class="my-device-card">
+                    <span class="my-device-icon">📋</span>
+                    <span class="my-device-title">我的借用</span>
+                    <span class="my-device-count">{{ my_borrowed_count }}</span>
+                </div>
+            </a>
+        </div>
+
+        <!-- 快捷操作 -->
+        <h2 style="font-size: 16px; color: #666; margin: 24px 0 12px 0; font-weight: 500;">⚡ 快捷操作</h2>
+        <div class="quick-actions-grid">
+            <a href="{{ url_for('pc_device_list', type='car') }}" class="quick-action-card car">
+                <span class="quick-action-icon">🚗</span>
+                <span class="quick-action-title">借用车机</span>
+            </a>
+            <a href="{{ url_for('pc_device_list', type='phone') }}" class="quick-action-card phone">
+                <span class="quick-action-icon">📱</span>
+                <span class="quick-action-title">借用手机</span>
+            </a>
+            <a href="{{ url_for('pc_device_list', type='instrument') }}" class="quick-action-card instrument">
+                <span class="quick-action-icon">📊</span>
+                <span class="quick-action-title">借用仪表</span>
+            </a>
+            <a href="{{ url_for('pc_device_list', type='simcard') }}" class="quick-action-card simcard">
+                <span class="quick-action-icon">📲</span>
+                <span class="quick-action-title">借用手机卡</span>
+            </a>
+            <a href="{{ url_for('pc_device_list', type='other') }}" class="quick-action-card other">
+                <span class="quick-action-icon">🔧</span>
+                <span class="quick-action-title">借用其它</span>
+            </a>
+            <a href="{{ url_for('pc_records') }}" class="quick-action-card records">
+                <span class="quick-action-icon">📋</span>
+                <span class="quick-action-title">查看记录</span>
+            </a>
+        </div>
+    </div>
+
+    <!-- 右侧：我的借用设备 -->
+    <div class="dashboard-right">
+        <!-- 我的借用设备 -->
 <div class="card">
     <div class="card-header">
         <span class="card-title">📱 我的借用设备</span>
@@ -82,7 +166,16 @@
                         {% endif %}
                     </td>
                     <td>
-                        <a href="{{ url_for('pc_device_detail', device_id=device.id) }}" class="btn btn-primary btn-sm">查看详情</a>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button onclick="openReturnModal('{{ device.id }}')" class="btn btn-success btn-sm">归还</button>
+                            <button onclick="openTransferModal('{{ device.id }}')" class="btn btn-info btn-sm">转借</button>
+                            {% if device.can_renew %}
+                            <button onclick="openRenewModal('{{ device.id }}')" class="btn btn-info btn-sm">续借</button>
+                            {% else %}
+                            <button onclick="showToast('{{ device.renew_disabled_reason }}')" class="btn btn-sm" style="background: #d9d9d9; border-color: #d9d9d9; color: #8c8c8c; cursor: not-allowed;" title="{{ device.renew_disabled_reason }}">续借</button>
+                            {% endif %}
+                            <a href="{{ url_for('pc_device_detail', device_id=device.id) }}" class="btn btn-primary btn-sm">查看详情</a>
+                        </div>
                     </td>
                 </tr>
                 {% endfor %}
@@ -97,24 +190,371 @@
         {% endif %}
     </div>
 </div>
+</div>
+<!-- 右侧结束 -->
 
-<!-- 快捷入口 -->
-<div class="card">
-    <div class="card-header">
-        <span class="card-title">⚡ 快捷操作</span>
-    </div>
-    <div class="card-body">
-        <div style="display: flex; gap: 16px;">
-            <a href="{{ url_for('pc_device_list', type='car') }}" class="btn btn-primary btn-lg" style="flex: 1;">
-                <span>🚗</span> 借用车机
-            </a>
-            <a href="{{ url_for('pc_device_list', type='phone') }}" class="btn btn-primary btn-lg" style="flex: 1;">
-                <span>📱</span> 借用手机
-            </a>
-            <a href="{{ url_for('pc_my_records') }}" class="btn btn-success btn-lg" style="flex: 1;">
-                <span>📋</span> 查看记录
-            </a>
+<!-- 弹窗：归还 -->
+<div class="modal-overlay" id="returnModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">📤 归还确认</span>
+            <button class="modal-close" onclick="closeModal('returnModal')">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label">归还原因</label>
+                <div class="radio-group">
+                    <label class="radio-item"><input type="radio" name="returnReason" value="正常归还" checked><span>正常归还</span></label>
+                    <label class="radio-item"><input type="radio" name="returnReason" value="设备收回"><span>设备收回</span></label>
+                    <label class="radio-item"><input type="radio" name="returnReason" value="转借他人"><span>转借他人</span></label>
+                    <label class="radio-item"><input type="radio" name="returnReason" value="其他"><span>其他</span></label>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">归还备注</label>
+                <textarea id="returnRemark" class="form-textarea" rows="2">设备完好，无异常</textarea>
+            </div>
+            <div style="background: #f6ffed; padding: 16px; border-radius: 8px; margin-top: 16px;">
+                <p style="font-weight: 500; margin-bottom: 12px;">✓ 归还前请确认：</p>
+                <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                    <input type="checkbox" id="check1" checked> 设备外观完好，无明显损坏
+                </label>
+                <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                    <input type="checkbox" id="check2" checked> 配件齐全（充电器、数据线等）
+                </label>
+                <label style="display: flex; align-items: center; gap: 8px;">
+                    <input type="checkbox" id="check3" checked> 已清除设备中的个人数据
+                </label>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="closeModal('returnModal')">取消</button>
+            <button class="btn btn-warning" onclick="submitReturn()">确认归还</button>
         </div>
     </div>
 </div>
+
+<!-- 弹窗：转借 -->
+<div class="modal-overlay" id="transferModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">🔄 转借设备</span>
+            <button class="modal-close" onclick="closeModal('transferModal')">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label">转借给 <span style="color: #ff4d4f;">*</span></label>
+                <input type="text" id="transferTo" class="form-input" placeholder="输入姓名搜索..." autocomplete="off">
+                <div id="userSuggestions" style="background: #fff; border: 1px solid #d9d9d9; border-radius: 4px; max-height: 200px; overflow-y: auto; display: none; margin-top: 4px;"></div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">备注</label>
+                <textarea id="transferRemark" class="form-textarea" rows="2" placeholder="可选：添加转借备注"></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="closeModal('transferModal')">取消</button>
+            <button class="btn btn-primary" onclick="submitTransfer()">确认转借</button>
+        </div>
+    </div>
+</div>
+
+<!-- 弹窗：续借 -->
+<div class="modal-overlay" id="renewModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">📅 借用续期</span>
+            <button class="modal-close" onclick="closeModal('renewModal')">×</button>
+        </div>
+        <div class="modal-body">
+            <p style="color: #8c8c8c; margin-bottom: 16px;">请选择新的预计归还日期（只能往后选择）：</p>
+            <div class="form-group">
+                <label class="form-label">新预计归还日期</label>
+                <input type="date" id="renewDate" class="form-input">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="closeModal('renewModal')">取消</button>
+            <button class="btn btn-success" onclick="submitRenew()">确认续期</button>
+        </div>
+    </div>
+</div>
+
+
+<script>
+let currentDeviceId = '';
+let allUsers = [];
+
+// 加载用户列表
+function loadUsers() {
+    fetch('/api/users').then(r => r.json()).then(data => {
+        if (data.success && data.users) {
+            allUsers = data.users;
+        }
+    }).catch(() => {});
+}
+
+// 打开归还弹窗
+function openReturnModal(deviceId) {
+    currentDeviceId = deviceId;
+    openModal('returnModal');
+}
+
+// 打开转借弹窗
+function openTransferModal(deviceId) {
+    currentDeviceId = deviceId;
+    loadUserSuggestions();
+    openModal('transferModal');
+}
+
+// 打开续借弹窗
+function openRenewModal(deviceId) {
+    currentDeviceId = deviceId;
+    const renewDateEl = document.getElementById('renewDate');
+    if (renewDateEl) {
+        const today = new Date();
+        const tomorrow = new Date(today);
+        tomorrow.setDate(today.getDate() + 1);
+        const tomorrowStr = tomorrow.toISOString().split('T')[0];
+        const todayStr = today.toISOString().split('T')[0];
+        renewDateEl.min = todayStr;
+        renewDateEl.value = tomorrowStr;
+    }
+    openModal('renewModal');
+}
+
+
+// 用户搜索建议
+function loadUserSuggestions() {
+    const input = document.getElementById('transferTo');
+    const suggestions = document.getElementById('userSuggestions');
+    if (!input || !suggestions) return;
+
+    // 清空输入框
+    input.value = '';
+
+    input.addEventListener('input', function() {
+        const keyword = this.value.trim().toLowerCase();
+        if (!keyword) { suggestions.style.display = 'none'; return; }
+
+        const matched = allUsers.filter(u => u.name.toLowerCase().includes(keyword));
+        if (matched.length > 0) {
+            suggestions.innerHTML = matched.map(u => {
+                const name = u.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                return '<div style="padding: 10px 12px; cursor: pointer;" onclick="selectUser(\'' + name + '\')">' + u.name + '</div>';
+            }).join('');
+            suggestions.style.display = 'block';
+        } else {
+            suggestions.innerHTML = '<div style="padding: 10px 12px; color: #999;">无匹配用户</div>';
+            suggestions.style.display = 'block';
+        }
+    });
+
+    document.addEventListener('click', e => {
+        if (!e.target.closest('#transferTo') && !e.target.closest('#userSuggestions')) {
+            suggestions.style.display = 'none';
+        }
+    });
+}
+
+function selectUser(name) {
+    const transferToEl = document.getElementById('transferTo');
+    const suggestionsEl = document.getElementById('userSuggestions');
+    if (transferToEl) transferToEl.value = name;
+    if (suggestionsEl) suggestionsEl.style.display = 'none';
+}
+
+// 提交归还
+function submitReturn() {
+    const reasonEl = document.querySelector('input[name="returnReason"]:checked');
+    const remarkEl = document.getElementById('returnRemark');
+
+    if (!reasonEl) { showToast('请选择归还原因'); return; }
+
+    const reason = reasonEl.value;
+    const remark = remarkEl ? remarkEl.value.trim() : '';
+    const fullRemark = reason + (remark ? ' - ' + remark : '');
+
+    const check1 = document.getElementById('check1');
+    const check2 = document.getElementById('check2');
+    const check3 = document.getElementById('check3');
+    if ((!check1 || !check1.checked) || (!check2 || !check2.checked) || (!check3 || !check3.checked)) {
+        showToast('请确认所有检查项'); return;
+    }
+
+    fetch('/api/return', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({device_id: currentDeviceId, reason: fullRemark})
+    }).then(r => r.json()).then(data => {
+        if (data.success) { showToast('归还成功！'); setTimeout(() => window.location.href = '/pc', 1000); }
+        else { showToast(data.message || '归还失败'); }
+    }).catch(() => showToast('提交失败，请重试'));
+}
+
+// 提交转借
+function submitTransfer() {
+    const toEl = document.getElementById('transferTo');
+    const remarkEl = document.getElementById('transferRemark');
+    if (!toEl) { showToast('页面元素错误'); return; }
+
+    const to = toEl.value.trim();
+    const remark = remarkEl ? remarkEl.value.trim() : '';
+    if (!to) { showToast('请选择转借人'); return; }
+
+    if (!allUsers.some(u => u.name === to)) { showToast('该用户不存在，请从列表中选择'); return; }
+
+    fetch('/api/transfer', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({device_id: currentDeviceId, transfer_to: to, remark: remark})
+    }).then(r => r.json()).then(data => {
+        if (data.success) { showToast('转借成功'); setTimeout(() => window.location.href = '/pc', 1000); }
+        else { showToast(data.message || '转借失败'); }
+    }).catch(() => showToast('提交失败，请重试'));
+    closeModal('transferModal');
+}
+
+// 提交续借
+function submitRenew() {
+    const dateEl = document.getElementById('renewDate');
+    if (!dateEl || !dateEl.value) { showToast('请选择续期日期'); return; }
+    const date = dateEl.value;
+    const today = new Date().toISOString().split('T')[0];
+    if (date < today) { showToast('续期日期不能早于今天'); return; }
+
+    fetch('/api/renew', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({device_id: currentDeviceId, new_return_date: date})
+    }).then(r => r.json()).then(data => {
+        if (data.success) { showToast('续期成功'); setTimeout(() => location.reload(), 1000); }
+        else { showToast(data.message || '续期失败'); }
+    }).catch(() => showToast('提交失败，请重试'));
+    closeModal('renewModal');
+}
+
+
+// 弹窗控制
+function openModal(id) { document.getElementById(id).classList.add('active'); }
+function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
+// 获取当前页面的所有通知数据
+const allNotifications = [
+    {% if notifications is defined and notifications %}
+        {% for item in notifications %}
+        {
+            id: '{{ item.device_name }}_{{ item.borrower }}_{{ item.time.timestamp()|string }}',
+            device_type: '{{ item.device_type }}',
+            device_name: '{{ item.device_name }}',
+            borrower: '{{ item.borrower }}',
+            type: '{{ item.type }}',
+            time: '{{ item.time.strftime("%Y-%m-%d %H:%M:%S") }}',
+            reason: '{{ item.reason if item.reason is defined else "" }}'
+        }{{ "," if not loop.last }}
+        {% endfor %}
+    {% endif %}
+];
+
+// 从LocalStorage获取已读通知ID
+function getReadNotificationIds() {
+    const readIds = localStorage.getItem('read_notification_ids');
+    return readIds ? JSON.parse(readIds) : [];
+}
+
+// 保存已读通知ID到LocalStorage
+function saveReadNotificationId(id) {
+    const readIds = getReadNotificationIds();
+    if (!readIds.includes(id)) {
+        readIds.push(id);
+        localStorage.setItem('read_notification_ids', JSON.stringify(readIds));
+    }
+}
+
+// 标记所有当前通知为已读
+function markAllAsRead() {
+    allNotifications.forEach(notification => {
+        saveReadNotificationId(notification.id);
+    });
+    updateNotificationBadge();
+}
+
+// 更新角标显示
+function updateNotificationBadge() {
+    const readIds = getReadNotificationIds();
+    const unreadCount = allNotifications.filter(n => !readIds.includes(n.id)).length;
+    const badge = document.getElementById('notificationBadge');
+    if (unreadCount > 0) {
+        badge.textContent = unreadCount;
+        badge.style.display = 'block';
+    } else {
+        badge.style.display = 'none';
+    }
+}
+
+// 渲染通知列表
+function renderNotifications() {
+    const body = document.getElementById('notificationBody');
+    if (allNotifications.length === 0) {
+        body.innerHTML = `
+            <div class="notification-empty">
+                <div class="empty-icon">📭</div>
+                <p>暂无通知</p>
+            </div>
+        `;
+        return;
+    }
+
+    let html = '';
+    allNotifications.forEach(notification => {
+        let content = '';
+        if (notification.type === '保管-被动') {
+            content = `我保管的${notification.device_type}，<strong>${notification.device_name}</strong>被<strong>${notification.borrower}</strong>借走`;
+        } else if (notification.type === '借用-被动') {
+            content = `我正在借用的${notification.device_type}，<strong>${notification.device_name}</strong>被<strong>${notification.borrower}</strong>转走`;
+        } else if (notification.type === '借用-主动') {
+            content = `我转借给了<strong>${notification.borrower}</strong>${notification.device_type}，<strong>${notification.device_name}</strong>`;
+        } else if (notification.type === '设备报废') {
+            content = `我借用的${notification.device_type}，<strong>${notification.device_name}</strong>已被管理员<span style="color: #ff4d4f;">报废</span>，已自动归还`;
+        } else if (notification.type === '状态变更') {
+            content = `管理员将我${notification.device_type}，<strong>${notification.device_name}</strong>的状态更改为${notification.reason || ''}`;
+        } else if (notification.type === '保管人变更') {
+            content = `管理员将${notification.device_type}，<strong>${notification.device_name}</strong>的保管人变更：${notification.reason || ''}`;
+        }
+
+        html += `
+            <div class="notification-item">
+                <div class="notification-content">${content}</div>
+                <div class="notification-time">${notification.time}</div>
+            </div>
+        `;
+    });
+    body.innerHTML = html;
+}
+
+function toggleNotificationModal() {
+    const modal = document.getElementById('notificationModal');
+    modal.classList.toggle('active');
+    // 打开弹窗时标记为已读
+    if (modal.classList.contains('active')) {
+        markAllAsRead();
+    }
+}
+
+// 点击弹窗外部关闭
+document.addEventListener('click', function(event) {
+    const modal = document.getElementById('notificationModal');
+    const bell = document.querySelector('.notification-bell');
+    if (modal && modal.classList.contains('active') && !modal.contains(event.target) && !bell.contains(event.target)) {
+        modal.classList.remove('active');
+    }
+});
+
+// 页面加载时初始化
+document.addEventListener('DOMContentLoaded', function() {
+    loadUsers();
+    renderNotifications();
+    updateNotificationBadge();
+});
+</script>
 {% endblock %}

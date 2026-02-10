@@ -558,6 +558,11 @@ a {
     color: #52c41a;
 }
 
+.status-custody {
+    background: #e6f7ff;
+    color: #1890ff;
+}
+
 .card-body {
     margin-bottom: 12px;
 }
