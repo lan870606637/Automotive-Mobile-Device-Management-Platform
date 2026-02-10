@@ -41,6 +41,9 @@
                 <a href="/admin/pc/overdue" class="nav-item">
                     <span class="nav-icon">⚠️</span>
                     <span>过期未还</span>
+                    {% if overdue_count > 0 %}
+                    <span class="nav-badge">{{ overdue_count }}</span>
+                    {% endif %}
                 </a>
             </nav>
             <div class="sidebar-footer">

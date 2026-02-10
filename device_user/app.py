@@ -93,6 +93,28 @@ def get_device_type_str(device):
     return "未知"
 
 
+def get_overdue_count():
+    """获取逾期设备数量"""
+    try:
+        all_devices = api_client.get_all_devices()
+        overdue_count = 0
+        for device in all_devices:
+            if device.status == DeviceStatus.BORROWED and device.expected_return_date:
+                try:
+                    expect_time = device.expected_return_date
+                    if isinstance(expect_time, datetime):
+                        now = datetime.now()
+                        time_diff = now - expect_time
+                        if time_diff.total_seconds() > 3600:  # 超过1小时算逾期
+                            overdue_count += 1
+                except Exception:
+                    pass
+        return overdue_count
+    except Exception:
+        return 0
+
+
+
 def get_device_stats():
     """获取设备统计数据"""
     api_client.reload_data()
@@ -2589,6 +2611,9 @@ def admin_pc_dashboard():
     
     phone_count = len([d for d in all_devices if d.device_type == DeviceType.PHONE])
     car_device_count = len([d for d in all_devices if d.device_type == DeviceType.CAR_MACHINE])
+    instrument_count = len([d for d in all_devices if d.device_type == DeviceType.INSTRUMENT])
+    simcard_count = len([d for d in all_devices if d.device_type == DeviceType.SIM_CARD])
+    other_device_count = len([d for d in all_devices if d.device_type == DeviceType.OTHER_DEVICE])
     
     # 计算逾期设备
     overdue_devices_list = []
@@ -2642,11 +2667,15 @@ def admin_pc_dashboard():
                          overdue_devices=overdue_devices,
                          phone_count=phone_count,
                          car_device_count=car_device_count,
+                         instrument_count=instrument_count,
+                         simcard_count=simcard_count,
+                         other_device_count=other_device_count,
                          available_percent=available_percent,
                          borrowed_percent=borrowed_percent,
                          other_percent=other_percent,
                          overdue_devices_list=overdue_devices_list[:5],
-                         recent_records=recent_records)
+                         recent_records=recent_records,
+                         overdue_count=get_overdue_count())
 
 
 @app.route('/admin/pc/devices')
@@ -2691,7 +2720,8 @@ def admin_pc_devices():
                          admin_name=session.get('admin_name', '管理员'),
                          devices=devices_data,
                          users=users_data,
-                         cabinets=cabinets)
+                         cabinets=cabinets,
+                         overdue_count=get_overdue_count())
 
 
 @app.route('/admin/pc/device/add')
@@ -2716,7 +2746,8 @@ def admin_pc_device_add_edit(device_id=None):
     
     return render_template('admin/pc/device_add.html',
                          admin_name=session.get('admin_name', '管理员'),
-                         device=device)
+                         device=device,
+                         overdue_count=get_overdue_count())
 
 
 @app.route('/admin/pc/users')
@@ -2740,7 +2771,8 @@ def admin_pc_users():
     
     return render_template('admin/pc/users.html',
                          admin_name=session.get('admin_name', '管理员'),
-                         users=users_data)
+                         users=users_data,
+                         overdue_count=get_overdue_count())
 
 
 @app.route('/admin/pc/records')
@@ -2762,7 +2794,8 @@ def admin_pc_records():
     
     return render_template('admin/pc/records.html',
                          admin_name=session.get('admin_name', '管理员'),
-                         records=records_data)
+                         records=records_data,
+                         overdue_count=get_overdue_count())
 
 
 @app.route('/admin/pc/logs')
@@ -2774,7 +2807,8 @@ def admin_pc_logs():
     
     return render_template('admin/pc/logs.html',
                          admin_name=session.get('admin_name', '管理员'),
-                         logs=logs)
+                         logs=logs,
+                         overdue_count=get_overdue_count())
 
 
 @app.route('/admin/pc/overdue')
@@ -2800,10 +2834,13 @@ def admin_pc_overdue():
                             phone = user.phone
                             break
 
+                    # 获取设备类型字符串
+                    device_type_str = device.device_type.value if hasattr(device.device_type, 'value') else str(device.device_type)
+
                     overdue_devices.append({
                         'id': device.id,
                         'device_name': device.name,
-                        'device_type': '手机' if device.device_type == DeviceType.PHONE else '车机',
+                        'device_type': device_type_str,
                         'borrower': device.borrower,
                         'borrow_time': device.borrow_time.strftime('%Y-%m-%d %H:%M') if device.borrow_time else None,
                         'expect_return_time': device.expected_return_date.strftime('%Y-%m-%d') if device.expected_return_date else None,
@@ -2818,13 +2855,19 @@ def admin_pc_overdue():
     
     phone_overdue = len([d for d in overdue_devices if d['device_type'] == '手机'])
     car_overdue = len([d for d in overdue_devices if d['device_type'] == '车机'])
+    instrument_overdue = len([d for d in overdue_devices if d['device_type'] == '仪表'])
+    simcard_overdue = len([d for d in overdue_devices if d['device_type'] == '手机卡'])
+    other_overdue = len([d for d in overdue_devices if d['device_type'] == '其它设备'])
     
     return render_template('admin/pc/overdue.html',
                          admin_name=session.get('admin_name', '管理员'),
                          overdue_devices=overdue_devices,
                          overdue_count=len(overdue_devices),
                          phone_overdue=phone_overdue,
-                         car_overdue=car_overdue)
+                         car_overdue=car_overdue,
+                         instrument_overdue=instrument_overdue,
+                         simcard_overdue=simcard_overdue,
+                         other_overdue=other_overdue)
 
 
 @app.route('/admin/logout')
@@ -2869,10 +2912,24 @@ def api_devices():
                 except:
                     pass
             
+            # 获取设备类型字符串
+            if device.device_type == DeviceType.PHONE:
+                device_type_str = '手机'
+            elif device.device_type == DeviceType.CAR_MACHINE:
+                device_type_str = '车机'
+            elif device.device_type == DeviceType.INSTRUMENT:
+                device_type_str = '仪表'
+            elif device.device_type == DeviceType.SIM_CARD:
+                device_type_str = '手机卡'
+            elif device.device_type == DeviceType.OTHER_DEVICE:
+                device_type_str = '其它设备'
+            else:
+                device_type_str = '未知'
+            
             devices_data.append({
                 'id': device.id,
                 'device_name': device.name,
-                'device_type': '手机' if device.device_type == DeviceType.PHONE else '车机',
+                'device_type': device_type_str,
                 'model': getattr(device, 'model', ''),
                 'status': device.status.value,
                 'borrower': device.borrower,
@@ -3028,10 +3085,13 @@ def api_devices_overdue():
                             phone = user.phone
                             break
 
+                    # 获取设备类型字符串
+                    device_type_str = device.device_type.value if hasattr(device.device_type, 'value') else str(device.device_type)
+
                     overdue_devices.append({
                         'id': device.id,
                         'device_name': device.name,
-                        'device_type': '手机' if device.device_type == DeviceType.PHONE else '车机',
+                        'device_type': device_type_str,
                         'borrower': device.borrower,
                         'borrow_time': device.borrow_time.strftime('%Y-%m-%d %H:%M') if device.borrow_time else None,
                         'expect_return_time': device.expected_return_date.strftime('%Y-%m-%d') if device.expected_return_date else None,

@@ -42,6 +42,9 @@
                 <a href="/admin/pc/overdue" class="nav-item">
                     <span class="nav-icon">⚠️</span>
                     <span>过期未还</span>
+                    {% if overdue_count > 0 %}
+                    <span class="nav-badge">{{ overdue_count }}</span>
+                    {% endif %}
                 </a>
             </nav>
             <div class="sidebar-footer">
@@ -109,6 +112,27 @@
                             <div class="type-info">
                                 <span class="type-count">{{ car_device_count }} 台</span>
                                 <span class="type-label">车机</span>
+                            </div>
+                        </div>
+                        <div class="type-stat-item">
+                            <span class="type-icon">📊</span>
+                            <div class="type-info">
+                                <span class="type-count">{{ instrument_count }} 台</span>
+                                <span class="type-label">仪表</span>
+                            </div>
+                        </div>
+                        <div class="type-stat-item">
+                            <span class="type-icon">📲</span>
+                            <div class="type-info">
+                                <span class="type-count">{{ simcard_count }} 台</span>
+                                <span class="type-label">手机卡</span>
+                            </div>
+                        </div>
+                        <div class="type-stat-item">
+                            <span class="type-icon">🔧</span>
+                            <div class="type-info">
+                                <span class="type-count">{{ other_device_count }} 台</span>
+                                <span class="type-label">其它设备</span>
                             </div>
                         </div>
                     </div>

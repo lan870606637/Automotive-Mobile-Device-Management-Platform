@@ -234,6 +234,22 @@ body {
     text-align: center;
 }
 
+.nav-badge {
+    margin-left: auto;
+    background: #ff4d4f;
+    color: white;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    min-width: 20px;
+    text-align: center;
+}
+
+.nav-item.active .nav-badge {
+    background: #ff7875;
+}
+
 .sidebar-footer {
     padding: 16px 24px;
     border-top: 1px solid rgba(255,255,255,0.1);

@@ -41,6 +41,9 @@
                 <a href="/admin/pc/overdue" class="nav-item active">
                     <span class="nav-icon">⚠️</span>
                     <span>过期未还</span>
+                    {% if overdue_count > 0 %}
+                    <span class="nav-badge">{{ overdue_count }}</span>
+                    {% endif %}
                 </a>
             </nav>
             <div class="sidebar-footer">
@@ -82,6 +85,27 @@
                         <span class="stat-label">车机逾期</span>
                     </div>
                 </div>
+                <div class="stat-card-large borrowed">
+                    <div class="stat-icon-bg">📊</div>
+                    <div class="stat-info">
+                        <span class="stat-value">{{ instrument_overdue }}</span>
+                        <span class="stat-label">仪表逾期</span>
+                    </div>
+                </div>
+                <div class="stat-card-large borrowed">
+                    <div class="stat-icon-bg">📲</div>
+                    <div class="stat-info">
+                        <span class="stat-value">{{ simcard_overdue }}</span>
+                        <span class="stat-label">手机卡逾期</span>
+                    </div>
+                </div>
+                <div class="stat-card-large borrowed">
+                    <div class="stat-icon-bg">🔧</div>
+                    <div class="stat-info">
+                        <span class="stat-value">{{ other_overdue }}</span>
+                        <span class="stat-label">其它设备逾期</span>
+                    </div>
+                </div>
             </div>
 
             <!-- 逾期列表 -->
@@ -113,7 +137,10 @@
                                     <span style="color: #ff4d4f; font-size: 12px;">(严重逾期)</span>
                                     {% endif %}
                                 </td>
-                                <td>{{ '📱' if device.device_type == '手机' else '🚗' }} {{ device.device_type }}</td>
+                                <td>
+                                    {% if device.device_type == '手机' %}📱{% elif device.device_type == '车机' %}🚗{% elif device.device_type == '仪表' %}📊{% elif device.device_type == '手机卡' %}📲{% elif device.device_type == '其它设备' %}🔧{% else %}📦{% endif %}
+                                    {{ device.device_type }}
+                                </td>
                                 <td>{{ device.borrower }}</td>
                                 <td>{{ device.borrow_time }}</td>
                                 <td style="color: #ff4d4f; font-weight: 500;">{{ device.expect_return_time }}</td>
@@ -148,6 +175,18 @@
     <div id="toast" class="toast"></div>
 
     <script>
+        // 获取设备图标
+        function getDeviceIcon(deviceType) {
+            const iconMap = {
+                '手机': '📱',
+                '车机': '🚗',
+                '仪表': '📊',
+                '手机卡': '📲',
+                '其它设备': '🔧'
+            };
+            return iconMap[deviceType] || '📦';
+        }
+
         // 加载逾期设备
         async function loadOverdue() {
             try {
@@ -174,7 +213,7 @@
                         <strong>${device.device_name}</strong>
                         ${device.overdue_days > 14 ? '<span style="color: #ff4d4f; font-size: 12px;">(严重逾期)</span>' : ''}
                     </td>
-                    <td>${device.device_type === '手机' ? '📱' : '🚗'} ${device.device_type}</td>
+                    <td>${getDeviceIcon(device.device_type)} ${device.device_type}</td>
                     <td>${device.borrower}</td>
                     <td>${device.borrow_time}</td>
                     <td style="color: #ff4d4f; font-weight: 500;">${device.expect_return_time}</td>

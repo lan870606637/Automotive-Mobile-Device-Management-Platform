@@ -42,6 +42,9 @@
                 <a href="/admin/pc/overdue" class="nav-item">
                     <span class="nav-icon">⚠️</span>
                     <span>过期未还</span>
+                    {% if overdue_count > 0 %}
+                    <span class="nav-badge">{{ overdue_count }}</span>
+                    {% endif %}
                 </a>
             </nav>
             <div class="sidebar-footer">
@@ -70,6 +73,9 @@
                         <option value="">全部</option>
                         <option value="手机">手机</option>
                         <option value="车机">车机</option>
+                        <option value="仪表">仪表</option>
+                        <option value="手机卡">手机卡</option>
+                        <option value="其它设备">其它设备</option>
                     </select>
                 </div>
                 <div class="filter-group">
@@ -116,12 +122,15 @@
                         {% for device in devices %}
                         <tr>
                             <td>
-                                <strong>{{ device.device_name }}</strong>
+                                <strong>{{ device.name }}</strong>
                                 {% if device.is_overdue %}
                                 <span style="color: #ff4d4f; font-size: 12px;">(逾期)</span>
                                 {% endif %}
                             </td>
-                            <td>{{ '📱' if device.device_type == '手机' else '🚗' }} {{ device.device_type }}</td>
+                            <td>
+                                {% if device.device_type.value == '手机' %}📱{% elif device.device_type.value == '车机' %}🚗{% elif device.device_type.value == '仪表' %}📊{% elif device.device_type.value == '手机卡' %}📲{% elif device.device_type.value == '其它设备' %}🔧{% else %}📦{% endif %}
+                                {{ device.device_type.value }}
+                            </td>
                             <td>{{ device.model or '-' }}</td>
                             <td><span class="status-tag status-{{ device.status }}">{{ device.status }}</span></td>
                             <td>{{ device.borrower or '-' }}</td>
@@ -245,6 +254,18 @@
         let currentDeviceId = null;
         let devices = [];
 
+        // 获取设备图标
+        function getDeviceIcon(deviceType) {
+            const iconMap = {
+                '手机': '📱',
+                '车机': '🚗',
+                '仪表': '📊',
+                '手机卡': '📲',
+                '其它设备': '🔧'
+            };
+            return iconMap[deviceType] || '📦';
+        }
+
         // 加载设备列表
         async function loadDevices() {
             try {
@@ -271,7 +292,7 @@
                         <strong>${device.device_name}</strong>
                         ${device.is_overdue ? '<span style="color: #ff4d4f; font-size: 12px;">(逾期)</span>' : ''}
                     </td>
-                    <td>${device.device_type === '手机' ? '📱' : '🚗'} ${device.device_type}</td>
+                    <td>${getDeviceIcon(device.device_type)} ${device.device_type}</td>
                     <td>${device.model || '-'}</td>
                     <td><span class="status-tag status-${device.status}">${device.status}</span></td>
                     <td>${device.borrower || '-'}</td>

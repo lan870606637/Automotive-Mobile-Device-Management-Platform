@@ -49,6 +49,27 @@ def get_current_admin():
     }
 
 
+def get_overdue_count():
+    """获取逾期设备数量"""
+    try:
+        all_devices = api_client.get_all_devices()
+        overdue_count = 0
+        for device in all_devices:
+            if device.status == DeviceStatus.BORROWED and device.expected_return_date:
+                try:
+                    expect_time = device.expected_return_date
+                    if isinstance(expect_time, datetime):
+                        now = datetime.now()
+                        time_diff = now - expect_time
+                        if time_diff.total_seconds() > 3600:  # 超过1小时算逾期
+                            overdue_count += 1
+                except Exception:
+                    pass
+        return overdue_count
+    except Exception:
+        return 0
+
+
 # ==================== 后台管理入口 ====================
 
 @app.route('/')
@@ -140,6 +161,9 @@ def admin_mobile_dashboard():
     # 设备类型分布
     phone_count = len([d for d in all_devices if d.device_type.value == '手机'])
     car_device_count = len([d for d in all_devices if d.device_type.value == '车机'])
+    instrument_count = len([d for d in all_devices if d.device_type.value == '仪表'])
+    simcard_count = len([d for d in all_devices if d.device_type.value == '手机卡'])
+    other_device_count = len([d for d in all_devices if d.device_type.value == '其它设备'])
     
     # 状态分布百分比
     if total_devices > 0:
@@ -259,6 +283,9 @@ def admin_pc_dashboard():
     # 设备类型分布
     phone_count = len([d for d in all_devices if d.device_type.value == '手机'])
     car_device_count = len([d for d in all_devices if d.device_type.value == '车机'])
+    instrument_count = len([d for d in all_devices if d.device_type.value == '仪表'])
+    simcard_count = len([d for d in all_devices if d.device_type.value == '手机卡'])
+    other_device_count = len([d for d in all_devices if d.device_type.value == '其它设备'])
     
     # 状态分布百分比
     if total_devices > 0:
@@ -292,11 +319,15 @@ def admin_pc_dashboard():
                          overdue_devices=overdue_devices,
                          phone_count=phone_count,
                          car_device_count=car_device_count,
+                         instrument_count=instrument_count,
+                         simcard_count=simcard_count,
+                         other_device_count=other_device_count,
                          available_percent=available_percent,
                          borrowed_percent=borrowed_percent,
                          other_percent=other_percent,
                          overdue_devices_list=overdue_devices_list,
-                         recent_records=recent_records)
+                         recent_records=recent_records,
+                         overdue_count=get_overdue_count())
 
 
 @app.route('/admin/pc/devices')
@@ -314,6 +345,15 @@ def admin_pc_devices():
     elif device_type == 'phone':
         devices = api_client.get_all_devices('手机')
         title = '手机设备管理'
+    elif device_type == 'instrument':
+        devices = api_client.get_all_devices('仪表')
+        title = '仪表设备管理'
+    elif device_type == 'simcard':
+        devices = api_client.get_all_devices('手机卡')
+        title = '手机卡设备管理'
+    elif device_type == 'other':
+        devices = api_client.get_all_devices('其它设备')
+        title = '其它设备管理'
     else:
         devices = api_client.get_all_devices()
         title = '全部设备管理'
@@ -344,6 +384,14 @@ def admin_pc_devices():
     end = start + per_page
     paginated_devices = devices[start:end]
     
+    # 获取各类型设备数量统计
+    all_devices_for_stats = api_client.get_all_devices()
+    phone_count = len([d for d in all_devices_for_stats if d.device_type.value == '手机'])
+    car_count = len([d for d in all_devices_for_stats if d.device_type.value == '车机'])
+    instrument_count = len([d for d in all_devices_for_stats if d.device_type.value == '仪表'])
+    simcard_count = len([d for d in all_devices_for_stats if d.device_type.value == '手机卡'])
+    other_count = len([d for d in all_devices_for_stats if d.device_type.value == '其它设备'])
+    
     return render_template('admin/pc/devices.html',
                          devices=paginated_devices,
                          title=title,
@@ -353,7 +401,13 @@ def admin_pc_devices():
                          page=page,
                          total_pages=total_pages,
                          total=total,
-                         admin_name=session.get('admin_name', '管理员'))
+                         phone_count=phone_count,
+                         car_count=car_count,
+                         instrument_count=instrument_count,
+                         simcard_count=simcard_count,
+                         other_count=other_count,
+                         admin_name=session.get('admin_name', '管理员'),
+                         overdue_count=get_overdue_count())
 
 
 @app.route('/admin/pc/device/add')
@@ -372,7 +426,8 @@ def admin_pc_device_detail(device_id=None):
     return render_template('admin/pc/device_detail.html',
                          device=device,
                          users=available_users,
-                         admin_name=session.get('admin_name', '管理员'))
+                         admin_name=session.get('admin_name', '管理员'),
+                         overdue_count=get_overdue_count())
 
 
 @app.route('/admin/pc/users')
@@ -397,7 +452,8 @@ def admin_pc_users():
                          page=page,
                          total_pages=total_pages,
                          total=total,
-                         admin_name=session.get('admin_name', '管理员'))
+                         admin_name=session.get('admin_name', '管理员'),
+                         overdue_count=get_overdue_count())
 
 
 @app.route('/admin/pc/records')
@@ -422,7 +478,8 @@ def admin_pc_records():
                          page=page,
                          total_pages=total_pages,
                          total=total,
-                         admin_name=session.get('admin_name', '管理员'))
+                         admin_name=session.get('admin_name', '管理员'),
+                         overdue_count=get_overdue_count())
 
 
 @app.route('/admin/pc/logs')
@@ -433,7 +490,8 @@ def admin_pc_logs():
     
     return render_template('admin/pc/logs.html',
                          logs=logs,
-                         admin_name=session.get('admin_name', '管理员'))
+                         admin_name=session.get('admin_name', '管理员'),
+                         overdue_count=get_overdue_count())
 
 
 @app.route('/admin/pc/overdue')
@@ -446,6 +504,10 @@ def admin_pc_overdue():
     overdue_devices = []
     phone_overdue = 0
     car_overdue = 0
+    instrument_overdue = 0
+    simcard_overdue = 0
+    other_overdue = 0
+    
     for device in all_devices:
         if device.status == DeviceStatus.BORROWED and device.expected_return_date:
             try:
@@ -458,11 +520,26 @@ def admin_pc_overdue():
                     if time_diff.total_seconds() > 3600:  # 超过1小时算逾期
                         overdue_days = int(time_diff.total_seconds() // (24 * 3600))
                         overdue_hours = int(time_diff.total_seconds() // 3600)
-                        device_type = '手机' if isinstance(device, Phone) else '车机'
-                        if device_type == '手机':
+                        
+                        # 获取设备类型
+                        if isinstance(device, Phone):
+                            device_type = '手机'
                             phone_overdue += 1
-                        else:
+                        elif isinstance(device, CarMachine):
+                            device_type = '车机'
                             car_overdue += 1
+                        elif isinstance(device, Instrument):
+                            device_type = '仪表'
+                            instrument_overdue += 1
+                        elif isinstance(device, SimCard):
+                            device_type = '手机卡'
+                            simcard_overdue += 1
+                        elif isinstance(device, OtherDevice):
+                            device_type = '其它设备'
+                            other_overdue += 1
+                        else:
+                            device_type = '未知'
+                        
                         overdue_devices.append({
                             'id': device.id,
                             'device_name': device.name,
@@ -486,7 +563,167 @@ def admin_pc_overdue():
                          overdue_count=len(overdue_devices),
                          phone_overdue=phone_overdue,
                          car_overdue=car_overdue,
+                         instrument_overdue=instrument_overdue,
+                         simcard_overdue=simcard_overdue,
+                         other_overdue=other_overdue,
                          admin_name=session.get('admin_name', '管理员'))
+
+
+@app.route('/api/devices/overdue', methods=['GET'])
+@admin_required
+def api_devices_overdue():
+    """获取逾期设备列表API"""
+    all_devices = api_client.get_all_devices()
+    
+    overdue_devices = []
+    for device in all_devices:
+        if device.status == DeviceStatus.BORROWED and device.expected_return_date:
+            try:
+                expect_time = device.expected_return_date
+                if isinstance(expect_time, datetime):
+                    now = datetime.now()
+                    time_diff = now - expect_time
+                    if time_diff.total_seconds() > 3600:  # 超过1小时算逾期
+                        overdue_days = int(time_diff.total_seconds() // (24 * 3600))
+                        overdue_hours = int(time_diff.total_seconds() // 3600)
+                        
+                        # 获取设备类型
+                        if isinstance(device, Phone):
+                            device_type = '手机'
+                        elif isinstance(device, CarMachine):
+                            device_type = '车机'
+                        elif isinstance(device, Instrument):
+                            device_type = '仪表'
+                        elif isinstance(device, SimCard):
+                            device_type = '手机卡'
+                        elif isinstance(device, OtherDevice):
+                            device_type = '其它设备'
+                        else:
+                            device_type = '未知'
+                        
+                        overdue_devices.append({
+                            'id': device.id,
+                            'device_name': device.name,
+                            'device_type': device_type,
+                            'borrower': device.borrower,
+                            'borrow_time': device.borrow_time.strftime('%Y-%m-%d') if device.borrow_time else '',
+                            'expect_return_time': expect_time.strftime('%Y-%m-%d'),
+                            'overdue_days': overdue_days,
+                            'overdue_hours': overdue_hours,
+                            'phone': device.phone
+                        })
+            except Exception as e:
+                print(f"处理逾期设备出错: {e}")
+                pass
+    
+    # 按逾期天数排序
+    overdue_devices.sort(key=lambda x: x['overdue_days'], reverse=True)
+    
+    return jsonify({'devices': overdue_devices, 'count': len(overdue_devices)})
+
+
+@app.route('/api/devices/<device_id>/remind', methods=['POST'])
+@admin_required
+def api_device_remind(device_id):
+    """提醒用户归还设备API"""
+    device = api_client.get_device(device_id)
+    if not device:
+        return jsonify({'success': False, 'message': '设备不存在'})
+    
+    # 这里可以实现发送提醒的逻辑（如短信、邮件等）
+    # 目前仅记录操作日志
+    api_client.add_operation_log(f"发送归还提醒给: {device.borrower}", device.name)
+    
+    return jsonify({'success': True, 'message': '提醒已发送'})
+
+
+@app.route('/api/overdue/remind_all', methods=['POST'])
+@admin_required
+def api_overdue_remind_all():
+    """批量提醒所有逾期用户API"""
+    all_devices = api_client.get_all_devices()
+    
+    remind_count = 0
+    for device in all_devices:
+        if device.status == DeviceStatus.BORROWED and device.expected_return_date:
+            try:
+                expect_time = device.expected_return_date
+                if isinstance(expect_time, datetime):
+                    now = datetime.now()
+                    time_diff = now - expect_time
+                    if time_diff.total_seconds() > 3600:
+                        remind_count += 1
+                        api_client.add_operation_log(f"批量提醒: {device.borrower}", device.name)
+            except Exception:
+                pass
+    
+    return jsonify({'success': True, 'count': remind_count, 'message': f'已发送 {remind_count} 条提醒'})
+
+
+@app.route('/api/overdue/export', methods=['GET'])
+@admin_required
+def api_overdue_export():
+    """导出逾期设备列表API"""
+    all_devices = api_client.get_all_devices()
+    
+    overdue_devices = []
+    for device in all_devices:
+        if device.status == DeviceStatus.BORROWED and device.expected_return_date:
+            try:
+                expect_time = device.expected_return_date
+                if isinstance(expect_time, datetime):
+                    now = datetime.now()
+                    time_diff = now - expect_time
+                    if time_diff.total_seconds() > 3600:
+                        overdue_days = int(time_diff.total_seconds() // (24 * 3600))
+                        overdue_hours = int(time_diff.total_seconds() // 3600)
+                        
+                        # 获取设备类型
+                        if isinstance(device, Phone):
+                            device_type = '手机'
+                        elif isinstance(device, CarMachine):
+                            device_type = '车机'
+                        elif isinstance(device, Instrument):
+                            device_type = '仪表'
+                        elif isinstance(device, SimCard):
+                            device_type = '手机卡'
+                        elif isinstance(device, OtherDevice):
+                            device_type = '其它设备'
+                        else:
+                            device_type = '未知'
+                        
+                        overdue_devices.append({
+                            '设备名称': device.name,
+                            '设备类型': device_type,
+                            '借用人': device.borrower,
+                            '借出时间': device.borrow_time.strftime('%Y-%m-%d') if device.borrow_time else '',
+                            '预计归还': expect_time.strftime('%Y-%m-%d'),
+                            '逾期天数': overdue_days if overdue_hours >= 24 else f'{overdue_hours}小时',
+                            '联系方式': device.phone or '-'
+                        })
+            except Exception:
+                pass
+    
+    # 按逾期天数排序
+    overdue_devices.sort(key=lambda x: x['逾期天数'] if isinstance(x['逾期天数'], int) else 0, reverse=True)
+    
+    # 创建 CSV 内容
+    import csv
+    import io
+    output = io.StringIO()
+    if overdue_devices:
+        writer = csv.DictWriter(output, fieldnames=overdue_devices[0].keys())
+        writer.writeheader()
+        writer.writerows(overdue_devices)
+    
+    # 创建响应
+    from flask import Response
+    response = Response(
+        output.getvalue().encode('utf-8-sig'),
+        mimetype='text/csv',
+        headers={'Content-Disposition': f'attachment; filename=逾期设备_{datetime.now().strftime("%Y%m%d")}.csv'}
+    )
+    return response
 
 
 @app.route('/admin/logout')
@@ -624,10 +861,24 @@ def api_devices():
         
         devices_data = []
         for device in devices:
+            # 获取设备类型字符串
+            if isinstance(device, Phone):
+                device_type_str = '手机'
+            elif isinstance(device, CarMachine):
+                device_type_str = '车机'
+            elif isinstance(device, Instrument):
+                device_type_str = '仪表'
+            elif isinstance(device, SimCard):
+                device_type_str = '手机卡'
+            elif isinstance(device, OtherDevice):
+                device_type_str = '其它设备'
+            else:
+                device_type_str = '未知'
+            
             devices_data.append({
                 'id': device.id,
-                'name': device.name,
-                'device_type': '手机' if isinstance(device, Phone) else '车机',
+                'device_name': device.name,
+                'device_type': device_type_str,
                 'model': device.model,
                 'cabinet': device.cabinet_number,
                 'status': device.status.value,
