@@ -24,6 +24,10 @@
                 <span class="status-badge" style="background: #f6ffed; color: #52c41a; border: 1px solid #b7eb8f;">
                     流通设备
                 </span>
+                {% elif is_sealed %}
+                <span class="status-badge" style="background: #fff0f6; color: #eb2f96; border: 1px solid #ffadd2;">
+                    封存设备
+                </span>
                 {% else %}
                 <span class="status-badge status-available">
                     无柜号设备
@@ -43,8 +47,8 @@
             </div>
             <div class="info-item">
                 <span class="info-label">柜号</span>
-                <span class="info-value cabinet-status {% if is_circulating %}status-circulating{% else %}status-empty{% endif %}">
-                    {{ '流通' if is_circulating else '无' }}
+                <span class="info-value cabinet-status {% if is_circulating %}status-circulating{% elif is_sealed %}status-sealed{% else %}status-empty{% endif %}">
+                    {% if is_circulating %}流通{% elif is_sealed %}{{ device.cabinet_number or '-' }}{% else %}无{% endif %}
                 </span>
             </div>
             <div class="info-item">
@@ -56,8 +60,8 @@
     
     <!-- 提示信息 -->
     <div class="action-section">
-        <div class="info-box device-status-box {{ 'status-circulating-box' if is_circulating else 'status-empty-box' }}">
-            <p class="status-title">{{ '🔄 此设备为流通设备' if is_circulating else '⚠️ 此设备暂无柜号信息' }}</p>
+        <div class="info-box device-status-box {{ 'status-circulating-box' if is_circulating else 'status-sealed-box' if is_sealed else 'status-empty-box' }}">
+            <p class="status-title">{% if is_circulating %}🔄 此设备为流通设备{% elif is_sealed %}🔒 此设备为封存设备{% else %}⚠️ 此设备暂无柜号信息{% endif %}</p>
             <p class="status-hint">暂不支持借用操作</p>
         </div>
     </div>
@@ -145,6 +149,10 @@ function deleteRemark(remarkId) {
     color: #52c41a;
     font-weight: 500;
 }
+.cabinet-status.status-sealed {
+    color: #eb2f96;
+    font-weight: 500;
+}
 .cabinet-status.status-empty {
     color: #999;
 }
@@ -172,6 +180,18 @@ function deleteRemark(remarkId) {
     color: #52c41a;
 }
 .status-circulating-box .status-hint {
+    color: #666;
+}
+
+/* 封存设备提示框 */
+.status-sealed-box {
+    background: #fff0f6;
+    border: 1px solid #ffadd2;
+}
+.status-sealed-box .status-title {
+    color: #eb2f96;
+}
+.status-sealed-box .status-hint {
     color: #666;
 }
 

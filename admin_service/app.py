@@ -16,7 +16,7 @@ import base64
 from datetime import datetime, timedelta
 from functools import wraps
 
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for, make_response
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, make_response, send_file
 from dotenv import load_dotenv
 
 # 从 common 导入
@@ -391,9 +391,14 @@ def admin_pc_devices():
     instrument_count = len([d for d in all_devices_for_stats if d.device_type.value == '仪表'])
     simcard_count = len([d for d in all_devices_for_stats if d.device_type.value == '手机卡'])
     other_count = len([d for d in all_devices_for_stats if d.device_type.value == '其它设备'])
-    
+
+    # 获取所有可用用户（用于借出和转借）
+    all_users = api_client.get_all_users()
+    users = [u for u in all_users if u.borrower_name and not u.is_frozen]
+
     return render_template('admin/pc/devices.html',
                          devices=paginated_devices,
+                         users=users,
                          title=title,
                          device_type=device_type,
                          status=status,
@@ -875,7 +880,7 @@ def api_devices():
             else:
                 device_type_str = '未知'
             
-            devices_data.append({
+            device_data = {
                 'id': device.id,
                 'device_name': device.name,
                 'device_type': device_type_str,
@@ -886,8 +891,29 @@ def api_devices():
                 'phone': device.phone,
                 'borrow_time': device.borrow_time.strftime('%Y-%m-%d %H:%M') if device.borrow_time else '',
                 'expected_return': device.expected_return_date.strftime('%Y-%m-%d') if device.expected_return_date else '',
-                'remarks': device.remark
-            })
+                'remarks': device.remark,
+                'jira_address': device.jira_address,
+                'create_time': device.create_time.strftime('%Y-%m-%d %H:%M:%S') if device.create_time else ''
+            }
+            
+            # 手机特有字段
+            if isinstance(device, Phone):
+                device_data['system_version'] = device.system_version
+                device_data['imei'] = device.imei
+                device_data['sn'] = device.sn
+                device_data['carrier'] = device.carrier
+            
+            # 车机和仪表特有字段（JIRA地址后）
+            if isinstance(device, (CarMachine, Instrument)):
+                device_data['project_attribute'] = device.project_attribute
+                device_data['connection_method'] = device.connection_method
+                device_data['os_version'] = device.os_version
+                device_data['os_platform'] = device.os_platform
+                device_data['product_name'] = device.product_name
+                device_data['screen_orientation'] = device.screen_orientation
+                device_data['screen_resolution'] = device.screen_resolution
+
+            devices_data.append(device_data)
         
         return jsonify(devices_data)
     
@@ -959,7 +985,6 @@ def api_admin_borrow(device_id):
     data = request.get_json()
     borrower = data.get('borrower')
     days = data.get('days', 1)
-    cabinet = data.get('cabinet', '流通')
     remarks = data.get('remarks', '')
 
     if not borrower:
@@ -970,10 +995,19 @@ def api_admin_borrow(device_id):
             device_id=device_id,
             borrower=borrower,
             days=int(days),
-            cabinet=cabinet,
             remarks=remarks,
             operator=session.get('admin_name', '管理员')
         )
+        # 发送通知
+        if success:
+            device = api_client.get_device(device_id)
+            if device:
+                api_client.notify_borrow(
+                    device_id=device_id,
+                    device_name=device.name,
+                    borrower=borrower,
+                    operator=session.get('admin_name', '管理员')
+                )
     except ValueError as e:
         return jsonify({'success': False, 'message': str(e)})
 
@@ -990,7 +1024,7 @@ def api_admin_return(device_id):
     device = api_client.get_device(device_id)
     if not device:
         return jsonify({'success': False, 'message': '设备不存在'})
-    
+
     # 清空借用信息
     device.status = DeviceStatus.IN_STOCK
     original_borrower = device.borrower
@@ -1001,9 +1035,9 @@ def api_admin_return(device_id):
     device.reason = ''
     device.entry_source = ''
     device.expected_return_date = None
-    
+
     api_client.update_device(device)
-    
+
     # 添加记录
     record = Record(
         id=str(uuid.uuid4()),
@@ -1019,7 +1053,16 @@ def api_admin_return(device_id):
     api_client._records.append(record)
     api_client.add_operation_log(f"强制归还: {original_borrower}", device.name)
     api_client._save_data()
-    
+
+    # 发送通知
+    if original_borrower:
+        api_client.notify_return(
+            device_id=device_id,
+            device_name=device.name,
+            borrower=original_borrower,
+            operator=session.get('admin_name', '管理员')
+        )
+
     return jsonify({'success': True, 'message': '归还成功'})
 
 
@@ -1029,31 +1072,31 @@ def api_admin_transfer(device_id):
     """管理员转借API"""
     data = request.get_json()
     new_borrower = data.get('borrower')
-    
+
     if not new_borrower:
         return jsonify({'success': False, 'message': '请选择新借用人'})
-    
+
     device = api_client.get_device(device_id)
     if not device:
         return jsonify({'success': False, 'message': '设备不存在'})
-    
+
     if device.status != DeviceStatus.BORROWED:
         return jsonify({'success': False, 'message': '设备未借出，无法转借'})
-    
+
     original_borrower = device.borrower
-    
+
     # 获取新借用人的手机号
     new_phone = ''
     for user in api_client._users:
         if user.borrower_name == new_borrower:
             new_phone = user.phone
             break
-    
+
     # 更新设备
     device.borrower = new_borrower
     device.phone = new_phone
     api_client.update_device(device)
-    
+
     # 添加记录
     record = Record(
         id=str(uuid.uuid4()),
@@ -1069,7 +1112,16 @@ def api_admin_transfer(device_id):
     api_client._records.append(record)
     api_client.add_operation_log(f"转借: {original_borrower} -> {new_borrower}", device.name)
     api_client._save_data()
-    
+
+    # 发送通知
+    api_client.notify_transfer(
+        device_id=device_id,
+        device_name=device.name,
+        original_borrower=original_borrower,
+        new_borrower=new_borrower,
+        operator=session.get('admin_name', '管理员')
+    )
+
     return jsonify({'success': True, 'message': '转借成功'})
 
 
@@ -1167,6 +1219,7 @@ def api_records():
             'device_name': record.device_name,
             'device_type': '手机' if record.device_type == DeviceType.PHONE else '车机',
             'user_name': record.borrower,
+            'operator': record.operator,
             'time': record.operation_time.strftime('%Y-%m-%d %H:%M'),
             'remarks': record.remark
         })
@@ -1202,6 +1255,326 @@ def api_logs():
     limit = request.args.get('limit', 100, type=int)
     logs = api_client.get_admin_logs(limit=limit)
     return jsonify(logs)
+
+
+@app.route('/api/notifications', methods=['GET'])
+def api_notifications():
+    """获取通知列表API"""
+    user_id = session.get('user_id')
+    user_name = session.get('borrower_name')
+
+    unread_only = request.args.get('unread_only', 'false').lower() == 'true'
+
+    notifications = api_client.get_notifications(
+        user_id=user_id,
+        user_name=user_name,
+        unread_only=unread_only
+    )
+
+    return jsonify({'notifications': [n.to_dict() for n in notifications]})
+
+
+@app.route('/api/notifications/unread-count', methods=['GET'])
+def api_notification_unread_count():
+    """获取未读通知数量API"""
+    user_id = session.get('user_id')
+    user_name = session.get('borrower_name')
+
+    count = api_client.get_unread_count(user_id=user_id, user_name=user_name)
+
+    return jsonify({'count': count})
+
+
+@app.route('/api/notifications/<notification_id>/read', methods=['POST'])
+def api_mark_notification_read(notification_id):
+    """标记通知为已读API"""
+    success = api_client.mark_notification_read(notification_id)
+    if success:
+        return jsonify({'success': True})
+    else:
+        return jsonify({'success': False, 'message': '通知不存在'})
+
+
+@app.route('/api/notifications/read-all', methods=['POST'])
+def api_mark_all_read():
+    """标记所有通知为已读API"""
+    user_id = session.get('user_id')
+    user_name = session.get('borrower_name')
+
+    count = api_client.mark_all_read(user_id=user_id, user_name=user_name)
+
+    return jsonify({'success': True, 'count': count})
+
+
+@app.route('/admin/template/<device_type>')
+@admin_required
+def download_template(device_type):
+    """下载设备导入模板"""
+    import pandas as pd
+    from io import BytesIO
+
+    templates = {
+        'car': {
+            'columns': ['jira地址', '型号', '设备名称', '柜号', '项目属性', '连接方式', '车机系统版本', '系统平台', '产品名称', '芯片型号', '屏幕方向', '车机分辨率'],
+            'example': [['NAV-2866', 'WCLW01', 'AE-WCLW01-1', '26-27', '国内前装', '安卓USB,安卓无感连接（扫码）,苹果USB直连,苹果无感连接（扫码）', '12', 'Android', '亿连手机互联标准版', '芯驰X9HP', '横屏', '1920*1080']]
+        },
+        'instrument': {
+            'columns': ['jira地址', '型号', '设备名称', '柜号', '项目属性', '连接方式', '系统版本', '系统平台', '产品名称', '芯片型号', '屏幕方向', '分辨率'],
+            'example': [['JIRA-002', 'Model-B', '仪表-001', 'B-01', '项目B', 'CAN', 'Linux', 'Linux', '产品Y', '芯片B', '竖屏', '1280x720']]
+        },
+        'phone': {
+            'columns': ['jira地址', '型号', '设备名称', '保管人', '系统版本', 'IMEI', 'SN码', '运营商'],
+            'example': [['JIRA-003', 'iPhone 14', '手机-001', '张三', 'iOS 16', '123456789012345', 'SN123456', '移动']]
+        },
+        'sim': {
+            'columns': ['jira地址', '号码', '设备名称', '保管人', '运营商', '套餐类型'],
+            'example': [['JIRA-004', '13800138000', '手机卡-001', '李四', '移动', '5G套餐']]
+        },
+        'other': {
+            'columns': ['jira地址', '型号', '设备名称', '保管人', '备注'],
+            'example': [['JIRA-005', 'Tool-A', '工具-001', '王五', '测试工具']]
+        }
+    }
+
+    if device_type not in templates:
+        return jsonify({'success': False, 'message': '未知的设备类型'}), 400
+
+    template = templates[device_type]
+
+    # 创建Excel文件
+    df = pd.DataFrame(template['example'], columns=template['columns'])
+    output = BytesIO()
+    df.to_excel(output, index=False, engine='openpyxl')
+    output.seek(0)
+
+    # 设置文件名
+    type_names = {
+        'car': '车机',
+        'instrument': '仪表',
+        'phone': '手机',
+        'sim': '手机卡',
+        'other': '其它设备'
+    }
+    filename = f"{type_names.get(device_type, device_type)}导入模板.xlsx"
+
+    return send_file(
+        output,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=filename
+    )
+
+
+@app.route('/admin/api/import-devices', methods=['POST'])
+@admin_required
+def api_import_devices():
+    """批量导入设备API"""
+    import pandas as pd
+    from common.models import DeviceType, DeviceStatus, CarMachine, Instrument, Phone, SimCard, OtherDevice
+
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'message': '请选择文件'}), 400
+
+    file = request.files['file']
+    device_type = request.form.get('device_type')
+
+    if file.filename == '':
+        return jsonify({'success': False, 'message': '请选择文件'}), 400
+
+    if not device_type:
+        return jsonify({'success': False, 'message': '请选择设备类型'}), 400
+
+    try:
+        # 读取Excel文件
+        df = pd.read_excel(file, engine='openpyxl')
+
+        if df.empty:
+            return jsonify({'success': False, 'message': '文件为空'}), 400
+
+        imported_count = 0
+        errors = []
+
+        # 辅助函数：根据柜号/保管人判断状态
+        def get_status_from_cabinet(cabinet_value):
+            if not cabinet_value:
+                return DeviceStatus.NO_CABINET
+            cabinet_str = str(cabinet_value).strip()
+            if cabinet_str == '' or cabinet_str == '无柜号':
+                return DeviceStatus.NO_CABINET
+            # 提取前两个字判断特殊状态
+            prefix = cabinet_str[:2]
+            if prefix == '流通' or cabinet_str == '流通':
+                return DeviceStatus.CIRCULATING
+            if prefix == '封存' or cabinet_str == '封存':
+                return DeviceStatus.SEALED
+            return DeviceStatus.IN_STOCK
+
+        # 根据设备类型处理数据
+        for index, row in df.iterrows():
+            try:
+                row_num = index + 2  # Excel行号（从1开始，第1行是标题）
+
+                if device_type == 'car':
+                    # 车机导入
+                    cabinet = str(row.get('柜号', '')).strip()
+                    device = CarMachine(
+                        id=str(uuid.uuid4()),
+                        name=str(row.get('设备名称', '')).strip(),
+                        model=str(row.get('型号', '')).strip(),
+                        cabinet_number=cabinet,
+                        status=get_status_from_cabinet(cabinet),
+                        jira_address=str(row.get('jira地址', '')).strip(),
+                        project_attribute=str(row.get('项目属性', '')).strip(),
+                        connection_method=str(row.get('连接方式', '')).strip(),
+                        os_version=str(row.get('车机系统版本', '')).strip(),
+                        os_platform=str(row.get('系统平台', '')).strip(),
+                        product_name=str(row.get('产品名称', '')).strip(),
+                        hardware_version=str(row.get('芯片型号', '')).strip(),
+                        screen_orientation=str(row.get('屏幕方向', '')).strip(),
+                        screen_resolution=str(row.get('车机分辨率', '')).strip(),
+                        entry_source='批量导入'
+                    )
+                    api_client._car_machines.append(device)
+
+                elif device_type == 'instrument':
+                    # 仪表导入
+                    cabinet = str(row.get('柜号', '')).strip()
+                    device = Instrument(
+                        id=str(uuid.uuid4()),
+                        name=str(row.get('设备名称', '')).strip(),
+                        model=str(row.get('型号', '')).strip(),
+                        cabinet_number=cabinet,
+                        status=get_status_from_cabinet(cabinet),
+                        jira_address=str(row.get('jira地址', '')).strip(),
+                        project_attribute=str(row.get('项目属性', '')).strip(),
+                        connection_method=str(row.get('连接方式', '')).strip(),
+                        os_version=str(row.get('系统版本', '')).strip(),
+                        os_platform=str(row.get('系统平台', '')).strip(),
+                        product_name=str(row.get('产品名称', '')).strip(),
+                        hardware_version=str(row.get('芯片型号', '')).strip(),
+                        screen_orientation=str(row.get('屏幕方向', '')).strip(),
+                        screen_resolution=str(row.get('分辨率', '')).strip(),
+                        entry_source='批量导入'
+                    )
+                    api_client._instruments.append(device)
+
+                elif device_type == 'phone':
+                    # 手机导入
+                    cabinet = str(row.get('保管人', '')).strip()
+                    device = Phone(
+                        id=str(uuid.uuid4()),
+                        name=str(row.get('设备名称', '')).strip(),
+                        model=str(row.get('型号', '')).strip(),
+                        cabinet_number=cabinet,
+                        status=get_status_from_cabinet(cabinet),
+                        jira_address=str(row.get('jira地址', '')).strip(),
+                        system_version=str(row.get('系统版本', '')).strip(),
+                        imei=str(row.get('IMEI', '')).strip(),
+                        sn=str(row.get('SN码', '')).strip(),
+                        carrier=str(row.get('运营商', '')).strip(),
+                        entry_source='批量导入'
+                    )
+                    api_client._phones.append(device)
+
+                elif device_type == 'sim':
+                    # 手机卡导入
+                    cabinet = str(row.get('保管人', '')).strip()
+                    device = SimCard(
+                        id=str(uuid.uuid4()),
+                        name=str(row.get('设备名称', '')).strip(),
+                        model=str(row.get('号码', '')).strip(),
+                        cabinet_number=cabinet,
+                        status=get_status_from_cabinet(cabinet),
+                        jira_address=str(row.get('jira地址', '')).strip(),
+                        carrier=str(row.get('运营商', '')).strip(),
+                        entry_source='批量导入'
+                    )
+                    api_client._sim_cards.append(device)
+
+                elif device_type == 'other':
+                    # 其它设备导入
+                    cabinet = str(row.get('保管人', '')).strip()
+                    device = OtherDevice(
+                        id=str(uuid.uuid4()),
+                        name=str(row.get('设备名称', '')).strip(),
+                        model=str(row.get('型号', '')).strip(),
+                        cabinet_number=cabinet,
+                        status=get_status_from_cabinet(cabinet),
+                        jira_address=str(row.get('jira地址', '')).strip(),
+                        remark=str(row.get('备注', '')).strip(),
+                        entry_source='批量导入'
+                    )
+                    api_client._other_devices.append(device)
+
+                imported_count += 1
+
+            except Exception as e:
+                errors.append(f'第{row_num}行: {str(e)}')
+
+        # 保存数据
+        api_client._save_data()
+
+        # 记录操作日志
+        api_client.add_operation_log(
+            f'批量导入{imported_count}个设备',
+            device_type
+        )
+
+        result = {
+            'success': True,
+            'imported_count': imported_count,
+            'message': f'成功导入 {imported_count} 个设备'
+        }
+
+        if errors:
+            result['errors'] = errors[:10]  # 最多返回10条错误
+            if len(errors) > 10:
+                result['errors'].append(f'...还有 {len(errors) - 10} 条错误')
+
+        return jsonify(result)
+
+    except Exception as e:
+        print(f'导入失败: {e}')
+        return jsonify({'success': False, 'message': f'导入失败: {str(e)}'}), 500
+
+
+@app.route('/admin/api/reload-data', methods=['POST'])
+@admin_required
+def api_reload_data():
+    """重新加载数据API - 从Excel文件重新加载所有数据"""
+    try:
+        # 重置初始化标志，强制重新加载数据
+        from common.api_client import APIClient
+        APIClient._initialized = False
+        
+        # 创建新的APIClient实例，触发数据重新加载
+        new_client = APIClient()
+        
+        # 重新赋值给全局api_client
+        global api_client
+        api_client = new_client
+        
+        # 获取各类型设备数量
+        car_count = len(api_client._car_machines)
+        instrument_count = len(api_client._instruments)
+        phone_count = len(api_client._phones)
+        sim_count = len(api_client._sim_cards)
+        other_count = len(api_client._other_devices)
+        
+        return jsonify({
+            'success': True,
+            'message': '数据重新加载成功',
+            'counts': {
+                '车机': car_count,
+                '仪表': instrument_count,
+                '手机': phone_count,
+                '手机卡': sim_count,
+                '其它设备': other_count
+            }
+        })
+    except Exception as e:
+        print(f'重新加载数据失败: {e}')
+        return jsonify({'success': False, 'message': f'重新加载数据失败: {str(e)}'}), 500
 
 
 # ==================== 错误处理 ====================

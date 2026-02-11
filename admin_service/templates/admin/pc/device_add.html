@@ -118,8 +118,8 @@
                         <h3 class="form-section-title">手机特有信息</h3>
                         <div class="form-row">
                             <div class="form-field">
-                                <label>SN码</label>
-                                <input type="text" id="phoneSN" value="{{ device.sn if device else '' }}" placeholder="设备序列号">
+                                <label>系统版本</label>
+                                <input type="text" id="phoneSystemVersion" value="{{ device.system_version if device else '' }}" placeholder="如：Android 14 / iOS 17">
                             </div>
                             <div class="form-field">
                                 <label>IMEI</label>
@@ -128,10 +128,6 @@
                         </div>
                         <div class="form-row">
                             <div class="form-field">
-                                <label>手机号码</label>
-                                <input type="text" id="phoneNumber" value="{{ device.phone_number if device else '' }}" placeholder="设备手机号">
-                            </div>
-                            <div class="form-field">
                                 <label>运营商</label>
                                 <select id="phoneCarrier">
                                     <option value="" {{ 'selected' if device and not device.carrier else '' }}>无</option>
@@ -139,6 +135,10 @@
                                     <option value="联通" {{ 'selected' if device and device.carrier == '联通' else '' }}>联通</option>
                                     <option value="电信" {{ 'selected' if device and device.carrier == '电信' else '' }}>电信</option>
                                 </select>
+                            </div>
+                            <div class="form-field">
+                                <label>SN码</label>
+                                <input type="text" id="phoneSN" value="{{ device.sn if device else '' }}" placeholder="设备序列号">
                             </div>
                         </div>
                     </div>
@@ -152,8 +152,8 @@
                                 <input type="text" id="carVersion" value="{{ device.software_version if device else '' }}" placeholder="软件版本号">
                             </div>
                             <div class="form-field">
-                                <label>硬件版本</label>
-                                <input type="text" id="carHardware" value="{{ device.hardware_version if device else '' }}" placeholder="硬件版本号">
+                                <label>芯片型号</label>
+                                <input type="text" id="carHardware" value="{{ device.hardware_version if device else '' }}" placeholder="芯片型号">
                             </div>
                         </div>
                     </div>
@@ -213,7 +213,7 @@
             if (deviceData.device_type === '手机') {
                 deviceData.sn = document.getElementById('phoneSN').value.trim();
                 deviceData.imei = document.getElementById('phoneIMEI').value.trim();
-                deviceData.phone_number = document.getElementById('phoneNumber').value.trim();
+                deviceData.system_version = document.getElementById('phoneSystemVersion').value.trim();
                 deviceData.carrier = document.getElementById('phoneCarrier').value;
             }
 

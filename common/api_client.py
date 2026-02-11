@@ -8,7 +8,7 @@ import os
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 
-from .models import Device, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, OperationLog, ViewRecord
+from .models import Device, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, OperationLog, ViewRecord, Notification
 from .models import DeviceStatus, DeviceType, OperationType, EntrySource, Admin
 from .excel_data_store import ExcelDataStore
 
@@ -31,7 +31,15 @@ class APIClient:
             self._current_admin = "管理员"
             self._load_data()
             APIClient._initialized = True
-    
+
+    def _safe_print(self, message):
+        """安全打印，处理Windows控制台编码问题"""
+        try:
+            print(message)
+        except OSError:
+            # 如果打印失败（如编码问题），忽略错误
+            pass
+
     def _save_data(self):
         """保存数据到Excel文件"""
         try:
@@ -45,11 +53,12 @@ class APIClient:
             ExcelDataStore.save_users(self._users)
             ExcelDataStore.save_operation_logs(self._operation_logs)
             ExcelDataStore.save_view_records(self._view_records)
+            ExcelDataStore.save_notifications(self._notifications)
         except PermissionError as e:
-            print(f"警告: Excel文件被占用，无法保存数据: {e}")
-            print("请关闭所有打开的Excel文件后重试")
+            self._safe_print(f"警告: Excel文件被占用，无法保存数据: {e}")
+            self._safe_print("请关闭所有打开的Excel文件后重试")
         except Exception as e:
-            print(f"保存数据失败: {e}")
+            self._safe_print(f"保存数据失败: {e}")
     
     def _load_data(self):
         """从Excel文件加载数据"""
@@ -66,29 +75,29 @@ class APIClient:
             
             # 如果没有数据，使用默认数据
             if not self._car_machines and not self._instruments and not self._phones and not self._sim_cards and not self._other_devices:
-                print("Excel文件为空，使用默认数据")
+                self._safe_print("Excel文件为空，使用默认数据")
                 self._init_mock_data()
                 self._save_data()
             else:
-                print(f"从Excel加载: 车机{len(self._car_machines)}台, 仪表{len(self._instruments)}台, 手机{len(self._phones)}台, 手机卡{len(self._sim_cards)}张, 其它设备{len(self._other_devices)}台, 记录{len(self._records)}条")
-                print(f"从Excel加载: 用户{len(self._users)}个")
+                self._safe_print(f"从Excel加载: 车机{len(self._car_machines)}台, 仪表{len(self._instruments)}台, 手机{len(self._phones)}台, 手机卡{len(self._sim_cards)}张, 其它设备{len(self._other_devices)}台, 记录{len(self._records)}条")
+                self._safe_print(f"从Excel加载: 用户{len(self._users)}个")
                 # 如果用户列表为空，使用默认用户数据
                 if not self._users:
-                    print("用户表为空，初始化默认用户")
+                    self._safe_print("用户表为空，初始化默认用户")
                     self._init_default_users()
                     self._save_data()
             
             # 从Excel加载操作日志
             self._operation_logs = ExcelDataStore.load_operation_logs()
-            print(f"从Excel加载: 操作日志{len(self._operation_logs)}条")
+            self._safe_print(f"从Excel加载: 操作日志{len(self._operation_logs)}条")
             
             # 从Excel加载查看记录
             self._view_records = ExcelDataStore.load_view_records()
-            print(f"从Excel加载: 查看记录{len(self._view_records)}条")
+            self._safe_print(f"从Excel加载: 查看记录{len(self._view_records)}条")
             
             # 从Excel加载管理员列表
             self._admins = ExcelDataStore.load_admins()
-            print(f"从Excel加载: 管理员{len(self._admins)}个")
+            self._safe_print(f"从Excel加载: 管理员{len(self._admins)}个")
             # 如果没有管理员，创建默认管理员
             if not self._admins:
                 default_admin = Admin(
@@ -99,12 +108,16 @@ class APIClient:
                 )
                 self._admins = [default_admin]
                 ExcelDataStore.save_admins(self._admins)
-                print("已创建默认管理员: admin / admin123")
-            
+                self._safe_print("已创建默认管理员: admin / admin123")
+
+            # 从Excel加载通知列表
+            self._notifications = ExcelDataStore.load_notifications()
+            self._safe_print(f"从Excel加载: 通知{len(self._notifications)}条")
+
         except Exception as e:
-            print(f"加载数据失败: {e}，使用默认数据")
-            self._init_mock_data()
-            self._save_data()
+            # 通知加载失败时使用空列表，不影响其他数据加载
+            self._notifications = []
+            self._safe_print(f"加载通知失败: {e}")
     
     def _device_to_dict(self, device: Device) -> dict:
         """设备转字典"""
@@ -116,7 +129,9 @@ class APIClient:
             'cabinet_number': device.cabinet_number,
             'status': device.status.value,
             'remark': device.remark,
+            'jira_address': device.jira_address,
             'is_deleted': device.is_deleted,
+            'create_time': device.create_time.isoformat() if device.create_time else None,
             'borrower': device.borrower,
             'phone': device.phone,
             'borrow_time': device.borrow_time.isoformat() if device.borrow_time else None,
@@ -124,6 +139,14 @@ class APIClient:
             'reason': device.reason,
             'entry_source': device.entry_source,
             'expected_return_date': device.expected_return_date.isoformat() if device.expected_return_date else None,
+            # 车机和仪表特有字段（JIRA地址后）
+            'project_attribute': device.project_attribute,
+            'connection_method': device.connection_method,
+            'os_version': device.os_version,
+            'os_platform': device.os_platform,
+            'product_name': device.product_name,
+            'screen_orientation': device.screen_orientation,
+            'screen_resolution': device.screen_resolution,
             # 寄出信息
             'ship_time': device.ship_time.isoformat() if device.ship_time else None,
             'ship_remark': device.ship_remark,
@@ -136,6 +159,9 @@ class APIClient:
     
     def _dict_to_device(self, data: dict, cls) -> Device:
         """字典转设备"""
+        create_time = None
+        if data.get('create_time'):
+            create_time = datetime.fromisoformat(data['create_time'])
         device = cls(
             id=data['id'],
             name=data['name'],
@@ -143,7 +169,9 @@ class APIClient:
             cabinet_number=data.get('cabinet_number', ''),
             status=DeviceStatus(data['status']) if data.get('status') else DeviceStatus.IN_STOCK,
             remark=data.get('remark', ''),
+            jira_address=data.get('jira_address', ''),
             is_deleted=data.get('is_deleted', False),
+            create_time=create_time,
         )
         device.borrower = data.get('borrower', '')
         device.phone = data.get('phone', '')
@@ -377,7 +405,6 @@ class APIClient:
                 operation_time=datetime.now() - timedelta(days=2),
                 borrower="张三",
                 phone="13800138001",
-                location="研发中心",
                 reason="功能测试",
                 entry_source=EntrySource.USER.value
             ),
@@ -391,7 +418,6 @@ class APIClient:
                 operation_time=datetime.now() - timedelta(days=1),
                 borrower="李四",
                 phone="13800138002",
-                location="实验室",
                 reason="开发调试",
                 entry_source=EntrySource.ADMIN.value
             ),
@@ -539,7 +565,7 @@ class APIClient:
     # ==================== 设备管理 ====================
     
     def get_all_devices(self, device_type: Optional[str] = None) -> List[Device]:
-        """获取所有设备"""
+        """获取所有设备，按创建时间倒序排列（最新的在前面）"""
         devices = []
         if device_type is None or device_type == "车机":
             devices.extend([d for d in self._car_machines if not d.is_deleted])
@@ -551,7 +577,8 @@ class APIClient:
             devices.extend([d for d in self._sim_cards if not d.is_deleted])
         if device_type is None or device_type == "其它设备":
             devices.extend([d for d in self._other_devices if not d.is_deleted])
-        return devices
+        # 按创建时间倒序排列，最新的设备排在最前面
+        return sorted(devices, key=lambda d: d.create_time if d.create_time else datetime.min, reverse=True)
     
     def get_device_by_id(self, device_id: str) -> Optional[Device]:
         """根据ID获取设备"""
@@ -661,13 +688,12 @@ class APIClient:
             device_id=device.id,
             device_name=device.name,
             device_type=self._get_device_type_str(device),
-                operation_type=OperationType.FORCE_BORROW,
+            operation_type=OperationType.FORCE_BORROW,
             operator=self._current_admin,
             operation_time=datetime.now(),
             borrower=borrower,
             phone=phone,
             reason=reason,
-            entry_source=EntrySource.ADMIN.value,
             remark=remark
         )
         self._records.append(record)
@@ -894,6 +920,7 @@ class APIClient:
         device_id = str(uuid.uuid4())
         device_status = DeviceStatus(status) if status else DeviceStatus.IN_STOCK
         
+        create_time = datetime.now()
         if device_type == DeviceType.PHONE or str(device_type) == 'DeviceType.PHONE':
             device = Phone(
                 id=device_id,
@@ -901,7 +928,8 @@ class APIClient:
                 model=model,
                 cabinet_number=cabinet,
                 status=device_status,
-                remark=remarks
+                remark=remarks,
+                create_time=create_time
             )
             self._phones.append(device)
         elif device_type == DeviceType.INSTRUMENT or str(device_type) == 'DeviceType.INSTRUMENT':
@@ -911,7 +939,8 @@ class APIClient:
                 model=model,
                 cabinet_number=cabinet,
                 status=device_status,
-                remark=remarks
+                remark=remarks,
+                create_time=create_time
             )
             self._instruments.append(device)
         elif device_type == DeviceType.SIM_CARD or str(device_type) == 'DeviceType.SIM_CARD':
@@ -921,7 +950,8 @@ class APIClient:
                 model=model,
                 cabinet_number=cabinet,
                 status=device_status,
-                remark=remarks
+                remark=remarks,
+                create_time=create_time
             )
             self._sim_cards.append(device)
         elif device_type == DeviceType.OTHER_DEVICE or str(device_type) == 'DeviceType.OTHER_DEVICE':
@@ -931,7 +961,8 @@ class APIClient:
                 model=model,
                 cabinet_number=cabinet,
                 status=device_status,
-                remark=remarks
+                remark=remarks,
+                create_time=create_time
             )
             self._other_devices.append(device)
         else:
@@ -941,7 +972,8 @@ class APIClient:
                 model=model,
                 cabinet_number=cabinet,
                 status=device_status,
-                remark=remarks
+                remark=remarks,
+                create_time=create_time
             )
             self._car_machines.append(device)
         
@@ -986,11 +1018,47 @@ class APIClient:
                 device.status = new_status
         if 'remarks' in data:
             device.remark = data['remarks']
+        if 'jira_address' in data:
+            device.jira_address = data['jira_address']
         if 'borrower' in data:
             device.borrower = data['borrower']
 
+        # 手机特有字段
+        if 'sn' in data:
+            device.sn = data['sn']
+        if 'imei' in data:
+            device.imei = data['imei']
+        if 'system_version' in data:
+            device.system_version = data['system_version']
+        if 'carrier' in data:
+            device.carrier = data['carrier']
+
+        # 车机特有字段
+        if 'software_version' in data:
+            device.software_version = data['software_version']
+        if 'hardware_version' in data:
+            device.hardware_version = data['hardware_version']
+
+        # 车机和仪表特有字段（JIRA地址后）
+        if 'project_attribute' in data:
+            device.project_attribute = data['project_attribute']
+        if 'connection_method' in data:
+            device.connection_method = data['connection_method']
+        if 'os_version' in data:
+            device.os_version = data['os_version']
+        if 'os_platform' in data:
+            device.os_platform = data['os_platform']
+        if 'product_name' in data:
+            device.product_name = data['product_name']
+        if 'screen_orientation' in data:
+            device.screen_orientation = data['screen_orientation']
+        if 'screen_resolution' in data:
+            device.screen_resolution = data['screen_resolution']
+
         # 添加状态变更记录（不包括报废，报废有单独处理）
         if status_changed and not is_scrapped:
+            # 确定应该接收通知的用户：优先借用人，其次是保管人
+            notify_user = device.borrower or original_borrower or device.cabinet_number or original_custodian
             record = Record(
                 id=str(uuid.uuid4()),
                 device_id=device.id,
@@ -999,7 +1067,7 @@ class APIClient:
                 operation_type=OperationType.STATUS_CHANGE,
                 operator=operator,
                 operation_time=datetime.now(),
-                borrower=device.borrower or original_borrower,
+                borrower=notify_user,
                 reason=f'管理员将状态从{original_status.value}改成了{device.status.value}',
                 remark=''
             )
@@ -1045,9 +1113,35 @@ class APIClient:
             )
             self._records.append(record)
             self.add_operation_log(f"报废设备(原借用人: {original_borrower})", device.name)
+            # 发送通知
+            self.notify_status_change(
+                device_id=device.id,
+                device_name=device.name,
+                borrower=original_borrower,
+                new_status='报废',
+                operator=operator
+            )
         else:
             if status_changed:
                 self.add_operation_log(f"状态变更: {original_status.value} -> {device.status.value}", device.name)
+                # 如果设备状态变更，且有借用人，发送通知
+                if original_borrower:
+                    self.notify_status_change(
+                        device_id=device.id,
+                        device_name=device.name,
+                        borrower=original_borrower,
+                        new_status=device.status.value,
+                        operator=operator
+                    )
+                # 如果是保管人变更，也通知保管人
+                elif device.cabinet_number and device.cabinet_number != original_custodian:
+                    self.notify_status_change(
+                        device_id=device.id,
+                        device_name=device.name,
+                        borrower=device.cabinet_number,
+                        new_status=device.status.value,
+                        operator=operator
+                    )
             elif custodian_changed:
                 self.add_operation_log(f"保管人变更: {original_custodian} -> {device.cabinet_number}", device.name)
             else:
@@ -1105,11 +1199,15 @@ class APIClient:
         return False
     
     def borrow_device(self, device_id: str, borrower: str, days: int = 1,
-                     cabinet: str = '流通', remarks: str = '', operator: str = '管理员') -> bool:
+                     remarks: str = '', operator: str = '管理员') -> bool:
         """借出设备"""
         device = self.get_device(device_id)
         if not device:
             return False
+
+        # 封存状态设备无法借用
+        if device.status == DeviceStatus.SEALED:
+            raise ValueError('封存状态的设备无法借用')
 
         # 检查用户借用数量限制（管理员借出也要检查）
         user_borrowed_count = 0
@@ -1128,7 +1226,7 @@ class APIClient:
         expected_return = now + timedelta(days=days)
 
         device.borrower = borrower
-        device.cabinet_number = cabinet
+        # 借出时保持原柜号不变
         device.status = DeviceStatus.BORROWED
         device.borrow_time = now
         device.expected_return_date = expected_return
@@ -1163,7 +1261,7 @@ class APIClient:
         device = self.get_device(device_id)
         if not device:
             return False
-        
+
         borrower = device.borrower
         device.borrower = ''
         device.cabinet_number = 'A01'  # 默认柜号
@@ -1171,7 +1269,7 @@ class APIClient:
         device.status = self._get_default_status_for_device(device)
         device.borrow_time = None
         device.expected_return_date = None
-        
+
         # 创建记录
         record = Record(
             id=str(uuid.uuid4()),
@@ -1184,9 +1282,19 @@ class APIClient:
             borrower=borrower
         )
         self._records.append(record)
-        
+
         self.add_operation_log("强制归还", device.name)
         self._save_data()
+
+        # 发送通知
+        if borrower:
+            self.notify_return(
+                device_id=device_id,
+                device_name=device.name,
+                borrower=borrower,
+                operator=operator
+            )
+
         return True
 
     # ==================== 备注管理 ====================
@@ -1272,6 +1380,203 @@ class APIClient:
         else:
             return '其他'
     
+    # ==================== 通知功能 ====================
+
+    def get_notifications(self, user_id: str = None, user_name: str = None, unread_only: bool = False) -> List[Notification]:
+        """获取通知列表"""
+        notifications = []
+        for notification in self._notifications:
+            # 过滤条件
+            if user_id and notification.user_id != user_id:
+                continue
+            if user_name and notification.user_name != user_name:
+                continue
+            if unread_only and notification.is_read:
+                continue
+            notifications.append(notification)
+
+        # 按创建时间倒序排列
+        return sorted(notifications, key=lambda x: x.create_time, reverse=True)
+
+    def get_unread_count(self, user_id: str = None, user_name: str = None) -> int:
+        """获取未读通知数量"""
+        count = 0
+        for notification in self._notifications:
+            if notification.is_read:
+                continue
+            if user_id and notification.user_id != user_id:
+                continue
+            if user_name and notification.user_name != user_name:
+                continue
+            count += 1
+        return count
+
+    def add_notification(self, user_id: str, user_name: str, title: str, content: str,
+                         device_name: str = "", device_id: str = "",
+                         notification_type: str = "info") -> Notification:
+        """添加通知"""
+        notification = Notification(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            user_name=user_name,
+            title=title,
+            content=content,
+            device_name=device_name,
+            device_id=device_id,
+            is_read=False,
+            notification_type=notification_type
+        )
+        self._notifications.append(notification)
+        self._save_data()
+        return notification
+
+    def mark_notification_read(self, notification_id: str) -> bool:
+        """标记通知为已读"""
+        for notification in self._notifications:
+            if notification.id == notification_id:
+                notification.is_read = True
+                self._save_data()
+                return True
+        return False
+
+    def mark_all_read(self, user_id: str = None, user_name: str = None) -> int:
+        """标记用户所有通知为已读，返回标记数量"""
+        count = 0
+        for notification in self._notifications:
+            if notification.is_read:
+                continue
+            if user_id and notification.user_id != user_id:
+                continue
+            if user_name and notification.user_name != user_name:
+                continue
+            notification.is_read = True
+            count += 1
+        if count > 0:
+            self._save_data()
+        return count
+
+    def delete_notification(self, notification_id: str) -> bool:
+        """删除通知"""
+        for i, notification in enumerate(self._notifications):
+            if notification.id == notification_id:
+                del self._notifications[i]
+                self._save_data()
+                return True
+        return False
+
+    def notify_borrow(self, device_id: str, device_name: str, borrower: str, operator: str):
+        """通知用户设备已借出"""
+        # 查找用户ID
+        user_id = None
+        for user in self._users:
+            if user.borrower_name == borrower:
+                user_id = user.id
+                break
+
+        if user_id:
+            content = f"操作员 {operator} 已将设备「{device_name}」借出给您，请注意按时归还。"
+            self.add_notification(
+                user_id=user_id,
+                user_name=borrower,
+                title="设备借出通知",
+                content=content,
+                device_name=device_name,
+                device_id=device_id,
+                notification_type="success"
+            )
+
+    def notify_return(self, device_id: str, device_name: str, borrower: str, operator: str):
+        """通知用户设备已归还（强制归还）"""
+        # 查找用户ID
+        user_id = None
+        for user in self._users:
+            if user.borrower_name == borrower:
+                user_id = user.id
+                break
+
+        if user_id:
+            content = f"操作员 {operator} 已将您借用的设备「{device_name}」强制归还。"
+            self.add_notification(
+                user_id=user_id,
+                user_name=borrower,
+                title="设备强制归还通知",
+                content=content,
+                device_name=device_name,
+                device_id=device_id,
+                notification_type="warning"
+            )
+
+    def notify_transfer(self, device_id: str, device_name: str, original_borrower: str, new_borrower: str, operator: str):
+        """通知相关用户设备已转借"""
+        # 通知原借用人
+        original_user_id = None
+        for user in self._users:
+            if user.borrower_name == original_borrower:
+                original_user_id = user.id
+                break
+
+        if original_user_id:
+            content = f"您借用的设备「{device_name}」已被 {operator} 转借给 {new_borrower}。"
+            self.add_notification(
+                user_id=original_user_id,
+                user_name=original_borrower,
+                title="设备转借通知",
+                content=content,
+                device_name=device_name,
+                device_id=device_id,
+                notification_type="warning"
+            )
+
+        # 通知新借用人
+        new_user_id = None
+        for user in self._users:
+            if user.borrower_name == new_borrower:
+                new_user_id = user.id
+                break
+
+        if new_user_id:
+            content = f"操作员 {operator} 已将设备「{device_name}」转借给您。"
+            self.add_notification(
+                user_id=new_user_id,
+                user_name=new_borrower,
+                title="设备转借通知",
+                content=content,
+                device_name=device_name,
+                device_id=device_id,
+                notification_type="success"
+            )
+
+    def notify_status_change(self, device_id: str, device_name: str, borrower: str, new_status: str, operator: str):
+        """通知用户设备状态变更"""
+        # 查找用户ID
+        user_id = None
+        for user in self._users:
+            if user.borrower_name == borrower:
+                user_id = user.id
+                break
+
+        if user_id:
+            status_desc = {
+                "已损坏": "损坏",
+                "丢失": "丢失",
+                "已寄出": "寄出",
+                "维修中": "维修",
+                "报废": "报废"
+            }.get(new_status, new_status)
+
+            notification_type = "error" if new_status in ["已损坏", "丢失"] else "warning"
+            content = f"操作员 {operator} 将您借用的设备「{device_name}」状态更改为「{new_status}」。"
+
+            self.add_notification(
+                user_id=user_id,
+                user_name=borrower,
+                title=f"设备{status_desc}通知",
+                content=content,
+                device_name=device_name,
+                device_id=device_id,
+                notification_type=notification_type
+            )
+
     def reload_data(self):
         """重新加载数据（用于网页端刷新）"""
         self._load_data()

@@ -45,7 +45,7 @@
         {% if devices %}
         <div class="device-grid">
             {% for device in devices %}
-            <a href="{% if device.no_cabinet or device.is_circulating %}{{ url_for('device_detail_simple', device_id=device.id) }}{% else %}{{ url_for('device_detail', device_id=device.id) }}{% endif %}" class="device-card {% if device.status == '报废' %}scrapped{% endif %}">
+            <a href="{% if device.no_cabinet or device.is_circulating or device.is_sealed %}{{ url_for('device_detail_simple', device_id=device.id) }}{% else %}{{ url_for('device_detail', device_id=device.id) }}{% endif %}" class="device-card {% if device.status == '报废' %}scrapped{% endif %}">
                 <div class="card-header">
                     <span class="device-icon-large">
                         {% if device.type == '车机' %}🚗{% else %}📱{% endif %}
@@ -54,8 +54,10 @@
                     <span class="status-badge status-no-cabinet">无柜号</span>
                     {% elif device.is_circulating %}
                     <span class="status-badge status-circulating">流通</span>
+                    {% elif device.is_sealed %}
+                    <span class="status-badge status-sealed">封存</span>
                     {% else %}
-                    <span class="status-badge 
+                    <span class="status-badge
                         {% if device.status == '在库' %}status-available
                         {% elif device.status == '借出' %}status-borrowed
                         {% elif device.status == '已寄出' %}status-shipped
@@ -183,6 +185,9 @@ function renderDevicesWithPagination(devices, page) {
         } else if (device.is_circulating) {
             statusClass = 'status-circulating';
             statusText = '流通';
+        } else if (device.is_sealed) {
+            statusClass = 'status-sealed';
+            statusText = '封存';
         } else if (device.status === '在库') {
             statusClass = 'status-available';
         } else if (device.status === '已损坏') {
@@ -196,8 +201,8 @@ function renderDevicesWithPagination(devices, page) {
         const scrappedClass = device.is_scrapped ? 'scrapped' : '';
         const arrowText = device.is_scrapped ? '已报废' : '查看详情 ›';
         
-        // 无柜号或流通设备跳转到简单详情页
-        const isSimpleDetail = device.no_cabinet || device.is_circulating;
+        // 无柜号、流通或封存设备跳转到简单详情页
+        const isSimpleDetail = device.no_cabinet || device.is_circulating || device.is_sealed;
         const href = device.is_scrapped 
             ? 'javascript:showToast(\'设备已报废，请联系管理员\')' 
             : (isSimpleDetail 
@@ -247,6 +252,7 @@ function goToSearchPage(page) {
 .status-scrapped { background: #f5f5f5 !important; color: #999 !important; border: 1px solid #d9d9d9 !important; }
 .status-no-cabinet { background: #e6f7ff !important; color: #1890ff !important; border: 1px solid #91d5ff !important; }
 .status-circulating { background: #f6ffed !important; color: #52c41a !important; border: 1px solid #b7eb8f !important; }
+.status-sealed { background: #fff0f6 !important; color: #eb2f96 !important; border: 1px solid #ffadd2 !important; }
 .device-card.scrapped { opacity: 0.6; }
 .device-card.scrapped .device-name { text-decoration: line-through; }
 

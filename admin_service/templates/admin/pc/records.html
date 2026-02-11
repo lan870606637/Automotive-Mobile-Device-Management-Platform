@@ -108,6 +108,7 @@
                             <th>设备名称</th>
                             <th>设备类型</th>
                             <th>借用人</th>
+                            <th>操作人</th>
                             <th>操作时间</th>
                             <th>备注</th>
                         </tr>
@@ -119,6 +120,7 @@
                             <td>{{ record.device_name }}</td>
                             <td>{{ record.device_type }}</td>
                             <td>{{ record.user_name }}</td>
+                            <td>{{ record.operator }}</td>
                             <td>{{ record.time }}</td>
                             <td>{{ record.remarks or '-' }}</td>
                         </tr>
@@ -166,9 +168,9 @@
         // 渲染记录
         function renderRecords(recordList) {
             const tbody = document.getElementById('recordsTableBody');
-            
+
             if (recordList.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="empty-cell">暂无记录</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" class="empty-cell">暂无记录</td></tr>';
                 return;
             }
 
@@ -178,6 +180,7 @@
                     <td>${record.device_name}</td>
                     <td>${record.device_type}</td>
                     <td>${record.user_name}</td>
+                    <td>${record.operator || '-'}</td>
                     <td>${record.time}</td>
                     <td>${record.remarks || '-'}</td>
                 </tr>

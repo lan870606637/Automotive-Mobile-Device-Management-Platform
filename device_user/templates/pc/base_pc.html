@@ -67,14 +67,159 @@
 
         <!-- 主内容区 -->
         <main class="main-content">
+            <!-- 顶部栏 -->
+            <header class="pc-header">
+                <h1 class="page-title">{% block page_title %}{% endblock %}</h1>
+                <div class="header-actions">
+                    <button class="notification-btn" onclick="showNotifications()">
+                        <span class="notification-icon">🔔</span>
+                        <span id="notificationBadge" class="notification-badge" style="display: none;">0</span>
+                    </button>
+                </div>
+            </header>
             {% block content %}{% endblock %}
         </main>
+    </div>
+
+    <!-- 通知弹窗 -->
+    <div id="notificationModal" class="pc-modal">
+        <div class="pc-modal-content">
+            <div class="pc-modal-header">
+                <h3>🔔 通知</h3>
+                <button class="pc-modal-close" onclick="closeNotificationModal()">&times;</button>
+            </div>
+            <div class="pc-modal-body">
+                <div id="notificationList" class="notification-list">
+                    <!-- 动态加载通知 -->
+                </div>
+            </div>
+            <div class="pc-modal-footer">
+                <button class="btn btn-secondary" onclick="markAllRead()">全部已读</button>
+                <button class="btn btn-primary" onclick="closeNotificationModal()">关闭</button>
+            </div>
+        </div>
     </div>
 
     <!-- Toast提示 -->
     <div id="toast" class="pc-toast"></div>
 
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script>
+        // 通知相关功能
+        let unreadCount = 0;
+
+        // 加载未读通知数量
+        async function loadUnreadCount() {
+            try {
+                const response = await fetch('/api/notifications/unread-count');
+                const data = await response.json();
+                unreadCount = data.count || 0;
+
+                const badge = document.getElementById('notificationBadge');
+                if (badge) {
+                    if (unreadCount > 0) {
+                        badge.textContent = unreadCount > 99 ? '99+' : unreadCount;
+                        badge.style.display = 'flex';
+                    } else {
+                        badge.style.display = 'none';
+                    }
+                }
+            } catch (error) {
+                console.error('加载通知数量失败:', error);
+            }
+        }
+
+        // 显示通知弹窗
+        async function showNotifications() {
+            document.getElementById('notificationModal').classList.add('show');
+
+            try {
+                const response = await fetch('/api/notifications');
+                const data = await response.json();
+                const notifications = data.notifications || [];
+
+                const listEl = document.getElementById('notificationList');
+
+                if (notifications.length === 0) {
+                    listEl.innerHTML = '<div class="empty-notice">暂无通知</div>';
+                } else {
+                    listEl.innerHTML = notifications.map(n => `
+                        <div class="notification-item ${n.is_read ? 'read' : 'unread'}" data-id="${n.id}">
+                            <div class="notification-header">
+                                <span class="notification-title">${n.title}</span>
+                                <span class="notification-time">${formatTime(n.create_time)}</span>
+                            </div>
+                            <div class="notification-content">${n.content}</div>
+                            ${!n.is_read ? `<button class="mark-read-btn" onclick="markRead('${n.id}')">标为已读</button>` : ''}
+                        </div>
+                    `).join('');
+                }
+            } catch (error) {
+                document.getElementById('notificationList').innerHTML = '<div class="error-notice">加载失败</div>';
+            }
+        }
+
+        // 格式化时间
+        function formatTime(timeStr) {
+            const date = new Date(timeStr);
+            const now = new Date();
+            const diff = (now - date) / 1000;
+
+            if (diff < 60) return '刚刚';
+            if (diff < 3600) return Math.floor(diff / 60) + '分钟前';
+            if (diff < 86400) return Math.floor(diff / 3600) + '小时前';
+            if (diff < 604800) return Math.floor(diff / 86400) + '天前';
+
+            return date.toLocaleDateString('zh-CN');
+        }
+
+        // 标记单个通知为已读
+        async function markRead(notificationId) {
+            try {
+                const response = await fetch(`/api/notifications/${notificationId}/read`, {
+                    method: 'POST'
+                });
+                if (response.ok) {
+                    const item = document.querySelector(`.notification-item[data-id="${notificationId}"]`);
+                    if (item) {
+                        item.classList.remove('unread');
+                        item.classList.add('read');
+                        const btn = item.querySelector('.mark-read-btn');
+                        if (btn) btn.remove();
+                    }
+                    loadUnreadCount();
+                }
+            } catch (error) {
+                console.error('标记已读失败:', error);
+            }
+        }
+
+        // 标记所有通知为已读
+        async function markAllRead() {
+            try {
+                const response = await fetch('/api/notifications/read-all', {
+                    method: 'POST'
+                });
+                if (response.ok) {
+                    showNotifications();
+                    loadUnreadCount();
+                }
+            } catch (error) {
+                console.error('标记全部已读失败:', error);
+            }
+        }
+
+        // 关闭通知弹窗
+        function closeNotificationModal() {
+            document.getElementById('notificationModal').classList.remove('show');
+        }
+
+        // 页面加载时获取未读数量
+        document.addEventListener('DOMContentLoaded', loadUnreadCount);
+
+        // 每30秒刷新一次未读数量
+        setInterval(loadUnreadCount, 30000);
+    </script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>

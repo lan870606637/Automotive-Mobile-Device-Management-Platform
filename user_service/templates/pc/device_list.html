@@ -27,7 +27,7 @@
 <div class="search-bar">
     <div class="search-input-wrap">
         <span class="search-icon">🔍</span>
-        <input type="text" id="searchInput" class="search-input" placeholder="搜索设备名、型号..." onkeyup="handleSearch(event)">
+        <input type="text" id="searchInput" class="search-input" placeholder="搜索：名称、型号、JIRA、项目属性、系统版本、借用人..." onkeyup="handleSearch(event)">
         <button class="clear-btn" id="clearSearchBtn" onclick="clearSearch()" style="display:none; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #999;">✕</button>
     </div>
 </div>
@@ -49,16 +49,39 @@
         <table class="data-table device-list-table" id="deviceTable">
             <thead>
                 <tr>
+                    <th style="width: 50px;">序号</th>
+                    <th>型号</th>
                     <th>设备名称</th>
+                    <th>JIRA地址</th>
+                    {% if device_type == 'car' or device_type == 'instrument' %}
+                    <th>项目属性</th>
+                    <th>连接方式</th>
+                    <th>系统版本</th>
+                    <th>系统平台</th>
+                    <th>产品名称</th>
+                    <th>屏幕方向</th>
+                    <th>分辨率</th>
+                    {% elif device_type == 'phone' %}
+                    <th>系统版本</th>
+                    <th>IMEI</th>
+                    <th>SN码</th>
+                    <th>运营商</th>
+                    {% elif device_type == 'simcard' %}
+                    <th>号码</th>
+                    <th>运营商</th>
+                    {% else %}
                     <th>类型</th>
-                    <th>状态</th>
                     <th>备注</th>
-                    <th>操作</th>
+                    {% endif %}
+                    <th>状态</th>
+                    <th style="width: 90px;">操作</th>
                 </tr>
             </thead>
             <tbody>
                 {% for device in devices %}
                 <tr {% if device.status.value == '报废' %}class="disabled"{% endif %}>
+                    <td>{{ loop.index }}</td>
+                    <td>{{ device.model or '-' }}</td>
                     <td>
                         <span class="device-icon">
                             {% if device.device_type.value == '车机' %}🚗
@@ -70,17 +93,45 @@
                         {% if device.status.value == '报废' %}
                         <span class="device-name">{{ device.name }}</span>
                         {% else %}
-                        <a href="{% if device.no_cabinet or device.is_circulating %}{{ url_for('pc_device_detail_simple', device_id=device.id, device_type=device.device_type.value) }}{% else %}{{ url_for('pc_device_detail', device_id=device.id, device_type=device.device_type.value) }}{% endif %}" class="device-name" style="color: #1890ff; font-weight: 500;">{{ device.name }}</a>
+                        <a href="{% if device.no_cabinet or device.is_circulating or device.is_sealed %}{{ url_for('pc_device_detail_simple', device_id=device.id, device_type=device.device_type.value) }}{% else %}{{ url_for('pc_device_detail', device_id=device.id, device_type=device.device_type.value) }}{% endif %}" class="device-name" style="color: #1890ff; font-weight: 500;">{{ device.name }}</a>
                         {% endif %}
                     </td>
+                    <td>
+                        {% if device.jira_address %}
+                        <a href="http://jira.carbit.lo/browse/{{ device.jira_address }}" target="_blank" style="color: #1890ff; text-decoration: none;">{{ device.jira_address }}</a>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    {% if device_type == 'car' or device_type == 'instrument' %}
+                    <td>{{ device.project_attribute or '-' }}</td>
+                    <td style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ device.connection_method or '' }}">{{ device.connection_method or '-' }}</td>
+                    <td>{{ device.os_version or '-' }}</td>
+                    <td>{{ device.os_platform or '-' }}</td>
+                    <td>{{ device.product_name or '-' }}</td>
+                    <td>{{ device.screen_orientation or '-' }}</td>
+                    <td>{{ device.screen_resolution or '-' }}</td>
+                    {% elif device_type == 'phone' %}
+                    <td>{{ device.system_version or '-' }}</td>
+                    <td style="font-size: 12px;" title="{{ device.imei or '' }}">{{ device.imei[:15] + '...' if device.imei and device.imei|length > 15 else device.imei or '-' }}</td>
+                    <td style="font-size: 12px;" title="{{ device.sn or '' }}">{{ device.sn[:15] + '...' if device.sn and device.sn|length > 15 else device.sn or '-' }}</td>
+                    <td>{{ device.carrier or '-' }}</td>
+                    {% elif device_type == 'simcard' %}
+                    <td>{{ device.model or '-' }}</td>
+                    <td>{{ device.carrier or '-' }}</td>
+                    {% else %}
                     <td class="device-type">{{ device.device_type.value }}</td>
+                    <td style="color: #8c8c8c; font-size: 13px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ device.remark or '' }}">{{ device.remark or '-' }}</td>
+                    {% endif %}
                     <td>
                         {% if device.no_cabinet %}
                         <span class="status-tag status-no-cabinet">无柜号</span>
                         {% elif device.is_circulating %}
                         <span class="status-tag status-circulating">流通</span>
+                        {% elif device.is_sealed %}
+                        <span class="status-tag status-sealed">封存</span>
                         {% else %}
-                        <span class="status-tag 
+                        <span class="status-tag
                             {% if device.status.value == '在库' %}status-available
                             {% elif device.status.value == '保管中' %}status-custody
                             {% elif device.status.value == '借出' %}status-borrowed
@@ -93,12 +144,11 @@
                         </span>
                         {% endif %}
                     </td>
-                    <td style="color: #8c8c8c; font-size: 13px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ device.remark or '-' }}</td>
                     <td>
                         {% if device.status.value == '报废' %}
                         <button class="btn btn-default btn-sm" disabled>已报废</button>
                         {% else %}
-                        <a href="{% if device.no_cabinet or device.is_circulating %}{{ url_for('pc_device_detail_simple', device_id=device.id, device_type=device.device_type.value) }}{% else %}{{ url_for('pc_device_detail', device_id=device.id, device_type=device.device_type.value) }}{% endif %}" class="btn btn-primary btn-sm">查看详情</a>
+                        <a href="{% if device.no_cabinet or device.is_circulating or device.is_sealed %}{{ url_for('pc_device_detail_simple', device_id=device.id, device_type=device.device_type.value) }}{% else %}{{ url_for('pc_device_detail', device_id=device.id, device_type=device.device_type.value) }}{% endif %}" class="btn btn-primary btn-sm">查看详情</a>
                         {% endif %}
                     </td>
                 </tr>
@@ -204,23 +254,25 @@ function renderSearchResults(devices) {
                 <span class="device-icon">${getDeviceIcon(device.device_type)}</span>
                 ${device.status === '报废'
                     ? `<span class="device-name">${escapeHtml(device.name)}</span>`
-                    : `<a href="${device.no_cabinet || device.is_circulating ? '/pc/device/' + device.id + '/simple?device_type=' + encodeURIComponent(device.device_type) : '/pc/device/' + device.id + '?device_type=' + encodeURIComponent(device.device_type)}" class="device-name" style="color: #1890ff; font-weight: 500;">${escapeHtml(device.name)}</a>`
+                    : `<a href="${device.no_cabinet || device.is_circulating || device.is_sealed ? '/pc/device/' + device.id + '/simple?device_type=' + encodeURIComponent(device.device_type) : '/pc/device/' + device.id + '?device_type=' + encodeURIComponent(device.device_type)}" class="device-name" style="color: #1890ff; font-weight: 500;">${escapeHtml(device.name)}</a>`
                 }
             </td>
             <td class="device-type">${device.device_type}</td>
             <td>
-                ${device.no_cabinet 
+                ${device.no_cabinet
                     ? '<span class="status-tag status-no-cabinet">无柜号</span>'
                     : device.is_circulating
                         ? '<span class="status-tag status-circulating">流通</span>'
-                        : `<span class="status-tag ${getStatusClass(device.status)}">${device.status}</span>`
+                        : device.is_sealed
+                            ? '<span class="status-tag status-sealed">封存</span>'
+                            : `<span class="status-tag ${getStatusClass(device.status)}">${device.status}</span>`
                 }
             </td>
             <td style="color: #8c8c8c; font-size: 13px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${device.remark ? escapeHtml(device.remark) : '-'}</td>
             <td>
                 ${device.status === '报废'
                     ? '<button class="btn btn-default btn-sm" disabled>已报废</button>'
-                    : `<a href="${device.no_cabinet || device.is_circulating ? '/pc/device/' + device.id + '/simple?device_type=' + encodeURIComponent(device.device_type) : '/pc/device/' + device.id + '?device_type=' + encodeURIComponent(device.device_type)}" class="btn btn-primary btn-sm">查看详情</a>`
+                    : `<a href="${device.no_cabinet || device.is_circulating || device.is_sealed ? '/pc/device/' + device.id + '/simple?device_type=' + encodeURIComponent(device.device_type) : '/pc/device/' + device.id + '?device_type=' + encodeURIComponent(device.device_type)}" class="btn btn-primary btn-sm">查看详情</a>`
                 }
             </td>
         </tr>
@@ -239,7 +291,8 @@ function getStatusClass(status) {
         '已寄出': 'status-shipped',
         '已损坏': 'status-damaged',
         '丢失': 'status-lost',
-        '报废': 'status-scrapped'
+        '报废': 'status-scrapped',
+        '封存': 'status-sealed'
     };
     return classMap[status] || '';
 }

@@ -8,7 +8,7 @@ import pandas as pd
 from datetime import datetime
 from typing import List, Optional
 
-from .models import Device, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, OperationLog, Admin
+from .models import Device, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, OperationLog, Admin, Notification
 from .models import DeviceStatus, DeviceType, OperationType, EntrySource
 
 # Excel文件路径
@@ -24,11 +24,21 @@ USER_FILE = os.path.join(EXCEL_DIR, '用户表.xlsx')
 OPERATION_LOG_FILE = os.path.join(EXCEL_DIR, '操作日志表.xlsx')
 VIEW_RECORD_FILE = os.path.join(EXCEL_DIR, '查看记录表.xlsx')
 ADMIN_FILE = os.path.join(EXCEL_DIR, '管理员表.xlsx')
+NOTIFICATION_FILE = os.path.join(EXCEL_DIR, '通知表.xlsx')
 
 
 class ExcelDataStore:
     """Excel数据存储类"""
-    
+
+    @staticmethod
+    def _safe_print(message):
+        """安全打印，处理Windows控制台编码问题"""
+        try:
+            print(message)
+        except OSError:
+            # 如果打印失败（如编码问题），忽略错误
+            pass
+
     @staticmethod
     def load_car_machines() -> List[CarMachine]:
         """从Excel加载车机数据"""
@@ -47,7 +57,13 @@ class ExcelDataStore:
                     if pd.isna(val) or str(val).lower() == 'nan':
                         return ''
                     return str(val)
-                
+
+                create_time = None
+                if pd.notna(row.get('创建时间')):
+                    try:
+                        create_time = pd.to_datetime(row['创建时间'])
+                    except:
+                        pass
                 device = CarMachine(
                     id=str(row['设备ID']),
                     name=str(row['设备名']),
@@ -55,7 +71,9 @@ class ExcelDataStore:
                     cabinet_number=safe_str(row.get('柜号', '')),
                     status=DeviceStatus(row['状态']) if pd.notna(row.get('状态')) else DeviceStatus.IN_STOCK,
                     remark=safe_str(row.get('备注', '')),
+                    jira_address=safe_str(row.get('JIRA地址', '')),
                     is_deleted=str(row.get('是否删除', '否')) == '是',
+                    create_time=create_time,
                 )
                 
                 # 借用信息
@@ -94,6 +112,26 @@ class ExcelDataStore:
                         pass
                 if pd.notna(row.get('上一个借用人')):
                     device.previous_borrower = str(row['上一个借用人'])
+                # 车机特有信息
+                if pd.notna(row.get('软件版本')):
+                    device.software_version = safe_str(row['软件版本'])
+                if pd.notna(row.get('芯片型号')):
+                    device.hardware_version = safe_str(row['芯片型号'])
+                # 车机和仪表共有字段（JIRA地址后）
+                if pd.notna(row.get('项目属性')):
+                    device.project_attribute = safe_str(row['项目属性'])
+                if pd.notna(row.get('连接方式')):
+                    device.connection_method = safe_str(row['连接方式'])
+                if pd.notna(row.get('系统版本')):
+                    device.os_version = safe_str(row['系统版本'])
+                if pd.notna(row.get('系统平台')):
+                    device.os_platform = safe_str(row['系统平台'])
+                if pd.notna(row.get('产品名称')):
+                    device.product_name = safe_str(row['产品名称'])
+                if pd.notna(row.get('屏幕方向')):
+                    device.screen_orientation = safe_str(row['屏幕方向'])
+                if pd.notna(row.get('车机分辨率')):
+                    device.screen_resolution = safe_str(row['车机分辨率'])
                 # 寄出信息
                 if pd.notna(row.get('寄出时间')):
                     try:
@@ -120,7 +158,7 @@ class ExcelDataStore:
                 if not device.is_deleted:
                     devices.append(device)
         except Exception as e:
-            print(f"加载车机数据失败: {e}")
+            ExcelDataStore._safe_print(f"加载车机数据失败: {e}")
         
         return devices
 
@@ -142,6 +180,12 @@ class ExcelDataStore:
                         return ''
                     return str(val)
                 
+                create_time = None
+                if pd.notna(row.get('创建时间')):
+                    try:
+                        create_time = pd.to_datetime(row['创建时间'])
+                    except:
+                        pass
                 device = Instrument(
                     id=str(row['设备ID']),
                     name=str(row['设备名']),
@@ -149,7 +193,9 @@ class ExcelDataStore:
                     cabinet_number=safe_str(row.get('柜号', '')),
                     status=DeviceStatus(row['状态']) if pd.notna(row.get('状态')) else DeviceStatus.IN_STOCK,
                     remark=safe_str(row.get('备注', '')),
+                    jira_address=safe_str(row.get('JIRA地址', '')),
                     is_deleted=str(row.get('是否删除', '否')) == '是',
+                    create_time=create_time,
                 )
                 
                 if pd.notna(row.get('借用人')):
@@ -186,6 +232,22 @@ class ExcelDataStore:
                         pass
                 if pd.notna(row.get('上一个借用人')):
                     device.previous_borrower = str(row['上一个借用人'])
+                # 仪表特有字段（与车机一致）
+                if pd.notna(row.get('软件版本')):
+                    device.software_version = safe_str(row['软件版本'])
+                if pd.notna(row.get('芯片型号')):
+                    device.hardware_version = safe_str(row['芯片型号'])
+                # 车机和仪表共有字段（JIRA地址后）
+                if pd.notna(row.get('项目属性')):
+                    device.project_attribute = safe_str(row['项目属性'])
+                if pd.notna(row.get('连接方式')):
+                    device.connection_method = safe_str(row['连接方式'])
+                if pd.notna(row.get('系统版本')):
+                    device.os_version = safe_str(row['系统版本'])
+                if pd.notna(row.get('系统平台')):
+                    device.os_platform = safe_str(row['系统平台'])
+                if pd.notna(row.get('产品名称')):
+                    device.product_name = safe_str(row['产品名称'])
                 if pd.notna(row.get('寄出时间')):
                     try:
                         device.ship_time = pd.to_datetime(row['寄出时间'])
@@ -211,7 +273,7 @@ class ExcelDataStore:
                 if not device.is_deleted:
                     devices.append(device)
         except Exception as e:
-            print(f"加载仪表数据失败: {e}")
+            ExcelDataStore._safe_print(f"加载仪表数据失败: {e}")
         
         return devices
     
@@ -238,6 +300,12 @@ class ExcelDataStore:
                 status_value = row['状态'] if pd.notna(row.get('状态')) else None
                 if status_value == '在库':
                     status_value = '保管中'
+                create_time = None
+                if pd.notna(row.get('创建时间')):
+                    try:
+                        create_time = pd.to_datetime(row['创建时间'])
+                    except:
+                        pass
                 device = Phone(
                     id=str(row['设备ID']),
                     name=str(row['设备名']),
@@ -245,7 +313,9 @@ class ExcelDataStore:
                     cabinet_number=safe_str(row.get('保管人', '')),
                     status=DeviceStatus(status_value) if status_value else DeviceStatus.IN_CUSTODY,
                     remark=safe_str(row.get('备注', '')),
+                    jira_address=safe_str(row.get('JIRA地址', '')),
                     is_deleted=str(row.get('是否删除', '否')) == '是',
+                    create_time=create_time,
                 )
                 
                 # 借用信息
@@ -284,6 +354,15 @@ class ExcelDataStore:
                         pass
                 if pd.notna(row.get('上一个借用人')):
                     device.previous_borrower = str(row['上一个借用人'])
+                # 手机特有信息
+                if pd.notna(row.get('SN码')):
+                    device.sn = safe_str(row['SN码'])
+                if pd.notna(row.get('系统版本')):
+                    device.system_version = safe_str(row['系统版本'])
+                if pd.notna(row.get('IMEI')):
+                    device.imei = safe_str(row['IMEI'])
+                if pd.notna(row.get('运营商')):
+                    device.carrier = safe_str(row['运营商'])
                 # 寄出信息
                 if pd.notna(row.get('寄出时间')):
                     try:
@@ -310,7 +389,7 @@ class ExcelDataStore:
                 if not device.is_deleted:
                     devices.append(device)
         except Exception as e:
-            print(f"加载手机数据失败: {e}")
+            ExcelDataStore._safe_print(f"加载手机数据失败: {e}")
         
         return devices
 
@@ -336,6 +415,12 @@ class ExcelDataStore:
                 status_value = row['状态'] if pd.notna(row.get('状态')) else None
                 if status_value == '在库':
                     status_value = '保管中'
+                create_time = None
+                if pd.notna(row.get('创建时间')):
+                    try:
+                        create_time = pd.to_datetime(row['创建时间'])
+                    except:
+                        pass
                 device = SimCard(
                     id=str(row['设备ID']),
                     name=str(row['设备名']),
@@ -343,7 +428,9 @@ class ExcelDataStore:
                     cabinet_number=safe_str(row.get('保管人', '')),
                     status=DeviceStatus(status_value) if status_value else DeviceStatus.IN_CUSTODY,
                     remark=safe_str(row.get('备注', '')),
+                    jira_address=safe_str(row.get('JIRA地址', '')),
                     is_deleted=str(row.get('是否删除', '否')) == '是',
+                    create_time=create_time,
                 )
                 
                 if pd.notna(row.get('借用人')):
@@ -380,6 +467,22 @@ class ExcelDataStore:
                         pass
                 if pd.notna(row.get('上一个借用人')):
                     device.previous_borrower = str(row['上一个借用人'])
+                # 仪表特有字段（与车机一致）
+                if pd.notna(row.get('软件版本')):
+                    device.software_version = safe_str(row['软件版本'])
+                if pd.notna(row.get('芯片型号')):
+                    device.hardware_version = safe_str(row['芯片型号'])
+                # 车机和仪表共有字段（JIRA地址后）
+                if pd.notna(row.get('项目属性')):
+                    device.project_attribute = safe_str(row['项目属性'])
+                if pd.notna(row.get('连接方式')):
+                    device.connection_method = safe_str(row['连接方式'])
+                if pd.notna(row.get('系统版本')):
+                    device.os_version = safe_str(row['系统版本'])
+                if pd.notna(row.get('系统平台')):
+                    device.os_platform = safe_str(row['系统平台'])
+                if pd.notna(row.get('产品名称')):
+                    device.product_name = safe_str(row['产品名称'])
                 if pd.notna(row.get('寄出时间')):
                     try:
                         device.ship_time = pd.to_datetime(row['寄出时间'])
@@ -405,7 +508,7 @@ class ExcelDataStore:
                 if not device.is_deleted:
                     devices.append(device)
         except Exception as e:
-            print(f"加载手机卡数据失败: {e}")
+            ExcelDataStore._safe_print(f"加载手机卡数据失败: {e}")
         
         return devices
 
@@ -431,6 +534,12 @@ class ExcelDataStore:
                 status_value = row['状态'] if pd.notna(row.get('状态')) else None
                 if status_value == '在库':
                     status_value = '保管中'
+                create_time = None
+                if pd.notna(row.get('创建时间')):
+                    try:
+                        create_time = pd.to_datetime(row['创建时间'])
+                    except:
+                        pass
                 device = OtherDevice(
                     id=str(row['设备ID']),
                     name=str(row['设备名']),
@@ -438,7 +547,9 @@ class ExcelDataStore:
                     cabinet_number=safe_str(row.get('保管人', '')),
                     status=DeviceStatus(status_value) if status_value else DeviceStatus.IN_CUSTODY,
                     remark=safe_str(row.get('备注', '')),
+                    jira_address=safe_str(row.get('JIRA地址', '')),
                     is_deleted=str(row.get('是否删除', '否')) == '是',
+                    create_time=create_time,
                 )
                 
                 if pd.notna(row.get('借用人')):
@@ -475,6 +586,22 @@ class ExcelDataStore:
                         pass
                 if pd.notna(row.get('上一个借用人')):
                     device.previous_borrower = str(row['上一个借用人'])
+                # 仪表特有字段（与车机一致）
+                if pd.notna(row.get('软件版本')):
+                    device.software_version = safe_str(row['软件版本'])
+                if pd.notna(row.get('芯片型号')):
+                    device.hardware_version = safe_str(row['芯片型号'])
+                # 车机和仪表共有字段（JIRA地址后）
+                if pd.notna(row.get('项目属性')):
+                    device.project_attribute = safe_str(row['项目属性'])
+                if pd.notna(row.get('连接方式')):
+                    device.connection_method = safe_str(row['连接方式'])
+                if pd.notna(row.get('系统版本')):
+                    device.os_version = safe_str(row['系统版本'])
+                if pd.notna(row.get('系统平台')):
+                    device.os_platform = safe_str(row['系统平台'])
+                if pd.notna(row.get('产品名称')):
+                    device.product_name = safe_str(row['产品名称'])
                 if pd.notna(row.get('寄出时间')):
                     try:
                         device.ship_time = pd.to_datetime(row['寄出时间'])
@@ -500,7 +627,7 @@ class ExcelDataStore:
                 if not device.is_deleted:
                     devices.append(device)
         except Exception as e:
-            print(f"加载其它设备数据失败: {e}")
+            ExcelDataStore._safe_print(f"加载其它设备数据失败: {e}")
         
         return devices
     
@@ -516,6 +643,8 @@ class ExcelDataStore:
                 '柜号': device.cabinet_number,
                 '状态': device.status.value,
                 '备注': device.remark,
+                'JIRA地址': device.jira_address,
+                '创建时间': device.create_time.strftime('%Y-%m-%d %H:%M:%S') if device.create_time else '',
                 '借用人': device.borrower,
                 '手机号': device.phone,
                 '借用时间': device.borrow_time.strftime('%Y-%m-%d %H:%M') if device.borrow_time else '',
@@ -528,6 +657,15 @@ class ExcelDataStore:
                 '损坏原因': device.damage_reason,
                 '损坏时间': device.damage_time.strftime('%Y-%m-%d %H:%M') if device.damage_time else '',
                 '上一个借用人': device.previous_borrower,
+                '软件版本': device.software_version,
+                '芯片型号': device.hardware_version,
+                '项目属性': device.project_attribute,
+                '连接方式': device.connection_method,
+                '系统版本': device.os_version,
+                '系统平台': device.os_platform,
+                '产品名称': device.product_name,
+                '屏幕方向': device.screen_orientation,
+                '车机分辨率': device.screen_resolution,
                 '寄出时间': device.ship_time.strftime('%Y-%m-%d %H:%M') if device.ship_time else '',
                 '寄出备注': device.ship_remark,
                 '寄出人': device.ship_by,
@@ -551,6 +689,8 @@ class ExcelDataStore:
                 '柜号': device.cabinet_number,
                 '状态': device.status.value,
                 '备注': device.remark,
+                'JIRA地址': device.jira_address,
+                '创建时间': device.create_time.strftime('%Y-%m-%d %H:%M:%S') if device.create_time else '',
                 '借用人': device.borrower,
                 '手机号': device.phone,
                 '借用时间': device.borrow_time.strftime('%Y-%m-%d %H:%M') if device.borrow_time else '',
@@ -563,6 +703,15 @@ class ExcelDataStore:
                 '损坏原因': device.damage_reason,
                 '损坏时间': device.damage_time.strftime('%Y-%m-%d %H:%M') if device.damage_time else '',
                 '上一个借用人': device.previous_borrower,
+                '软件版本': device.software_version,
+                '芯片型号': device.hardware_version,
+                '项目属性': device.project_attribute,
+                '连接方式': device.connection_method,
+                '系统版本': device.os_version,
+                '系统平台': device.os_platform,
+                '产品名称': device.product_name,
+                '屏幕方向': device.screen_orientation,
+                '车机分辨率': device.screen_resolution,
                 '寄出时间': device.ship_time.strftime('%Y-%m-%d %H:%M') if device.ship_time else '',
                 '寄出备注': device.ship_remark,
                 '寄出人': device.ship_by,
@@ -586,6 +735,8 @@ class ExcelDataStore:
                 '保管人': device.cabinet_number,
                 '状态': device.status.value,
                 '备注': device.remark,
+                'JIRA地址': device.jira_address,
+                '创建时间': device.create_time.strftime('%Y-%m-%d %H:%M:%S') if device.create_time else '',
                 '借用人': device.borrower,
                 '手机号': device.phone,
                 '借用时间': device.borrow_time.strftime('%Y-%m-%d %H:%M') if device.borrow_time else '',
@@ -598,6 +749,10 @@ class ExcelDataStore:
                 '损坏原因': device.damage_reason,
                 '损坏时间': device.damage_time.strftime('%Y-%m-%d %H:%M') if device.damage_time else '',
                 '上一个借用人': device.previous_borrower,
+                'SN码': device.sn,
+                '系统版本': device.system_version,
+                'IMEI': device.imei,
+                '运营商': device.carrier,
                 '寄出时间': device.ship_time.strftime('%Y-%m-%d %H:%M') if device.ship_time else '',
                 '寄出备注': device.ship_remark,
                 '寄出人': device.ship_by,
@@ -621,6 +776,8 @@ class ExcelDataStore:
                 '保管人': device.cabinet_number,
                 '状态': device.status.value,
                 '备注': device.remark,
+                'JIRA地址': device.jira_address,
+                '创建时间': device.create_time.strftime('%Y-%m-%d %H:%M:%S') if device.create_time else '',
                 '借用人': device.borrower,
                 '手机号': device.phone,
                 '借用时间': device.borrow_time.strftime('%Y-%m-%d %H:%M') if device.borrow_time else '',
@@ -633,6 +790,8 @@ class ExcelDataStore:
                 '损坏原因': device.damage_reason,
                 '损坏时间': device.damage_time.strftime('%Y-%m-%d %H:%M') if device.damage_time else '',
                 '上一个借用人': device.previous_borrower,
+                '软件版本': device.software_version,
+                '芯片型号': device.hardware_version,
                 '寄出时间': device.ship_time.strftime('%Y-%m-%d %H:%M') if device.ship_time else '',
                 '寄出备注': device.ship_remark,
                 '寄出人': device.ship_by,
@@ -656,6 +815,8 @@ class ExcelDataStore:
                 '保管人': device.cabinet_number,
                 '状态': device.status.value,
                 '备注': device.remark,
+                'JIRA地址': device.jira_address,
+                '创建时间': device.create_time.strftime('%Y-%m-%d %H:%M:%S') if device.create_time else '',
                 '借用人': device.borrower,
                 '手机号': device.phone,
                 '借用时间': device.borrow_time.strftime('%Y-%m-%d %H:%M') if device.borrow_time else '',
@@ -668,6 +829,8 @@ class ExcelDataStore:
                 '损坏原因': device.damage_reason,
                 '损坏时间': device.damage_time.strftime('%Y-%m-%d %H:%M') if device.damage_time else '',
                 '上一个借用人': device.previous_borrower,
+                '软件版本': device.software_version,
+                '芯片型号': device.hardware_version,
                 '寄出时间': device.ship_time.strftime('%Y-%m-%d %H:%M') if device.ship_time else '',
                 '寄出备注': device.ship_remark,
                 '寄出人': device.ship_by,
@@ -715,10 +878,10 @@ class ExcelDataStore:
                     )
                     records.append(record)
                 except Exception as e:
-                    print(f"解析记录失败: {e}")
+                    ExcelDataStore._safe_print(f"解析记录失败: {e}")
                     continue
         except Exception as e:
-            print(f"加载记录失败: {e}")
+            ExcelDataStore._safe_print(f"加载记录失败: {e}")
         
         return records
     
@@ -769,10 +932,10 @@ class ExcelDataStore:
                     remark.is_inappropriate = str(row.get('是否不当', '否')) == '是'
                     remarks.append(remark)
                 except Exception as e:
-                    print(f"解析备注失败: {e}")
+                    ExcelDataStore._safe_print(f"解析备注失败: {e}")
                     continue
         except Exception as e:
-            print(f"加载备注失败: {e}")
+            ExcelDataStore._safe_print(f"加载备注失败: {e}")
         
         return remarks
     
@@ -825,10 +988,10 @@ class ExcelDataStore:
                     )
                     users.append(user)
                 except Exception as e:
-                    print(f"解析用户失败: {e}")
+                    ExcelDataStore._safe_print(f"解析用户失败: {e}")
                     continue
         except Exception as e:
-            print(f"加载用户失败: {e}")
+            ExcelDataStore._safe_print(f"加载用户失败: {e}")
         
         return users
     
@@ -875,10 +1038,10 @@ class ExcelDataStore:
                     )
                     logs.append(log)
                 except Exception as e:
-                    print(f"解析操作日志失败: {e}")
+                    ExcelDataStore._safe_print(f"解析操作日志失败: {e}")
                     continue
         except Exception as e:
-            print(f"加载操作日志失败: {e}")
+            ExcelDataStore._safe_print(f"加载操作日志失败: {e}")
         
         return logs
     
@@ -922,10 +1085,10 @@ class ExcelDataStore:
                     )
                     records.append(record)
                 except Exception as e:
-                    print(f"解析查看记录失败: {e}")
+                    ExcelDataStore._safe_print(f"解析查看记录失败: {e}")
                     continue
         except Exception as e:
-            print(f"加载查看记录失败: {e}")
+            ExcelDataStore._safe_print(f"加载查看记录失败: {e}")
         
         return records
     
@@ -971,12 +1134,72 @@ class ExcelDataStore:
                     )
                     admins.append(admin)
                 except Exception as e:
-                    print(f"解析管理员失败: {e}")
+                    ExcelDataStore._safe_print(f"解析管理员失败: {e}")
                     continue
         except Exception as e:
-            print(f"加载管理员失败: {e}")
-        
+            ExcelDataStore._safe_print(f"加载管理员失败: {e}")
+
         return admins
+
+    @staticmethod
+    def load_notifications() -> List[Notification]:
+        """从Excel加载通知列表"""
+        notifications = []
+        if not os.path.exists(NOTIFICATION_FILE):
+            return notifications
+
+        try:
+            df = pd.read_excel(NOTIFICATION_FILE)
+            for _, row in df.iterrows():
+                if pd.isna(row.get('通知ID')):
+                    continue
+
+                try:
+                    create_time = None
+                    if pd.notna(row.get('创建时间')):
+                        create_time = pd.to_datetime(row['创建时间'])
+
+                    notification = Notification(
+                        id=str(row['通知ID']),
+                        user_id=str(row['用户ID']),
+                        user_name=str(row.get('用户名', '')),
+                        title=str(row.get('标题', '')),
+                        content=str(row.get('内容', '')),
+                        device_name=str(row.get('设备名', '')),
+                        device_id=str(row.get('设备ID', '')),
+                        is_read=str(row.get('是否已读', '否')) == '是',
+                        create_time=create_time,
+                        notification_type=str(row.get('通知类型', 'info'))
+                    )
+                    notifications.append(notification)
+                except Exception as e:
+                    ExcelDataStore._safe_print(f"解析通知失败: {e}")
+                    continue
+        except Exception as e:
+            ExcelDataStore._safe_print(f"加载通知失败: {e}")
+
+        return notifications
+
+    @staticmethod
+    def save_notifications(notifications: List[Notification]):
+        """保存通知列表到Excel"""
+        data = []
+        for notification in notifications:
+            data.append({
+                '通知ID': notification.id,
+                '用户ID': notification.user_id,
+                '用户名': notification.user_name,
+                '标题': notification.title,
+                '内容': notification.content,
+                '设备名': notification.device_name,
+                '设备ID': notification.device_id,
+                '是否已读': '是' if notification.is_read else '否',
+                '创建时间': notification.create_time.strftime('%Y-%m-%d %H:%M:%S'),
+                '通知类型': notification.notification_type,
+            })
+
+        df = pd.DataFrame(data)
+        df.to_excel(NOTIFICATION_FILE, index=False)
     
     @staticmethod
     def save_admins(admins: List[Admin]):

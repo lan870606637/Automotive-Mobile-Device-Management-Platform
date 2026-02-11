@@ -19,6 +19,7 @@ class DeviceStatus(Enum):
     SCRAPPED = "报废"
     CIRCULATING = "流通"
     NO_CABINET = "无柜号"
+    SEALED = "封存"
 
 
 class DeviceType(Enum):
@@ -47,6 +48,7 @@ class OperationType(Enum):
     RENEW = "借用续期"
     SHIP = "寄出"
     STATUS_CHANGE = "状态变更"
+    BATCH_IMPORT = "批量导入"
 
 
 class EntrySource(Enum):
@@ -65,7 +67,9 @@ class Device:
     cabinet_number: str
     status: DeviceStatus = DeviceStatus.IN_STOCK
     remark: str = ""
+    jira_address: str = ""  # JIRA地址，如：NAV-2890
     is_deleted: bool = False
+    create_time: Optional[datetime] = None  # 创建时间
     
     # 借用信息
     borrower: str = ""
@@ -95,6 +99,30 @@ class Device:
     damage_time: Optional[datetime] = None
     previous_borrower: str = ""  # 上一个借用人
     
+    # 手机特有信息
+    sn: str = ""  # SN码（设备序列号）
+    system_version: str = ""  # 系统版本
+    imei: str = ""  # IMEI号
+    carrier: str = ""  # 运营商（移动/联通/电信）
+
+    # 车机特有信息
+    software_version: str = ""  # 软件版本
+    hardware_version: str = ""  # 芯片型号
+
+    # 车机和仪表特有信息（JIRA地址后的字段）
+    project_attribute: str = ""  # 项目属性
+    connection_method: str = ""  # 连接方式
+    os_version: str = ""  # 系统版本
+    os_platform: str = ""  # 系统平台
+    product_name: str = ""  # 产品名称
+    screen_orientation: str = ""  # 屏幕方向
+    screen_resolution: str = ""  # 车机分辨率
+    
+    def __post_init__(self):
+        """初始化后，如果没有设置创建时间，则设置为当前时间"""
+        if self.create_time is None:
+            self.create_time = datetime.now()
+    
     def to_dict(self) -> dict:
         return {
             "id": self.id,
@@ -111,6 +139,7 @@ class Device:
             "reason": self.reason,
             "entry_source": self.entry_source,
             "expected_return_date": self.expected_return_date.strftime("%Y-%m-%d") if self.expected_return_date else "",
+            "create_time": self.create_time.strftime("%Y-%m-%d %H:%M:%S") if self.create_time else "",
         }
 
 
@@ -290,4 +319,37 @@ class ViewRecord:
             "device_type": self.device_type,
             "viewer": self.viewer,
             "view_time": self.view_time.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
+
+@dataclass
+class Notification:
+    """通知消息"""
+    id: str
+    user_id: str  # 接收通知的用户ID
+    user_name: str  # 接收通知的用户名（用于快速查找）
+    title: str  # 通知标题
+    content: str  # 通知内容
+    device_name: str = ""  # 相关设备名称
+    device_id: str = ""  # 相关设备ID
+    is_read: bool = False  # 是否已读
+    create_time: datetime = None  # 创建时间
+    notification_type: str = "info"  # 通知类型：info, warning, error, success
+
+    def __post_init__(self):
+        if self.create_time is None:
+            self.create_time = datetime.now()
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "user_name": self.user_name,
+            "title": self.title,
+            "content": self.content,
+            "device_name": self.device_name,
+            "device_id": self.device_id,
+            "is_read": self.is_read,
+            "create_time": self.create_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "notification_type": self.notification_type,
         }

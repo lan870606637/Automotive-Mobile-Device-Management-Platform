@@ -41,6 +41,7 @@ SERVER_URL = os.getenv('SERVER_URL', '').rstrip('/')
 
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
+app.config['TEMPLATES_AUTO_RELOAD'] = True
 
 
 def login_required(f):
@@ -447,12 +448,13 @@ def device_list():
     for device in devices:
         is_no_cabinet = device.status == DeviceStatus.NO_CABINET
         is_circulating = device.status == DeviceStatus.CIRCULATING
-        
+        is_sealed = device.status == DeviceStatus.SEALED
+
         # 如果是无柜号筛选，只显示柜号为空的设备
         if no_cabinet == '1':
             if not is_no_cabinet:
                 continue
-        
+
         device_list.append({
             'id': device.id,
             'name': device.name,
@@ -460,7 +462,8 @@ def device_list():
             'status': device.status.value,
             'remark': device.remark or '-',
             'no_cabinet': is_no_cabinet,  # 标记是否为无柜号设备
-            'is_circulating': is_circulating  # 标记是否为流通设备
+            'is_circulating': is_circulating,  # 标记是否为流通设备
+            'is_sealed': is_sealed  # 标记是否为封存设备
         })
     
     # 分页逻辑
@@ -602,9 +605,10 @@ def device_detail_simple(device_id):
 
     is_no_cabinet = device.status == DeviceStatus.NO_CABINET
     is_circulating = device.status == DeviceStatus.CIRCULATING
-    
-    # 检查是否真的是无柜号或流通设备
-    if not is_no_cabinet and not is_circulating:
+    is_sealed = device.status == DeviceStatus.SEALED
+
+    # 检查是否真的是无柜号、流通或封存设备
+    if not is_no_cabinet and not is_circulating and not is_sealed:
         # 正常设备跳转到正常详情页
         return redirect(url_for('device_detail', device_id=device_id))
 
@@ -640,7 +644,8 @@ def device_detail_simple(device_id):
                          device_type=device_type_str,
                          remarks=remark_list,
                          view_records=view_record_list,
-                         is_circulating=is_circulating)
+                         is_circulating=is_circulating,
+                         is_sealed=is_sealed)
 
 
 @app.route('/borrow/<device_id>')
@@ -833,13 +838,16 @@ def api_borrow():
     device = api_client.get_device_by_id(device_id)
     if not device:
         return jsonify({'success': False, 'message': '设备不存在'})
-    
+
     if device.status == DeviceStatus.SHIPPED:
         return jsonify({'success': False, 'message': '设备已寄出，暂不可借用'})
-    
+
     if device.status == DeviceStatus.DAMAGED:
         return jsonify({'success': False, 'message': '设备已损坏，暂不可借用'})
-    
+
+    if device.status == DeviceStatus.SEALED:
+        return jsonify({'success': False, 'message': '封存状态的设备无法借用'})
+
     if device.status not in [DeviceStatus.IN_STOCK, DeviceStatus.IN_CUSTODY]:
         return jsonify({'success': False, 'message': '设备已被借出'})
     
@@ -1197,11 +1205,20 @@ def api_return_by_custodian():
         entry_source='保管人收回'
     )
     api_client._records.append(record)
-    
+
     # 添加操作日志并保存数据
     api_client.add_operation_log(f"保管人收回: {original_borrower}", device.name)
     api_client._save_data()
-    
+
+    # 发送通知给原借用人
+    if original_borrower:
+        api_client.notify_return(
+            device_id=device_id,
+            device_name=device.name,
+            borrower=original_borrower,
+            operator=user['borrower_name']
+        )
+
     return jsonify({'success': True, 'message': '收回成功'})
 
 
@@ -1254,30 +1271,56 @@ def api_delete_remark():
 @app.route('/api/search')
 @login_required
 def api_search():
-    """搜索设备API"""
-    keyword = request.args.get('keyword', '').strip()
-    
+    """搜索设备API - 支持所有字段搜索"""
+    keyword = request.args.get('keyword', '').strip().lower()
+
     devices = api_client.get_all_devices()
     result = []
-    
+
     for device in devices:
         # 处理设备名中的换行符和多余空格
         device_name_normalized = device.name.lower().replace('\n', ' ').replace('  ', ' ').strip()
-        if not keyword or keyword.lower() in device_name_normalized or \
-           keyword.lower() in (device.model or '').lower() or \
-           keyword.lower() in (device.remark or '').lower():
-            cabinet = device.cabinet_number or ''
+
+        # 构建可搜索字段列表
+        search_fields = [
+            device_name_normalized,
+            (device.model or '').lower(),
+            (device.remark or '').lower(),
+            (device.jira_address or '').lower(),
+            (device.borrower or '').lower(),
+            (device.cabinet_number or '').lower(),
+            (device.custodian or '').lower(),
+            (device.system_version or '').lower(),
+            (device.os_version or '').lower(),
+            (device.os_platform or '').lower(),
+            (device.project_attribute or '').lower(),
+            (device.product_name or '').lower(),
+            (device.connection_method or '').lower(),
+            (device.imei or '').lower(),
+            (device.sn or '').lower(),
+            (device.carrier or '').lower()
+        ]
+
+        # 检查关键词是否匹配任一字段
+        if not keyword or any(keyword in field for field in search_fields):
+            cabinet = device.cabinet_number or device.custodian or ''
             result.append({
                 'id': device.id,
                 'name': device.name,
-                'device_type': '车机' if isinstance(device, CarMachine) else '手机',
+                'model': device.model or '-',
+                'device_type': get_device_type_str(device),
                 'status': device.status.value,
                 'remark': device.remark or '-',
+                'jira_address': device.jira_address or '-',
+                'cabinet': device.cabinet_number or device.custodian or '-',
+                'borrower': device.borrower or '-',
+                'expected_return': device.expected_return_date.strftime('%Y-%m-%d') if device.expected_return_date else '-',
                 'is_scrapped': device.status == DeviceStatus.SCRAPPED,
-                'no_cabinet': not cabinet.strip(),
-                'is_circulating': cabinet.strip() == '流通'
+                'no_cabinet': device.status == DeviceStatus.NO_CABINET,
+                'is_circulating': device.status == DeviceStatus.CIRCULATING,
+                'is_sealed': device.status == DeviceStatus.SEALED
             })
-    
+
     return jsonify({'success': True, 'devices': result})
 
 
@@ -1905,6 +1948,7 @@ def pc_dashboard():
 
     # 获取通知信息（我保管/借用但被借走的信息，最近20条）
     notifications = []
+    seen_notifications = set()  # 用于去重：设备名+借用人+类型
     all_records = api_client.get_records()
     for record in all_records:
         device = api_client.get_device_by_id(record.device_id)
@@ -1925,15 +1969,27 @@ def pc_dashboard():
             # 我保管的设备被别人借走（排除自己操作的）
             if device.cabinet_number == user['borrower_name'] and device.borrower and device.borrower != user['borrower_name'] and record.borrower != user['borrower_name']:
                 item['type'] = '保管-被动'
-                notifications.append(item)
+                # 去重检查：同一设备+同一借用人+同一类型只保留一条
+                dedup_key = f"{device.name}_{final_borrower}_保管-被动"
+                if dedup_key not in seen_notifications:
+                    seen_notifications.add(dedup_key)
+                    notifications.append(item)
             # 我正在借用的设备被别人转借走（排除自己操作的）
             elif hasattr(device, 'previous_borrower') and device.previous_borrower == user['borrower_name'] and device.borrower and device.borrower != user['borrower_name'] and record.borrower != user['borrower_name']:
                 item['type'] = '借用-被动'
-                notifications.append(item)
+                # 去重检查
+                dedup_key = f"{device.name}_{final_borrower}_借用-被动"
+                if dedup_key not in seen_notifications:
+                    seen_notifications.add(dedup_key)
+                    notifications.append(item)
             # 我主动转借给别人（自己操作的转借）
             elif hasattr(device, 'previous_borrower') and device.previous_borrower == user['borrower_name'] and device.borrower and device.borrower != user['borrower_name'] and record.borrower == user['borrower_name']:
                 item['type'] = '借用-主动'
-                notifications.append(item)
+                # 去重检查
+                dedup_key = f"{device.name}_{final_borrower}_借用-主动"
+                if dedup_key not in seen_notifications:
+                    seen_notifications.add(dedup_key)
+                    notifications.append(item)
 
         # 处理报废通知 - 如果我是该设备的借用人
         elif '报废' in record.operation_type.value:
@@ -2037,19 +2093,27 @@ def pc_device_list():
     for device in devices:
         is_no_cabinet = device.status == DeviceStatus.NO_CABINET
         is_circulating = device.status == DeviceStatus.CIRCULATING
-        
+        is_sealed = device.status == DeviceStatus.SEALED
+
         if no_cabinet == '1':
             if not is_no_cabinet:
                 continue
-        
+
         device_list.append({
             'id': device.id,
             'name': device.name,
+            'model': device.model or '-',
             'type': get_device_type_str(device),
+            'device_type': device.device_type,
             'status': device.status.value,
             'remark': device.remark or '-',
+            'jira_address': device.jira_address or '-',
+            'cabinet': device.cabinet_number or device.custodian or '-',
+            'borrower': device.borrower or '-',
+            'expected_return': device.expected_return_date.strftime('%Y-%m-%d') if device.expected_return_date else '-',
             'no_cabinet': is_no_cabinet,
-            'is_circulating': is_circulating
+            'is_circulating': is_circulating,
+            'is_sealed': is_sealed
         })
     
     total = len(device_list)
@@ -2213,8 +2277,10 @@ def pc_device_detail_simple(device_id):
 
     is_no_cabinet = device.status == DeviceStatus.NO_CABINET
     is_circulating = device.status == DeviceStatus.CIRCULATING
-    
-    if not is_no_cabinet and not is_circulating:
+    is_sealed = device.status == DeviceStatus.SEALED
+
+    # 封存状态也使用简单详情页，可以查看全部信息包括柜号
+    if not is_no_cabinet and not is_circulating and not is_sealed:
         return redirect(url_for('pc_device_detail', device_id=device_id))
 
     # 获取设备类型字符串
@@ -2249,6 +2315,7 @@ def pc_device_detail_simple(device_id):
                          remarks=remark_list,
                          view_records=view_record_list,
                          is_circulating=is_circulating,
+                         is_sealed=is_sealed,
                          user=user,
                          **stats)
 
@@ -3212,18 +3279,25 @@ def api_records():
     """记录查询API"""
     page = request.args.get('page', 1, type=int)
     limit = request.args.get('limit', 20, type=int)
-    
+
     records = api_client.get_records()
-    
+
     records_data = []
     for record in records:
+        # 获取设备信息以获取系统版本
+        device = api_client.get_device(record.device_id)
+        system_version = ''
+        if device and isinstance(device, Phone):
+            system_version = device.system_version or ''
+
         records_data.append({
             'action_type': record.operation_type.value,
             'device_name': record.device_name,
             'device_type': '手机' if record.device_type == DeviceType.PHONE else '车机',
             'user_name': record.borrower,
             'time': record.operation_time.strftime('%Y-%m-%d %H:%M'),
-            'remarks': record.remark
+            'remarks': record.remark,
+            'system_version': system_version  # 添加系统版本字段
         })
     
     # 分页
@@ -3257,6 +3331,63 @@ def api_logs():
     limit = request.args.get('limit', 100, type=int)
     logs = api_client.get_admin_logs(limit=limit)
     return jsonify(logs)
+
+
+# ==================== 通知API ====================
+
+@app.route('/api/notifications', methods=['GET'])
+@login_required
+def api_notifications():
+    """获取通知列表API"""
+    user = get_current_user()
+    unread_only = request.args.get('unread_only', 'false').lower() == 'true'
+
+    notifications = api_client.get_notifications(
+        user_id=user['user_id'],
+        user_name=user['borrower_name'],
+        unread_only=unread_only
+    )
+
+    return jsonify({'notifications': [n.to_dict() for n in notifications]})
+
+
+@app.route('/api/notifications/unread-count', methods=['GET'])
+@login_required
+def api_notification_unread_count():
+    """获取未读通知数量API"""
+    user = get_current_user()
+
+    count = api_client.get_unread_count(
+        user_id=user['user_id'],
+        user_name=user['borrower_name']
+    )
+
+    return jsonify({'count': count})
+
+
+@app.route('/api/notifications/<notification_id>/read', methods=['POST'])
+@login_required
+def api_mark_notification_read(notification_id):
+    """标记通知为已读API"""
+    success = api_client.mark_notification_read(notification_id)
+    if success:
+        return jsonify({'success': True})
+    else:
+        return jsonify({'success': False, 'message': '通知不存在'})
+
+
+@app.route('/api/notifications/read-all', methods=['POST'])
+@login_required
+def api_mark_all_read():
+    """标记所有通知为已读API"""
+    user = get_current_user()
+
+    count = api_client.mark_all_read(
+        user_id=user['user_id'],
+        user_name=user['borrower_name']
+    )
+
+    return jsonify({'success': True, 'count': count})
 
 
 # ==================== 错误处理 ====================

@@ -36,6 +36,9 @@
                     <option value="维修中">维修中</option>
                     <option value="已损坏">已损坏</option>
                     <option value="报废">报废</option>
+                    <option value="流通">流通</option>
+                    <option value="封存">封存</option>
+                    <option value="无柜号">无柜号</option>
                 </select>
                 <select id="filterType" class="filter-select">
                     <option value="">全部类型</option>
@@ -174,6 +177,24 @@
             </div>
             <div class="menu-items" id="menuItems">
                 <!-- 动态生成菜单项 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 快捷编辑弹窗 -->
+    <div id="editModal" class="edit-modal">
+        <div class="modal-overlay" onclick="closeEditModal()"></div>
+        <div class="edit-modal-content">
+            <div class="edit-modal-header">
+                <h3 id="editModalTitle">编辑</h3>
+                <button class="close-btn" onclick="closeEditModal()">✕</button>
+            </div>
+            <div class="edit-modal-body" id="editModalBody">
+                <!-- 动态生成编辑内容 -->
+            </div>
+            <div class="edit-modal-footer">
+                <button class="btn-cancel" onclick="closeEditModal()">取消</button>
+                <button class="btn-confirm" onclick="confirmEdit()">确认</button>
             </div>
         </div>
     </div>

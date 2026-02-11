@@ -415,6 +415,12 @@ a { text-decoration: none; color: inherit; }
     border: 1px solid #91d5ff;
 }
 
+.status-sealed {
+    background: #fff0f6;
+    color: #eb2f96;
+    border: 1px solid #ffadd2;
+}
+
 /* ========== 搜索栏 ========== */
 .search-bar {
     display: flex;

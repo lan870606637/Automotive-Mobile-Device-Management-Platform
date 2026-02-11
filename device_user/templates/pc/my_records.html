@@ -4,8 +4,9 @@
 
 {% set active_nav = 'my_records' %}
 
+{% block page_title %}📋 我的借用记录{% endblock %}
+
 {% block content %}
-<h1 class="page-title">📋 我的借用记录</h1>
 
 <!-- 统计卡片 -->
 <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr);">
@@ -48,6 +49,7 @@
                     <th>操作</th>
                     <th>借用人</th>
                     <th>操作者</th>
+                    <th>系统版本</th>
                     <th>原因/备注</th>
                 </tr>
             </thead>
@@ -75,6 +77,7 @@
                     </td>
                     <td>{{ record.borrower }}{% if is_admin_user(record.borrower) %}<span class="status-tag status-lost" style="margin-left: 4px; font-size: 10px; padding: 1px 4px;">管</span>{% endif %}</td>
                     <td>{{ record.operator }}{% if record.operator and is_admin_user(record.operator) %}<span class="status-tag status-lost" style="margin-left: 4px; font-size: 10px; padding: 1px 4px;">管</span>{% endif %}</td>
+                    <td>{{ record.system_version or '-' }}</td>
                     <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #595959;">
                         {% if record.reason and record.reason != 'nan' %}
                         {{ record.reason }}

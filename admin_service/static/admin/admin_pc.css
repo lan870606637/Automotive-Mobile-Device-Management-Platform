@@ -415,7 +415,7 @@ body {
 
 .type-stats {
     display: flex;
-    gap: 40px;
+    gap: 24px;
 }
 
 .type-stat-item {
@@ -424,8 +424,8 @@ body {
 }
 
 .type-stat-item .type-icon {
-    font-size: 40px;
-    margin-right: 16px;
+    font-size: 28px;
+    margin-right: 12px;
 }
 
 .type-info {
@@ -434,13 +434,13 @@ body {
 }
 
 .type-count {
-    font-size: 24px;
+    font-size: 18px;
     font-weight: 600;
     color: #333;
 }
 
 .type-label {
-    font-size: 14px;
+    font-size: 13px;
     color: #999;
 }
 
@@ -607,6 +607,65 @@ body {
 }
 
 /* ========== 设备管理页面 ========== */
+
+/* 设备类型标签栏 */
+.device-type-tabs {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+    background: white;
+    border-radius: 12px;
+    padding: 16px 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    overflow-x: auto;
+}
+
+.type-tab {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s;
+    background: #f5f5f5;
+    border: 2px solid transparent;
+    white-space: nowrap;
+}
+
+.type-tab:hover {
+    background: #e8e8e8;
+}
+
+.type-tab.active {
+    background: #e6f7ff;
+    border-color: #1890ff;
+    color: #1890ff;
+}
+
+.type-tab .tab-icon {
+    font-size: 18px;
+}
+
+.type-tab .tab-text {
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.type-tab .tab-count {
+    font-size: 12px;
+    padding: 2px 8px;
+    background: rgba(0,0,0,0.1);
+    border-radius: 10px;
+    min-width: 20px;
+    text-align: center;
+}
+
+.type-tab.active .tab-count {
+    background: #1890ff;
+    color: white;
+}
+
 .filter-bar {
     background: white;
     border-radius: 12px;
@@ -651,6 +710,7 @@ body {
 .data-table table {
     width: 100%;
     border-collapse: collapse;
+    table-layout: fixed;
 }
 
 .data-table th,
@@ -658,6 +718,7 @@ body {
     padding: 16px;
     text-align: left;
     border-bottom: 1px solid #f0f0f0;
+    vertical-align: middle;
 }
 
 .data-table th {
@@ -665,6 +726,31 @@ body {
     font-weight: 500;
     color: #666;
     font-size: 14px;
+}
+
+/* 设备名称单元格文字溢出处理 */
+.data-table td:nth-child(4) strong {
+    display: inline-block;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+/* 操作按钮样式优化 */
+.table-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: nowrap;
+    align-items: center;
+}
+
+.table-actions .btn {
+    padding: 5px 10px;
+    font-size: 12px;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .data-table tr:hover {
@@ -679,10 +765,15 @@ body {
 
 .status-tag.status-在库 { background: #f6ffed; color: #52c41a; }
 .status-tag.status-借出 { background: #fffbe6; color: #faad14; }
+.status-tag.status-保管中 { background: #e6fffb; color: #13c2c2; }
 .status-tag.status-已寄出 { background: #e6f7ff; color: #1890ff; }
 .status-tag.status-维修中 { background: #f9f0ff; color: #722ed1; }
 .status-tag.status-已损坏 { background: #fff1f0; color: #ff4d4f; }
 .status-tag.status-报废 { background: #f5f5f5; color: #999; }
+.status-tag.status-流通 { background: #f6ffed; color: #52c41a; }
+.status-tag.status-封存 { background: #fff0f6; color: #eb2f96; }
+.status-tag.status-无柜号 { background: #e6f7ff; color: #1890ff; }
+.status-tag.status-丢失 { background: #fff1f0; color: #ff4d4f; }
 
 .table-actions {
     display: flex;
@@ -694,7 +785,6 @@ body {
     justify-content: center;
     align-items: center;
     padding: 20px;
-    gap: 8px;
 }
 
 .pagination-btn {
@@ -704,9 +794,11 @@ body {
     border-radius: 8px;
     cursor: pointer;
     font-size: 14px;
+    transition: all 0.3s;
+    min-width: 40px;
 }
 
-.pagination-btn:hover {
+.pagination-btn:hover:not(:disabled) {
     border-color: #1890ff;
     color: #1890ff;
 }
@@ -715,6 +807,11 @@ body {
     background: #1890ff;
     color: white;
     border-color: #1890ff;
+}
+
+.pagination-btn:disabled {
+    background: #f5f5f5;
+    cursor: not-allowed;
 }
 
 /* ========== 表单页面 ========== */
@@ -896,25 +993,29 @@ body {
 /* Toast提示 */
 .toast {
     position: fixed;
-    top: 24px;
-    right: 24px;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
     background: #333;
     color: white;
-    padding: 14px 24px;
+    padding: 16px 32px;
     border-radius: 8px;
     font-size: 14px;
     z-index: 2000;
     display: none;
-    animation: slideIn 0.3s;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    min-width: 200px;
+    text-align: center;
 }
 
 .toast.show {
     display: block;
+    animation: fadeInScale 0.3s ease;
 }
 
-@keyframes slideIn {
-    from { opacity: 0; transform: translateX(100%); }
-    to { opacity: 1; transform: translateX(0); }
+@keyframes fadeInScale {
+    from { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+    to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
 
 .toast.success { background: #52c41a; }
@@ -929,6 +1030,21 @@ body {
     
     .content-row {
         grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 992px) {
+    .device-type-tabs {
+        padding: 12px 16px;
+        gap: 8px;
+    }
+    
+    .type-tab {
+        padding: 8px 12px;
+    }
+    
+    .type-tab .tab-text {
+        font-size: 13px;
     }
 }
 

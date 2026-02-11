@@ -9,6 +9,74 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>设备管理 - 车载测试设备管理系统</title>
     <link rel="stylesheet" href="/static/admin/admin_pc.css">
+    <style>
+        /* 可调整列宽的表格样式 */
+        .data-table table {
+            table-layout: fixed;
+            width: 100%;
+        }
+        .data-table th {
+            position: relative;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+        .data-table th .resizer {
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 5px;
+            cursor: col-resize;
+            background: transparent;
+            z-index: 10;
+        }
+        .data-table th .resizer:hover {
+            background: #1890ff;
+        }
+        .data-table th.resizing {
+            background: #e6f7ff;
+        }
+        .data-table td {
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+        /* 操作列固定宽度 */
+        .data-table th:last-child,
+        .data-table td:last-child {
+            width: 180px !important;
+            min-width: 180px !important;
+        }
+        /* 柜号前缀选择框样式 */
+        #cabinetPrefixGroup select {
+            min-width: 100px;
+            padding: 6px 10px;
+            border: 1px solid #d9d9d9;
+            border-radius: 4px;
+            background-color: #fff;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        #cabinetPrefixGroup select:hover {
+            border-color: #40a9ff;
+        }
+        #cabinetPrefixGroup select:focus {
+            border-color: #1890ff;
+            outline: none;
+        }
+        /* 操作按钮样式 */
+        .table-actions {
+            display: flex;
+            gap: 4px;
+            flex-wrap: nowrap;
+        }
+        .table-actions .btn {
+            padding: 2px 8px;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+    </style>
 </head>
 <body class="pc-admin-body">
     <div class="pc-admin-wrapper">
@@ -58,25 +126,49 @@
             <header class="content-header">
                 <h1>设备管理</h1>
                 <div class="header-actions">
+                    <button class="btn btn-secondary" onclick="showImportModal()">📥 批量导入</button>
                     <a href="/admin/pc/device/add" class="btn btn-primary">➕ 新增设备</a>
                 </div>
             </header>
 
+            <!-- 设备类型标签栏 -->
+            <div class="device-type-tabs">
+                <div class="type-tab active" data-type="" onclick="switchTypeTab(this)">
+                    <span class="tab-icon">📦</span>
+                    <span class="tab-text">全部</span>
+                    <span class="tab-count" id="count-all">0</span>
+                </div>
+                <div class="type-tab" data-type="车机" onclick="switchTypeTab(this)">
+                    <span class="tab-icon">🚗</span>
+                    <span class="tab-text">车机</span>
+                    <span class="tab-count" id="count-car">0</span>
+                </div>
+                <div class="type-tab" data-type="手机" onclick="switchTypeTab(this)">
+                    <span class="tab-icon">📱</span>
+                    <span class="tab-text">手机</span>
+                    <span class="tab-count" id="count-phone">0</span>
+                </div>
+                <div class="type-tab" data-type="仪表" onclick="switchTypeTab(this)">
+                    <span class="tab-icon">📊</span>
+                    <span class="tab-text">仪表</span>
+                    <span class="tab-count" id="count-dashboard">0</span>
+                </div>
+                <div class="type-tab" data-type="手机卡" onclick="switchTypeTab(this)">
+                    <span class="tab-icon">📲</span>
+                    <span class="tab-text">手机卡</span>
+                    <span class="tab-count" id="count-sim">0</span>
+                </div>
+                <div class="type-tab" data-type="其它设备" onclick="switchTypeTab(this)">
+                    <span class="tab-icon">🔧</span>
+                    <span class="tab-text">其它设备</span>
+                    <span class="tab-count" id="count-other">0</span>
+                </div>
+            </div>
+
             <!-- 筛选栏 -->
             <div class="filter-bar">
                 <div class="filter-group">
-                    <input type="text" id="searchInput" class="search-input" placeholder="搜索设备名 / 借用人 / 柜号">
-                </div>
-                <div class="filter-group">
-                    <label>类型</label>
-                    <select id="filterType">
-                        <option value="">全部</option>
-                        <option value="手机">手机</option>
-                        <option value="车机">车机</option>
-                        <option value="仪表">仪表</option>
-                        <option value="手机卡">手机卡</option>
-                        <option value="其它设备">其它设备</option>
-                    </select>
+                    <input type="text" id="searchInput" class="search-input" placeholder="搜索设备名 / 型号 / 借用人 / 柜号 / JIRA / IMEI / 系统版本 / 项目属性 / 产品名称..." style="min-width: 400px;">
                 </div>
                 <div class="filter-group">
                     <label>状态</label>
@@ -89,15 +181,19 @@
                         <option value="维修中">维修中</option>
                         <option value="已损坏">已损坏</option>
                         <option value="报废">报废</option>
+                        <option value="流通">流通</option>
+                        <option value="封存">封存</option>
+                        <option value="无柜号">无柜号</option>
                     </select>
                 </div>
                 <div class="filter-group">
-                    <label>柜号</label>
-                    <select id="filterCabinet">
+                    <label id="cabinetSearchLabel">柜号/保管人</label>
+                    <input type="text" id="filterCabinet" class="search-input" placeholder="搜索柜号或保管人...">
+                </div>
+                <div class="filter-group" id="cabinetPrefixGroup" style="display: none;">
+                    <label>柜号前缀</label>
+                    <select id="filterCabinetPrefix">
                         <option value="">全部</option>
-                        {% for cabinet in cabinets %}
-                        <option value="{{ cabinet }}">{{ cabinet }}</option>
-                        {% endfor %}
                     </select>
                 </div>
                 <button class="btn btn-secondary" onclick="resetFilters()">重置</button>
@@ -105,22 +201,40 @@
 
             <!-- 设备列表 -->
             <div class="data-table">
-                <table>
+                <table id="deviceTable">
                     <thead>
                         <tr>
-                            <th>设备名称</th>
-                            <th>类型</th>
-                            <th>型号</th>
-                            <th>状态</th>
-                            <th>借用人</th>
-                            <th>柜号</th>
-                            <th>预计归还</th>
-                            <th>操作</th>
+                            <th style="width: 5%;">序号<span class="resizer"></span></th>
+                            <th id="typeHeader" style="width: 8%;">类型<span class="resizer"></span></th>
+                            <th style="width: 10%;">型号<span class="resizer"></span></th>
+                            <th style="width: 12%;">设备名称<span class="resizer"></span></th>
+                            <th style="width: 10%;">JIRA地址<span class="resizer"></span></th>
+                            <th id="carAttrHeader" style="width: 8%; display: none;">项目属性<span class="resizer"></span></th>
+                            <th id="connMethodHeader" style="width: 8%; display: none;">连接方式<span class="resizer"></span></th>
+                            <th id="osVerHeader" style="width: 8%; display: none;">系统版本<span class="resizer"></span></th>
+                            <th id="osPlatformHeader" style="width: 8%; display: none;">系统平台<span class="resizer"></span></th>
+                            <th id="prodNameHeader" style="width: 10%; display: none;">产品名称<span class="resizer"></span></th>
+                            <th id="screenOrientationHeader" style="width: 8%; display: none;">屏幕方向<span class="resizer"></span></th>
+                            <th id="screenResolutionHeader" style="width: 10%; display: none;">车机分辨率<span class="resizer"></span></th>
+                            <th id="systemVersionHeader" style="width: 8%; display: none;">系统版本<span class="resizer"></span></th>
+                            <th id="imeiHeader" style="width: 10%; display: none;">IMEI<span class="resizer"></span></th>
+                            <th style="width: 7%;">状态<span class="resizer"></span></th>
+                            <th style="width: 7%;">借用人<span class="resizer"></span></th>
+                            <th id="locationHeader" style="width: 7%;">柜号/保管人<span class="resizer"></span></th>
+                            <th style="width: 8%;">预计归还<span class="resizer"></span></th>
+                            <th style="width: 180px;">操作</th>
                         </tr>
                     </thead>
                     <tbody id="deviceTableBody">
+                        <!-- 初始由后端渲染，全部视图下只显示公共字段 -->
                         {% for device in devices %}
-                        <tr>
+                        <tr data-device-id="{{ device.id }}">
+                            <td>{{ loop.index }}</td>
+                            <td class="type-field">
+                                {% if device.device_type.value == '手机' %}📱{% elif device.device_type.value == '车机' %}🚗{% elif device.device_type.value == '仪表' %}📊{% elif device.device_type.value == '手机卡' %}📲{% elif device.device_type.value == '其它设备' %}🔧{% else %}📦{% endif %}
+                                {{ device.device_type.value }}
+                            </td>
+                            <td>{{ device.model or '-' }}</td>
                             <td>
                                 <strong>{{ device.name }}</strong>
                                 {% if device.is_overdue %}
@@ -128,13 +242,26 @@
                                 {% endif %}
                             </td>
                             <td>
-                                {% if device.device_type.value == '手机' %}📱{% elif device.device_type.value == '车机' %}🚗{% elif device.device_type.value == '仪表' %}📊{% elif device.device_type.value == '手机卡' %}📲{% elif device.device_type.value == '其它设备' %}🔧{% else %}📦{% endif %}
-                                {{ device.device_type.value }}
+                                {% if device.jira_address %}
+                                <a href="http://jira.carbit.lo/browse/{{ device.jira_address }}" target="_blank" style="color: #1890ff; text-decoration: none;">{{ device.jira_address }}</a>
+                                {% else %}
+                                -
+                                {% endif %}
                             </td>
-                            <td>{{ device.model or '-' }}</td>
+                            <!-- 车机/仪表特有字段（在"全部"视图下隐藏） -->
+                            <td class="car-field" style="display: none;">{{ device.project_attribute or '-' }}</td>
+                            <td class="car-field" style="display: none;">{{ device.connection_method or '-' }}</td>
+                            <td class="car-field" style="display: none;">{{ device.os_version or '-' }}</td>
+                            <td class="car-field" style="display: none;">{{ device.os_platform or '-' }}</td>
+                            <td class="car-field" style="display: none;">{{ device.product_name or '-' }}</td>
+                            <td class="car-field" style="display: none;">{{ device.screen_orientation or '-' }}</td>
+                            <td class="car-field" style="display: none;">{{ device.screen_resolution or '-' }}</td>
+                            <!-- 手机特有字段（在"全部"视图下隐藏） -->
+                            <td class="phone-field" style="display: none;">{{ device.system_version or '-' }}</td>
+                            <td class="phone-field" style="display: none; font-size: 12px; font-family: monospace;">{{ device.imei or '-' }}</td>
                             <td><span class="status-tag status-{{ device.status }}">{{ device.status }}</span></td>
                             <td>{{ device.borrower or '-' }}</td>
-                            <td>{{ device.cabinet or '-' }}</td>
+                            <td class="location-cell">{{ device.cabinet or device.custodian or '-' }}</td>
                             <td style="color: {{ '#ff4d4f' if device.is_overdue else '#666' }}">{{ device.expect_return_time or '-' }}</td>
                             <td>
                                 <div class="table-actions">
@@ -171,22 +298,16 @@
             <div class="modal-body">
                 <div class="form-field">
                     <label>选择借用人 <span class="required">*</span></label>
-                    <select id="borrowUser">
-                        <option value="">请选择借用人</option>
+                    <input type="text" id="borrowUser" list="borrowUserList" placeholder="搜索或输入借用人姓名..." autocomplete="off">
+                    <datalist id="borrowUserList">
                         {% for user in users %}
-                        <option value="{{ user.name }}">{{ user.name }} {{ '(' + user.weixin_name + ')' if user.weixin_name else '' }}</option>
+                        <option value="{{ user.borrower_name }}">{{ user.borrower_name }} {{ '(' + user.weixin_name + ')' if user.weixin_name else '' }}</option>
                         {% endfor %}
-                    </select>
+                    </datalist>
                 </div>
-                <div class="form-row">
-                    <div class="form-field">
-                        <label>借出天数 <span class="required">*</span></label>
-                        <input type="number" id="borrowDays" value="1" min="1" max="365">
-                    </div>
-                    <div class="form-field">
-                        <label>柜号/保管人</label>
-                        <input type="text" id="borrowCabinet" value="流通">
-                    </div>
+                <div class="form-field">
+                    <label>借出天数 <span class="required">*</span></label>
+                    <input type="number" id="borrowDays" value="1" min="1" max="365">
                 </div>
                 <div class="form-field">
                     <label>借出备注</label>
@@ -228,12 +349,12 @@
             <div class="modal-body">
                 <div class="form-field">
                     <label>新借用人 <span class="required">*</span></label>
-                    <select id="transferUser">
-                        <option value="">请选择借用人</option>
+                    <input type="text" id="transferUser" list="transferUserList" placeholder="搜索或输入借用人姓名..." autocomplete="off">
+                    <datalist id="transferUserList">
                         {% for user in users %}
-                        <option value="{{ user.name }}">{{ user.name }}</option>
+                        <option value="{{ user.borrower_name }}">{{ user.borrower_name }} {{ '(' + user.weixin_name + ')' if user.weixin_name else '' }}</option>
                         {% endfor %}
-                    </select>
+                    </datalist>
                 </div>
                 <div class="form-field">
                     <label>转借备注</label>
@@ -253,6 +374,9 @@
     <script>
         let currentDeviceId = null;
         let devices = [];
+        let filteredDevices = [];
+        let currentPage = 1;
+        const pageSize = 50;
 
         // 获取设备图标
         function getDeviceIcon(deviceType) {
@@ -271,33 +395,294 @@
             try {
                 const response = await fetch('/api/devices');
                 devices = await response.json();
-                renderDevices(devices);
+                updateTypeCounts();
+                updateStatusOptions();
+                updateLocationHeader();
+                updateCabinetPrefixOptions();
+                // 初始化筛选数据并分页显示
+                filteredDevices = devices;
+                currentPage = 1;
+                renderCurrentPage();
             } catch (error) {
                 showToast('加载设备列表失败', 'error');
+            }
+        }
+
+        // 获取设备位置信息（柜号或保管人）
+        // 对于手机、手机卡、其它设备：cabinet字段存储的是保管人
+        // 对于车机、仪表：cabinet字段存储的是柜号
+        function getDeviceLocation(device) {
+            return device.cabinet || '-';
+        }
+
+        // 更新表头显示
+        function updateLocationHeader() {
+            const header = document.getElementById('locationHeader');
+            if (!header) return;
+
+            const custodianTypes = ['手机', '手机卡', '其它设备'];
+            if (currentTypeFilter === '') {
+                header.textContent = '柜号/保管人';
+            } else if (custodianTypes.includes(currentTypeFilter)) {
+                header.textContent = '保管人';
+            } else {
+                header.textContent = '柜号';
+            }
+
+            // 控制手机特有列的显示/隐藏
+            updatePhoneSpecificColumns();
+        }
+
+        // 控制特有列（车机/仪表/手机）的显示/隐藏
+        function updatePhoneSpecificColumns() {
+            const systemVersionHeader = document.getElementById('systemVersionHeader');
+            const imeiHeader = document.getElementById('imeiHeader');
+            const carAttrHeader = document.getElementById('carAttrHeader');
+            const connMethodHeader = document.getElementById('connMethodHeader');
+            const osVerHeader = document.getElementById('osVerHeader');
+            const osPlatformHeader = document.getElementById('osPlatformHeader');
+            const prodNameHeader = document.getElementById('prodNameHeader');
+            
+            if (!systemVersionHeader || !imeiHeader) return;
+
+            // 获取所有表头
+            const headers = systemVersionHeader.parentElement.children;
+            
+            // 判断当前筛选类型
+            const isCarOrInstrument = currentTypeFilter === '车机' || currentTypeFilter === '仪表';
+            const isPhone = currentTypeFilter === '手机';
+            const isAll = currentTypeFilter === '';
+            
+            // 控制车机/仪表特有列表头显示
+            if (carAttrHeader) carAttrHeader.style.display = isCarOrInstrument ? '' : 'none';
+            if (connMethodHeader) connMethodHeader.style.display = isCarOrInstrument ? '' : 'none';
+            if (osVerHeader) osVerHeader.style.display = isCarOrInstrument ? '' : 'none';
+            if (osPlatformHeader) osPlatformHeader.style.display = isCarOrInstrument ? '' : 'none';
+            if (prodNameHeader) prodNameHeader.style.display = isCarOrInstrument ? '' : 'none';
+            const screenOrientationHeader = document.getElementById('screenOrientationHeader');
+            const screenResolutionHeader = document.getElementById('screenResolutionHeader');
+            if (screenOrientationHeader) screenOrientationHeader.style.display = isCarOrInstrument ? '' : 'none';
+            if (screenResolutionHeader) screenResolutionHeader.style.display = isCarOrInstrument ? '' : 'none';
+            
+            // 控制手机特有列表头显示
+            systemVersionHeader.style.display = isPhone ? '' : 'none';
+            imeiHeader.style.display = isPhone ? '' : 'none';
+
+            // 控制类型列显示（全部视图显示，其他隐藏）
+            const typeHeader = document.getElementById('typeHeader');
+            if (typeHeader) typeHeader.style.display = isAll ? '' : 'none';
+
+            // 更新表格数据行的单元格显示
+            const rows = document.querySelectorAll('#deviceTableBody tr');
+            rows.forEach(row => {
+                const carFields = row.querySelectorAll('.car-field');
+                const phoneFields = row.querySelectorAll('.phone-field');
+                const typeFields = row.querySelectorAll('.type-field');
+
+                carFields.forEach(cell => {
+                    cell.style.display = isCarOrInstrument ? '' : 'none';
+                });
+
+                phoneFields.forEach(cell => {
+                    cell.style.display = isPhone ? '' : 'none';
+                });
+
+                typeFields.forEach(cell => {
+                    cell.style.display = isAll ? '' : 'none';
+                });
+            });
+
+            // 列宽分配
+            if (isPhone) {
+                // 手机类型：显示手机特有列，隐藏车机特有列（14列显示）
+                headers[0].style.width = '5%';   // 序号
+                headers[1].style.width = '7%';   // 类型
+                headers[2].style.width = '9%';   // 型号
+                headers[3].style.width = '11%';  // 设备名称
+                headers[4].style.width = '9%';   // JIRA地址
+                // 隐藏的7个车机字段（5-11）
+                headers[12].style.width = '8%';  // 系统版本(手机)
+                headers[13].style.width = '12%'; // IMEI
+                headers[14].style.width = '7%';  // 状态
+                headers[15].style.width = '7%';  // 借用人
+                headers[16].style.width = '8%';  // 柜号/保管人
+                headers[17].style.width = '9%';  // 预计归还
+                headers[18].style.width = '180px'; // 操作
+            } else if (isCarOrInstrument) {
+                // 车机/仪表类型：显示车机特有列，隐藏手机特有列（17列显示）
+                headers[0].style.width = '4%';   // 序号
+                headers[1].style.width = '6%';   // 类型
+                headers[2].style.width = '8%';   // 型号
+                headers[3].style.width = '10%';  // 设备名称
+                headers[4].style.width = '8%';   // JIRA地址
+                headers[5].style.width = '7%';   // 项目属性
+                headers[6].style.width = '7%';   // 连接方式
+                headers[7].style.width = '7%';   // 系统版本
+                headers[8].style.width = '7%';   // 系统平台
+                headers[9].style.width = '8%';   // 产品名称
+                headers[10].style.width = '7%';  // 屏幕方向
+                headers[11].style.width = '8%';  // 车机分辨率
+                // 隐藏的2个手机字段（12-13）
+                headers[14].style.width = '6%';  // 状态
+                headers[15].style.width = '6%';  // 借用人
+                headers[16].style.width = '7%';  // 柜号/保管人
+                headers[17].style.width = '7%';  // 预计归还
+                headers[18].style.width = '180px'; // 操作
+            } else {
+                // 全部视图：只显示10列公共字段（序号、类型、型号、设备名、JIRA、状态、借用人、柜号/保管人、预计归还、操作）
+                headers[0].style.width = '6%';   // 序号
+                headers[1].style.width = '10%';  // 类型
+                headers[2].style.width = '12%';  // 型号
+                headers[3].style.width = '18%';  // 设备名称
+                headers[4].style.width = '14%';  // JIRA地址
+                // 隐藏的7个车机字段（5-11）和2个手机字段（12-13）
+                headers[14].style.width = '8%';  // 状态
+                headers[15].style.width = '8%';  // 借用人
+                headers[16].style.width = '10%'; // 柜号/保管人
+                headers[17].style.width = '10%'; // 预计归还
+                headers[18].style.width = '180px'; // 操作
+            }
+        }
+
+        // 判断当前类型是否使用柜号（车机和仪表使用柜号）
+        function isCabinetType() {
+            if (!currentTypeFilter) return true; // 全部时显示
+            return currentTypeFilter === '车机' || currentTypeFilter === '仪表';
+        }
+
+        // 更新柜号前缀选择框
+        function updateCabinetPrefixOptions() {
+            const prefixSelect = document.getElementById('filterCabinetPrefix');
+            const prefixGroup = document.getElementById('cabinetPrefixGroup');
+            if (!prefixSelect || !prefixGroup) {
+                console.log('DEBUG: 柜号前缀DOM元素未找到');
+                return;
+            }
+
+            console.log('DEBUG: 当前类型=', currentTypeFilter, '是否柜号类型=', isCabinetType());
+
+            // 如果不是柜号类型（手机、手机卡、其它设备），隐藏前缀筛选
+            if (!isCabinetType()) {
+                console.log('DEBUG: 非柜号类型，隐藏选择框');
+                prefixGroup.style.display = 'none';
+                return;
+            }
+
+            // 获取当前类型的设备
+            let relevantDevices = devices;
+            if (currentTypeFilter) {
+                relevantDevices = devices.filter(d => d.device_type === currentTypeFilter);
+            } else {
+                // 全部时只显示车机和仪表的柜号（它们使用xx-xx格式）
+                relevantDevices = devices.filter(d => d.device_type === '车机' || d.device_type === '仪表');
+            }
+
+            console.log('DEBUG: 相关设备数量=', relevantDevices.length);
+            console.log('DEBUG: 设备列表=', relevantDevices.map(d => ({name: d.device_name, type: d.device_type, cabinet: d.cabinet})));
+
+            // 提取柜号前缀（匹配xx-xx或xx - xx格式，支持空格，支持字母或数字开头）
+            const prefixSet = new Set();
+            relevantDevices.forEach(d => {
+                if (d.cabinet && /^[A-Za-z0-9]+\s*-\s*/.test(d.cabinet)) {
+                    const match = d.cabinet.match(/^([A-Za-z0-9]+)\s*-/);
+                    if (match) {
+                        prefixSet.add(match[1]);
+                    }
+                }
+            });
+
+            console.log('DEBUG: 提取的前缀=', Array.from(prefixSet));
+
+            // 车机和仪表类型始终显示柜号前缀筛选（即使没有符合格式的柜号）
+            prefixGroup.style.display = 'block';
+
+            // 保持当前选中值
+            const currentValue = prefixSelect.value;
+
+            // 重置选项
+            let optionsHtml = '<option value="">全部</option>';
+            
+            // 按数字排序
+            const sortedPrefixes = Array.from(prefixSet).sort((a, b) => parseInt(a) - parseInt(b));
+            
+            sortedPrefixes.forEach(prefix => {
+                optionsHtml += `<option value="${prefix}">${prefix}号柜</option>`;
+            });
+
+            prefixSelect.innerHTML = optionsHtml;
+
+            // 恢复之前的选中值（如果还存在）
+            if (currentValue && prefixSet.has(currentValue)) {
+                prefixSelect.value = currentValue;
+            }
+        }
+
+        // 更新搜索框标签和placeholder
+        function updateSearchPlaceholder() {
+            const label = document.getElementById('cabinetSearchLabel');
+            const input = document.getElementById('filterCabinet');
+            if (!label || !input) return;
+
+            const custodianTypes = ['手机', '手机卡', '其它设备'];
+            if (currentTypeFilter === '') {
+                label.textContent = '柜号/保管人';
+                input.placeholder = '搜索柜号或保管人...';
+            } else if (custodianTypes.includes(currentTypeFilter)) {
+                label.textContent = '保管人';
+                input.placeholder = '搜索保管人...';
+            } else {
+                label.textContent = '柜号';
+                input.placeholder = '搜索柜号...';
             }
         }
 
         // 渲染设备列表
         function renderDevices(deviceList) {
             const tbody = document.getElementById('deviceTableBody');
-            
+
             if (deviceList.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="8" class="empty-cell">暂无设备</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="19" class="empty-cell">' + (filteredDevices.length === 0 ? '暂无设备' : '当前页无数据') + '</td></tr>';
                 return;
             }
 
-            tbody.innerHTML = deviceList.map(device => `
+            tbody.innerHTML = deviceList.map((device, index) => {
+                // 根据当前筛选类型决定是否显示特有字段
+                const showCarFields = currentTypeFilter === '车机' || currentTypeFilter === '仪表';
+                const showPhoneFields = currentTypeFilter === '手机';
+                const isAllView = currentTypeFilter === '';
+
+                // 判断是否显示车机/仪表特有数据（当前是车机/仪表视图，且设备类型匹配）
+                const showCarData = showCarFields && (device.device_type === '车机' || device.device_type === '仪表');
+                // 判断是否显示手机特有数据（当前是手机视图，且设备类型匹配）
+                const showPhoneData = showPhoneFields && device.device_type === '手机';
+
+                return `
                 <tr>
+                    <td>${index + 1}</td>
+                    <td class="type-field" style="display: ${isAllView ? '' : 'none'};">${getDeviceIcon(device.device_type)} ${device.device_type}</td>
+                    <td>${device.model || '-'}</td>
                     <td>
                         <strong>${device.device_name}</strong>
                         ${device.is_overdue ? '<span style="color: #ff4d4f; font-size: 12px;">(逾期)</span>' : ''}
                     </td>
-                    <td>${getDeviceIcon(device.device_type)} ${device.device_type}</td>
-                    <td>${device.model || '-'}</td>
+                    <td>
+                        ${device.jira_address ? `<a href="http://jira.carbit.lo/browse/${device.jira_address}" target="_blank" style="color: #1890ff; text-decoration: none;">${device.jira_address}</a>` : '-'}
+                    </td>
+                    <!-- 车机/仪表特有字段 (第6-12列) -->
+                    <td class="car-field" style="display: ${showCarFields ? '' : 'none'};">${showCarData ? (device.project_attribute || '-') : '-'}</td>
+                    <td class="car-field" style="display: ${showCarFields ? '' : 'none'};">${showCarData ? (device.connection_method || '-') : '-'}</td>
+                    <td class="car-field" style="display: ${showCarFields ? '' : 'none'};">${showCarData ? (device.os_version || '-') : '-'}</td>
+                    <td class="car-field" style="display: ${showCarFields ? '' : 'none'};">${showCarData ? (device.os_platform || '-') : '-'}</td>
+                    <td class="car-field" style="display: ${showCarFields ? '' : 'none'};">${showCarData ? (device.product_name || '-') : '-'}</td>
+                    <td class="car-field" style="display: ${showCarFields ? '' : 'none'};">${showCarData ? (device.screen_orientation || '-') : '-'}</td>
+                    <td class="car-field" style="display: ${showCarFields ? '' : 'none'};">${showCarData ? (device.screen_resolution || '-') : '-'}</td>
+                    <!-- 手机特有字段 (第13-14列) -->
+                    <td class="phone-field" style="display: ${showPhoneFields ? '' : 'none'};">${showPhoneData ? (device.system_version || '-') : '-'}</td>
+                    <td class="phone-field" style="display: ${showPhoneFields ? '' : 'none'}; font-size: 12px; font-family: monospace;">${showPhoneData ? (device.imei || '-') : '-'}</td>
                     <td><span class="status-tag status-${device.status}">${device.status}</span></td>
                     <td>${device.borrower || '-'}</td>
-                    <td>${device.cabinet || '-'}</td>
-                    <td style="color: ${device.is_overdue ? '#ff4d4f' : '#666'}">${device.expect_return_time || '-'}</td>
+                    <td class="location-cell">${getDeviceLocation(device)}</td>
+                    <td style="color: ${device.is_overdue ? '#ff4d4f' : '#666'}">${device.expected_return || '-'}</td>
                     <td>
                         <div class="table-actions">
                             <a href="/admin/pc/device/${device.id}" class="btn btn-sm btn-secondary">编辑</a>
@@ -306,12 +691,16 @@
                         </div>
                     </td>
                 </tr>
-            `).join('');
+            `}).join('');
         }
 
         // 获取操作按钮
         function getActionButtons(device) {
-            if (device.status === '在库') {
+            // 封存、流通、无柜号状态设备不支持借用操作
+            if (device.status === '封存' || device.status === '流通' || device.status === '无柜号') {
+                return '';
+            } else if (device.status === '在库' || device.status === '保管中') {
+                // 在库和保管中状态都可以借出
                 return `<button class="btn btn-sm btn-primary" onclick="showBorrowModal('${device.id}')">借出</button>`;
             } else if (device.status === '借出') {
                 return `
@@ -322,40 +711,229 @@
             return '';
         }
 
+        // 当前选中的设备类型
+        let currentTypeFilter = '';
+
+        // 切换类型标签
+        function switchTypeTab(tabElement) {
+            // 移除所有标签的active状态
+            document.querySelectorAll('.type-tab').forEach(tab => tab.classList.remove('active'));
+            // 添加当前标签的active状态
+            tabElement.classList.add('active');
+            // 更新当前类型筛选
+            currentTypeFilter = tabElement.dataset.type;
+            // 更新表头显示
+            updateLocationHeader();
+            // 更新搜索框标签和placeholder
+            updateSearchPlaceholder();
+            // 更新状态筛选选项
+            updateStatusOptions();
+            // 更新柜号前缀选项
+            updateCabinetPrefixOptions();
+            // 应用筛选
+            filterDevices();
+        }
+
+        // 更新状态筛选选项 - 根据当前类型显示存在的状态
+        function updateStatusOptions() {
+            const statusSelect = document.getElementById('filterStatus');
+            const currentStatus = statusSelect.value;
+
+            // 获取当前类型下的所有状态
+            let relevantDevices = devices;
+            if (currentTypeFilter) {
+                relevantDevices = devices.filter(d => d.device_type === currentTypeFilter);
+            }
+
+            // 统计各状态数量
+            const statusCounts = {};
+            relevantDevices.forEach(d => {
+                statusCounts[d.status] = (statusCounts[d.status] || 0) + 1;
+            });
+
+            // 所有可能的状态列表
+            const allStatuses = ['在库', '保管中', '借出', '已寄出', '维修中', '已损坏', '报废', '流通', '封存', '无柜号', '丢失'];
+
+            // 重新构建下拉框选项
+            let optionsHtml = '<option value="">全部</option>';
+            allStatuses.forEach(status => {
+                if (statusCounts[status]) {
+                    optionsHtml += `<option value="${status}">${status} (${statusCounts[status]})</option>`;
+                }
+            });
+
+            statusSelect.innerHTML = optionsHtml;
+
+            // 如果之前选中的状态仍然存在，保持选中
+            if (currentStatus && statusCounts[currentStatus]) {
+                statusSelect.value = currentStatus;
+            }
+        }
+
+        // 更新类型标签计数
+        function updateTypeCounts() {
+            const counts = {
+                '': devices.length,
+                '车机': devices.filter(d => d.device_type === '车机').length,
+                '手机': devices.filter(d => d.device_type === '手机').length,
+                '仪表': devices.filter(d => d.device_type === '仪表').length,
+                '手机卡': devices.filter(d => d.device_type === '手机卡').length,
+                '其它设备': devices.filter(d => d.device_type === '其它设备').length
+            };
+
+            document.getElementById('count-all').textContent = counts[''];
+            document.getElementById('count-car').textContent = counts['车机'];
+            document.getElementById('count-phone').textContent = counts['手机'];
+            document.getElementById('count-dashboard').textContent = counts['仪表'];
+            document.getElementById('count-sim').textContent = counts['手机卡'];
+            document.getElementById('count-other').textContent = counts['其它设备'];
+        }
+
         // 筛选功能
         document.getElementById('searchInput')?.addEventListener('input', filterDevices);
-        document.getElementById('filterType')?.addEventListener('change', filterDevices);
         document.getElementById('filterStatus')?.addEventListener('change', filterDevices);
-        document.getElementById('filterCabinet')?.addEventListener('change', filterDevices);
+        document.getElementById('filterCabinet')?.addEventListener('input', filterDevices);
+        document.getElementById('filterCabinetPrefix')?.addEventListener('change', filterDevices);
+
+
 
         function filterDevices() {
             const keyword = document.getElementById('searchInput')?.value?.toLowerCase() || '';
-            const type = document.getElementById('filterType')?.value || '';
             const status = document.getElementById('filterStatus')?.value || '';
-            const cabinet = document.getElementById('filterCabinet')?.value || '';
+            const cabinet = document.getElementById('filterCabinet')?.value?.toLowerCase() || '';
+            const cabinetPrefix = document.getElementById('filterCabinetPrefix')?.value || '';
 
             let filtered = devices;
 
+            // 全局关键词搜索（支持所有字段）
             if (keyword) {
-                filtered = filtered.filter(d => 
-                    (d.device_name && d.device_name.toLowerCase().includes(keyword)) ||
-                    (d.borrower && d.borrower.toLowerCase().includes(keyword)) ||
-                    (d.cabinet && d.cabinet.toLowerCase().includes(keyword))
-                );
+                filtered = filtered.filter(d => {
+                    const searchFields = [
+                        d.device_name,
+                        d.model,
+                        d.borrower,
+                        d.cabinet,
+                        d.jira_address,
+                        d.imei,
+                        d.system_version,
+                        d.os_version,
+                        d.os_platform,
+                        d.project_attribute,
+                        d.product_name,
+                        d.connection_method,
+                        d.screen_orientation,
+                        d.screen_resolution,
+                        d.hardware_version,
+                        d.software_version,
+                        d.remark,
+                        d.reason,
+                        d.location,
+                        d.phone,
+                        d.carrier,
+                        d.sn
+                    ];
+                    return searchFields.some(field => field && field.toLowerCase().includes(keyword));
+                });
             }
-            if (type) filtered = filtered.filter(d => d.device_type === type);
-            if (status) filtered = filtered.filter(d => d.status === status);
-            if (cabinet) filtered = filtered.filter(d => d.cabinet === cabinet);
 
-            renderDevices(filtered);
+            // 基础筛选
+            if (currentTypeFilter) filtered = filtered.filter(d => d.device_type === currentTypeFilter);
+            if (status) filtered = filtered.filter(d => d.status === status);
+            if (cabinet) filtered = filtered.filter(d => d.cabinet && d.cabinet.toLowerCase().includes(cabinet));
+
+            // 柜号前缀筛选（匹配xx-xx或xx - xx格式，支持空格，支持字母或数字开头）
+            if (cabinetPrefix) {
+                filtered = filtered.filter(d => {
+                    if (!d.cabinet) return false;
+                    // 匹配以 "前缀-" 或 "前缀 -" 开头的柜号（支持字母和数字）
+                    const pattern = new RegExp(`^${cabinetPrefix}\\s*-[A-Za-z0-9\\s-]*$`);
+                    return pattern.test(d.cabinet);
+                });
+            }
+
+            filteredDevices = filtered;
+            currentPage = 1; // 筛选后重置到第一页
+            renderCurrentPage();
+        }
+
+        // 渲染当前页数据
+        function renderCurrentPage() {
+            const start = (currentPage - 1) * pageSize;
+            const end = start + pageSize;
+            const pageData = filteredDevices.slice(start, end);
+            renderDevices(pageData);
+            renderPagination();
+        }
+
+        // 渲染分页控件
+        function renderPagination() {
+            const pagination = document.getElementById('pagination');
+            const totalPages = Math.ceil(filteredDevices.length / pageSize);
+
+            if (totalPages <= 1) {
+                pagination.innerHTML = '';
+                return;
+            }
+
+            let html = `<div style="display: flex; align-items: center; gap: 8px;">`;
+
+            // 上一页
+            html += `<button class="pagination-btn" onclick="goToPage(${currentPage - 1})" ${currentPage === 1 ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''}>上一页</button>`;
+
+            // 页码
+            for (let i = 1; i <= totalPages; i++) {
+                if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
+                    html += `<button class="pagination-btn ${i === currentPage ? 'active' : ''}" onclick="goToPage(${i})">${i}</button>`;
+                } else if (i === currentPage - 3 || i === currentPage + 3) {
+                    html += `<span style="color: #999;">...</span>`;
+                }
+            }
+
+            // 下一页
+            html += `<button class="pagination-btn" onclick="goToPage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''}>下一页</button>`;
+
+            // 页码信息
+            html += `<span style="margin-left: 16px; color: #666; font-size: 14px;">共 ${filteredDevices.length} 条，${totalPages} 页</span>`;
+
+            html += `</div>`;
+            pagination.innerHTML = html;
+        }
+
+        // 跳转到指定页
+        function goToPage(page) {
+            const totalPages = Math.ceil(filteredDevices.length / pageSize);
+            if (page < 1 || page > totalPages) return;
+            currentPage = page;
+            renderCurrentPage();
+            // 滚动到表格顶部
+            document.querySelector('.data-table').scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
 
         function resetFilters() {
+            // 重置基础筛选
             document.getElementById('searchInput').value = '';
-            document.getElementById('filterType').value = '';
             document.getElementById('filterStatus').value = '';
             document.getElementById('filterCabinet').value = '';
-            renderDevices(devices);
+            document.getElementById('filterCabinetPrefix').value = '';
+
+
+
+            // 重置类型标签到"全部"
+            document.querySelectorAll('.type-tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelector('.type-tab[data-type=""]').classList.add('active');
+            currentTypeFilter = '';
+
+            // 更新表头显示
+            updateLocationHeader();
+            // 重置状态筛选并更新选项
+            updateStatusOptions();
+            // 更新柜号前缀选项
+            updateCabinetPrefixOptions();
+
+            // 重置分页
+            filteredDevices = devices;
+            currentPage = 1;
+            renderCurrentPage();
         }
 
         // 显示借出弹窗
@@ -366,12 +944,11 @@
 
         // 确认借出
         async function confirmBorrow() {
-            const user = document.getElementById('borrowUser').value;
+            const borrower = document.getElementById('borrowUser').value;
             const days = document.getElementById('borrowDays').value;
-            const cabinet = document.getElementById('borrowCabinet').value;
             const remarks = document.getElementById('borrowRemarks').value;
 
-            if (!user) {
+            if (!borrower) {
                 showToast('请选择借用人', 'warning');
                 return;
             }
@@ -380,7 +957,7 @@
                 const response = await fetch(`/api/devices/${currentDeviceId}/borrow`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user, days: parseInt(days), cabinet, remarks })
+                    body: JSON.stringify({ borrower, days: parseInt(days), remarks })
                 });
 
                 const result = await response.json();
@@ -431,10 +1008,10 @@
 
         // 确认转借
         async function confirmTransfer() {
-            const user = document.getElementById('transferUser').value;
+            const borrower = document.getElementById('transferUser').value;
             const remarks = document.getElementById('transferRemarks').value;
 
-            if (!user) {
+            if (!borrower) {
                 showToast('请选择新借用人', 'warning');
                 return;
             }
@@ -443,7 +1020,7 @@
                 const response = await fetch(`/api/devices/${currentDeviceId}/transfer`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user, remarks })
+                    body: JSON.stringify({ borrower, remarks })
                 });
 
                 const result = await response.json();
@@ -496,7 +1073,184 @@
         }
 
         // 初始化
-        document.addEventListener('DOMContentLoaded', loadDevices);
+        document.addEventListener('DOMContentLoaded', function() {
+            loadDevices();
+            initColumnResize();
+        });
+
+        // 列宽调整功能
+        function initColumnResize() {
+            const table = document.getElementById('deviceTable');
+            if (!table) return;
+            
+            const ths = table.querySelectorAll('thead th');
+            let resizing = false;
+            let currentTh = null;
+            let startX = 0;
+            let startWidth = 0;
+
+            ths.forEach((th, index) => {
+                // 跳过最后一列（操作列）
+                if (index === ths.length - 1) return;
+                
+                const resizer = th.querySelector('.resizer');
+                if (!resizer) return;
+
+                resizer.addEventListener('mousedown', function(e) {
+                    resizing = true;
+                    currentTh = th;
+                    startX = e.pageX;
+                    startWidth = th.offsetWidth;
+                    th.classList.add('resizing');
+                    document.body.style.cursor = 'col-resize';
+                    document.body.style.userSelect = 'none';
+                    e.preventDefault();
+                });
+            });
+
+            document.addEventListener('mousemove', function(e) {
+                if (!resizing || !currentTh) return;
+                
+                const diff = e.pageX - startX;
+                const newWidth = Math.max(50, startWidth + diff); // 最小宽度50px
+                currentTh.style.width = newWidth + 'px';
+            });
+
+            document.addEventListener('mouseup', function() {
+                if (resizing && currentTh) {
+                    currentTh.classList.remove('resizing');
+                    resizing = false;
+                    currentTh = null;
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                }
+            });
+        }
+
+        // 显示批量导入弹窗
+        function showImportModal() {
+            const modal = document.createElement('div');
+            modal.id = 'importModal';
+            modal.className = 'modal';
+            modal.style.display = 'flex';
+            modal.innerHTML = `
+                <div class="modal-dialog" style="max-width: 500px;">
+                    <div class="modal-header" style="padding: 20px 24px; border-bottom: 1px solid #e8e8e8;">
+                        <h3>📥 批量导入设备</h3>
+                        <button class="modal-close" onclick="closeImportModal()">&times;</button>
+                    </div>
+                    <div class="modal-body" style="padding: 24px;">
+                        <div class="form-group" style="margin-bottom: 20px;">
+                            <label style="display: block; margin-bottom: 8px; font-weight: 500;">选择设备类型</label>
+                            <select id="importDeviceType" class="form-control" style="width: 100%; padding: 8px; border: 1px solid #d9d9d9; border-radius: 4px;">
+                                <option value="">请选择设备类型</option>
+                                <option value="car">🚗 车机</option>
+                                <option value="instrument">📊 仪表</option>
+                                <option value="phone">📱 手机</option>
+                                <option value="sim">📲 手机卡</option>
+                                <option value="other">🔧 其它设备</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 20px;">
+                            <label style="display: block; margin-bottom: 8px; font-weight: 500;">下载模板</label>
+                            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                                <a href="/admin/template/car" class="btn btn-sm btn-secondary template-link" data-type="car">车机模板</a>
+                                <a href="/admin/template/instrument" class="btn btn-sm btn-secondary template-link" data-type="instrument">仪表模板</a>
+                                <a href="/admin/template/phone" class="btn btn-sm btn-secondary template-link" data-type="phone">手机模板</a>
+                                <a href="/admin/template/sim" class="btn btn-sm btn-secondary template-link" data-type="sim">手机卡模板</a>
+                                <a href="/admin/template/other" class="btn btn-sm btn-secondary template-link" data-type="other">其它设备模板</a>
+                            </div>
+                            <p style="margin-top: 8px; font-size: 12px; color: #666;">请先下载对应类型的模板，填入数据后再上传</p>
+                        </div>
+                        <div class="form-group">
+                            <label style="display: block; margin-bottom: 8px; font-weight: 500;">上传Excel文件</label>
+                            <input type="file" id="importFile" accept=".xlsx,.xls" style="display: none;">
+                            <button type="button" class="btn btn-secondary" onclick="document.getElementById('importFile').click()" style="width: 100%; padding: 20px; border: 2px dashed #d9d9d9; background: #fafafa;">
+                                <span style="font-size: 24px;">📁</span>
+                                <p style="margin: 8px 0 0; color: #666;">点击选择Excel文件</p>
+                                <p id="selectedFileName" style="margin: 4px 0 0; font-size: 12px; color: #1890ff;"></p>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="modal-footer" style="padding: 16px 24px; border-top: 1px solid #e8e8e8; background: #fafafa;">
+                        <button type="button" class="btn btn-secondary" onclick="closeImportModal()">取消</button>
+                        <button type="button" class="btn btn-primary" onclick="importDevices()">开始导入</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            // 文件选择事件
+            document.getElementById('importFile').addEventListener('change', function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    document.getElementById('selectedFileName').textContent = '已选择: ' + file.name;
+                }
+            });
+
+            // 设备类型改变时高亮对应模板按钮
+            document.getElementById('importDeviceType').addEventListener('change', function() {
+                const type = this.value;
+                document.querySelectorAll('.template-link').forEach(link => {
+                    if (link.dataset.type === type) {
+                        link.style.background = '#1890ff';
+                        link.style.color = '#fff';
+                        link.style.borderColor = '#1890ff';
+                    } else {
+                        link.style.background = '';
+                        link.style.color = '';
+                        link.style.borderColor = '';
+                    }
+                });
+            });
+        }
+
+        // 关闭导入弹窗
+        function closeImportModal() {
+            const modal = document.getElementById('importModal');
+            if (modal) {
+                modal.remove();
+            }
+        }
+
+        // 导入设备
+        async function importDevices() {
+            const deviceType = document.getElementById('importDeviceType').value;
+            const fileInput = document.getElementById('importFile');
+            const file = fileInput.files[0];
+
+            if (!deviceType) {
+                showToast('请选择设备类型', 'error');
+                return;
+            }
+            if (!file) {
+                showToast('请选择Excel文件', 'error');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('device_type', deviceType);
+
+            try {
+                const response = await fetch('/admin/api/import-devices', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    showToast(`导入成功！共导入 ${result.imported_count} 个设备`, 'success');
+                    closeImportModal();
+                    loadDevices(); // 刷新列表
+                } else {
+                    showToast(result.message || '导入失败', 'error');
+                }
+            } catch (error) {
+                console.error('导入失败:', error);
+                showToast('导入失败，请检查文件格式', 'error');
+            }
+        }
     </script>
 </body>
 </html>

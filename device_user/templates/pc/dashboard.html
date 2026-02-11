@@ -4,69 +4,11 @@
 
 {% set active_nav = 'dashboard' %}
 
+{% block page_title %}我的设备详情{% endblock %}
+
 {% block content %}
-<style>
-.notification-item {
-    padding: 14px 20px;
-    border-bottom: 1px solid #f0f0f0;
-    transition: background 0.3s;
-}
-.notification-item:hover {
-    background: #fafafa;
-}
-.notification-item:last-child {
-    border-bottom: none;
-}
-.notification-content {
-    font-size: 14px;
-    color: var(--text-primary);
-    line-height: 1.6;
-}
-.notification-content strong {
-    color: var(--primary);
-}
-.notification-time {
-    font-size: 12px;
-    color: var(--text-muted);
-    margin-top: 6px;
-}
-.notification-empty {
-    text-align: center;
-    padding: 60px 20px;
-    color: var(--text-muted);
-}
-.notification-empty .empty-icon {
-    font-size: 64px;
-    margin-bottom: 16px;
-    opacity: 0.5;
-}
-.notification-empty p {
-    font-size: 14px;
-}
-</style>
 
-<!-- 通知铃铛 -->
-<div class="notification-bell-wrapper">
-    <button class="notification-bell" onclick="toggleNotificationModal()">
-        <span class="bell-icon">🔔</span>
-        <span class="notification-badge" id="notificationBadge" style="display: none;">0</span>
-    </button>
-</div>
 
-<!-- 通知弹窗 -->
-<div class="notification-modal" id="notificationModal">
-    <div class="notification-modal-content">
-        <div class="notification-modal-header">
-            <h3>🔔 通知</h3>
-            <button class="close-btn" onclick="toggleNotificationModal()">&times;</button>
-        </div>
-        <div class="notification-modal-body" id="notificationBody">
-            <!-- 通知内容将通过JS动态渲染 -->
-        </div>
-    </div>
-</div>
-
-<h1 class="page-title">📊 我的设备详情</h1>
 
 <!-- 主布局：左边快捷操作，右边我的借用设备 -->
 <div class="dashboard-main-layout">
@@ -439,122 +381,9 @@ function submitRenew() {
 function openModal(id) { document.getElementById(id).classList.add('active'); }
 function closeModal(id) { document.getElementById(id).classList.remove('active'); }
 
-// 获取当前页面的所有通知数据
-const allNotifications = [
-    {% if notifications is defined and notifications %}
-        {% for item in notifications %}
-        {
-            id: '{{ item.device_name }}_{{ item.borrower }}_{{ item.time.timestamp()|string }}',
-            device_type: '{{ item.device_type }}',
-            device_name: '{{ item.device_name }}',
-            borrower: '{{ item.borrower }}',
-            type: '{{ item.type }}',
-            time: '{{ item.time.strftime("%Y-%m-%d %H:%M:%S") }}',
-            reason: '{{ item.reason if item.reason is defined else "" }}'
-        }{{ "," if not loop.last }}
-        {% endfor %}
-    {% endif %}
-];
-
-// 从LocalStorage获取已读通知ID
-function getReadNotificationIds() {
-    const readIds = localStorage.getItem('read_notification_ids');
-    return readIds ? JSON.parse(readIds) : [];
-}
-
-// 保存已读通知ID到LocalStorage
-function saveReadNotificationId(id) {
-    const readIds = getReadNotificationIds();
-    if (!readIds.includes(id)) {
-        readIds.push(id);
-        localStorage.setItem('read_notification_ids', JSON.stringify(readIds));
-    }
-}
-
-// 标记所有当前通知为已读
-function markAllAsRead() {
-    allNotifications.forEach(notification => {
-        saveReadNotificationId(notification.id);
-    });
-    updateNotificationBadge();
-}
-
-// 更新角标显示
-function updateNotificationBadge() {
-    const readIds = getReadNotificationIds();
-    const unreadCount = allNotifications.filter(n => !readIds.includes(n.id)).length;
-    const badge = document.getElementById('notificationBadge');
-    if (unreadCount > 0) {
-        badge.textContent = unreadCount;
-        badge.style.display = 'block';
-    } else {
-        badge.style.display = 'none';
-    }
-}
-
-// 渲染通知列表
-function renderNotifications() {
-    const body = document.getElementById('notificationBody');
-    if (allNotifications.length === 0) {
-        body.innerHTML = `
-            <div class="notification-empty">
-                <div class="empty-icon">📭</div>
-                <p>暂无通知</p>
-            </div>
-        `;
-        return;
-    }
-
-    let html = '';
-    allNotifications.forEach(notification => {
-        let content = '';
-        if (notification.type === '保管-被动') {
-            content = `我保管的${notification.device_type}，<strong>${notification.device_name}</strong>被<strong>${notification.borrower}</strong>借走`;
-        } else if (notification.type === '借用-被动') {
-            content = `我正在借用的${notification.device_type}，<strong>${notification.device_name}</strong>被<strong>${notification.borrower}</strong>转走`;
-        } else if (notification.type === '借用-主动') {
-            content = `我转借给了<strong>${notification.borrower}</strong>${notification.device_type}，<strong>${notification.device_name}</strong>`;
-        } else if (notification.type === '设备报废') {
-            content = `我借用的${notification.device_type}，<strong>${notification.device_name}</strong>已被管理员<span style="color: #ff4d4f;">报废</span>，已自动归还`;
-        } else if (notification.type === '状态变更') {
-            content = `管理员将我${notification.device_type}，<strong>${notification.device_name}</strong>的状态更改为${notification.reason || ''}`;
-        } else if (notification.type === '保管人变更') {
-            content = `管理员将${notification.device_type}，<strong>${notification.device_name}</strong>的保管人变更：${notification.reason || ''}`;
-        }
-
-        html += `
-            <div class="notification-item">
-                <div class="notification-content">${content}</div>
-                <div class="notification-time">${notification.time}</div>
-            </div>
-        `;
-    });
-    body.innerHTML = html;
-}
-
-function toggleNotificationModal() {
-    const modal = document.getElementById('notificationModal');
-    modal.classList.toggle('active');
-    // 打开弹窗时标记为已读
-    if (modal.classList.contains('active')) {
-        markAllAsRead();
-    }
-}
-
-// 点击弹窗外部关闭
-document.addEventListener('click', function(event) {
-    const modal = document.getElementById('notificationModal');
-    const bell = document.querySelector('.notification-bell');
-    if (modal && modal.classList.contains('active') && !modal.contains(event.target) && !bell.contains(event.target)) {
-        modal.classList.remove('active');
-    }
-});
-
 // 页面加载时初始化
 document.addEventListener('DOMContentLoaded', function() {
     loadUsers();
-    renderNotifications();
-    updateNotificationBadge();
 });
 </script>
 {% endblock %}
