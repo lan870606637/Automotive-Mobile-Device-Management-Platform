@@ -55,6 +55,56 @@
                     <span class="info-label">备注</span>
                     <span class="info-value">{{ device.remark or '-' }}</span>
                 </div>
+                {% if device.jira_address %}
+                <div class="info-row">
+                    <span class="info-label">JIRA地址</span>
+                    <span class="info-value">
+                        <a href="http://jira.carbit.lo/browse/{{ device.jira_address }}" target="_blank" style="color: #1890ff; text-decoration: none;">{{ device.jira_address }}</a>
+                    </span>
+                </div>
+                {% endif %}
+                {% if device.project_attribute %}
+                <div class="info-row">
+                    <span class="info-label">项目属性</span>
+                    <span class="info-value">{{ device.project_attribute }}</span>
+                </div>
+                {% endif %}
+                {% if device.connection_method %}
+                <div class="info-row">
+                    <span class="info-label">连接方式</span>
+                    <span class="info-value">{{ device.connection_method }}</span>
+                </div>
+                {% endif %}
+                {% if device.os_version %}
+                <div class="info-row">
+                    <span class="info-label">系统版本</span>
+                    <span class="info-value">{{ device.os_version }}</span>
+                </div>
+                {% endif %}
+                {% if device.os_platform %}
+                <div class="info-row">
+                    <span class="info-label">系统平台</span>
+                    <span class="info-value">{{ device.os_platform }}</span>
+                </div>
+                {% endif %}
+                {% if device.product_name %}
+                <div class="info-row">
+                    <span class="info-label">产品名称</span>
+                    <span class="info-value">{{ device.product_name }}</span>
+                </div>
+                {% endif %}
+                {% if device.screen_orientation %}
+                <div class="info-row">
+                    <span class="info-label">屏幕方向</span>
+                    <span class="info-value">{{ device.screen_orientation }}</span>
+                </div>
+                {% endif %}
+                {% if device.screen_resolution %}
+                <div class="info-row">
+                    <span class="info-label">分辨率</span>
+                    <span class="info-value">{{ device.screen_resolution }}</span>
+                </div>
+                {% endif %}
                 {% if device.status.value == '丢失' %}
                 <div class="info-row" style="color: #ff4d4f;">
                     <span class="info-label">丢失时间</span>
@@ -94,11 +144,9 @@
             <div class="card-header">
                 <span class="card-title">⚡ 操作</span>
             </div>
-            <div class="card-body">
-                <div class="action-btns">
-                    <button class="btn btn-primary btn-lg btn-block" onclick="openBorrowModal()">我要借用</button>
-                </div>
-                <p style="font-size: 13px; color: #8c8c8c; margin-top: 12px; text-align: center;">借用后可查看柜号信息</p>
+            <div class="card-body" style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px;">
+                <button class="btn btn-primary" onclick="openBorrowModal()" style="font-size: 24px; padding: 20px 60px; border-radius: 12px; min-width: 200px;">我要借用</button>
+                <p style="font-size: 14px; color: #8c8c8c; margin-top: 20px; text-align: center;">借用后可查看柜号信息</p>
             </div>
         </div>
 

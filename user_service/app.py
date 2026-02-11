@@ -1842,33 +1842,69 @@ def api_search():
     """搜索API"""
     keyword = request.args.get('keyword', '').strip()
     
-    if not keyword:
-        return jsonify({'success': True, 'devices': []})
-    
     results = []
     all_devices = api_client.get_all_devices()
     
     for device in all_devices:
-        if (keyword.lower() in device.name.lower() or
-            keyword.lower() in device.model.lower() or
-            keyword.lower() in device.borrower.lower()):
-            cabinet = device.cabinet_number or ''
-            is_no_cabinet = not cabinet.strip() or cabinet.strip() == '无'
-            is_circulating = cabinet.strip() == '流通'
-            is_sealed = device.status == DeviceStatus.SEALED
+        # 如果有搜索关键词，进行过滤；否则返回所有设备
+        if keyword:
+            keyword_lower = keyword.lower()
+            name_match = keyword_lower in (device.name or '').lower()
+            model_match = keyword_lower in (device.model or '').lower()
+            borrower_match = keyword_lower in (device.borrower or '').lower()
+            # 车机和仪表字段搜索
+            jira_match = keyword_lower in (device.jira_address or '').lower()
+            project_match = keyword_lower in (device.project_attribute or '').lower()
+            connection_match = keyword_lower in (device.connection_method or '').lower()
+            os_version_match = keyword_lower in (device.os_version or '').lower()
+            os_platform_match = keyword_lower in (device.os_platform or '').lower()
+            product_match = keyword_lower in (device.product_name or '').lower()
+            orientation_match = keyword_lower in (device.screen_orientation or '').lower()
+            resolution_match = keyword_lower in (device.screen_resolution or '').lower()
+            # 手机字段搜索
+            system_version_match = keyword_lower in (device.system_version or '').lower()
+            imei_match = keyword_lower in (device.imei or '').lower()
+            sn_match = keyword_lower in (device.sn or '').lower()
+            carrier_match = keyword_lower in (device.carrier or '').lower()
+            
+            if not (name_match or model_match or borrower_match or 
+                    jira_match or project_match or connection_match or 
+                    os_version_match or os_platform_match or product_match or 
+                    orientation_match or resolution_match or 
+                    system_version_match or imei_match or sn_match or carrier_match):
+                continue
+        
+        cabinet = device.cabinet_number or ''
+        is_no_cabinet = not cabinet.strip() or cabinet.strip() == '无'
+        is_circulating = cabinet.strip() == '流通'
+        is_sealed = device.status == DeviceStatus.SEALED
 
-            results.append({
-                'id': device.id,
-                'name': device.name,
-                'device_type': get_device_type_str(device),
-                'model': device.model,
-                'status': device.status.value,
-                'borrower': device.borrower,
-                'remark': device.remark or '-',
-                'no_cabinet': is_no_cabinet,
-                'is_circulating': is_circulating,
-                'is_sealed': is_sealed
-            })
+        results.append({
+            'id': device.id,
+            'name': device.name,
+            'device_type': get_device_type_str(device),
+            'model': device.model,
+            'status': device.status.value,
+            'borrower': device.borrower,
+            'remark': device.remark or '-',
+            'no_cabinet': is_no_cabinet,
+            'is_circulating': is_circulating,
+            'is_sealed': is_sealed,
+            # 车机和仪表字段
+            'jira_address': device.jira_address or '',
+            'project_attribute': device.project_attribute or '',
+            'connection_method': device.connection_method or '',
+            'os_version': device.os_version or '',
+            'os_platform': device.os_platform or '',
+            'product_name': device.product_name or '',
+            'screen_orientation': device.screen_orientation or '',
+            'screen_resolution': device.screen_resolution or '',
+            # 手机字段
+            'system_version': device.system_version or '',
+            'imei': device.imei or '',
+            'sn': device.sn or '',
+            'carrier': device.carrier or ''
+        })
     
     return jsonify({'success': True, 'devices': results})
 

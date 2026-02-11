@@ -112,6 +112,24 @@
 
     <!-- 右侧：我的借用设备 -->
     <div class="dashboard-right">
+        <!-- 设备搜索 -->
+        <div class="card" style="margin-bottom: 16px;">
+            <div class="card-header">
+                <span class="card-title">🔍 设备搜索</span>
+            </div>
+            <div class="card-body">
+                <div style="display: flex; gap: 10px; align-items: flex-start;">
+                    <div style="flex: 1; position: relative;">
+                        <input type="text" id="deviceSearchInput" class="search-input" placeholder="输入设备号或型号进行搜索..." 
+                               style="width: 100%; padding: 10px 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px;"
+                               oninput="handleDeviceSearchInput(this.value)" onkeydown="handleDeviceSearchKeydown(event)">
+                        <div id="searchSuggestions" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #d9d9d9; border-radius: 6px; margin-top: 4px; max-height: 200px; overflow-y: auto; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"></div>
+                    </div>
+                    <button onclick="searchDevice()" class="btn btn-primary" style="padding: 10px 24px; white-space: nowrap;">搜索</button>
+                </div>
+            </div>
+        </div>
+
         <!-- 我的借用设备 -->
 <div class="card">
     <div class="card-header">
@@ -148,7 +166,7 @@
                 <tr {% if device.is_overdue and device.status.value not in ['丢失', '已损坏'] %}style="background: #fff1f0;"{% endif %}>
                     <td>
                         <span class="device-icon">{% if device.device_type.value == '车机' %}🚗{% elif device.device_type.value == '手机' %}📱{% elif device.device_type.value == '仪表' %}📊{% elif device.device_type.value == '手机卡' %}📲{% elif device.device_type.value == '其它设备' %}🔧{% else %}📦{% endif %}</span>
-                        <span class="device-name">{{ device.name }}</span>
+                        <a href="{{ url_for('pc_device_detail', device_id=device.id, device_type=device.device_type.value) }}" class="device-name" style="color: #1890ff; font-weight: 500; text-decoration: none;">{{ device.name }}</a>
                     </td>
                     <td class="device-type">{{ device.device_type.value }}</td>
                     <td>{{ device.borrow_time }}</td>
@@ -573,5 +591,197 @@ document.addEventListener('DOMContentLoaded', function() {
     renderNotifications();
     updateNotificationBadge();
 });
+
+// ==================== 设备搜索功能 ====================
+let searchTimeout = null;
+let allDevices = [];
+
+// 加载所有设备数据
+function loadAllDevices() {
+    fetch('/api/search?keyword=')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                allDevices = data.devices || [];
+            }
+        })
+        .catch(() => {});
+}
+
+// 处理搜索输入（模糊搜索显示建议）
+function handleDeviceSearchInput(keyword) {
+    const suggestionsBox = document.getElementById('searchSuggestions');
+    
+    if (!keyword.trim()) {
+        suggestionsBox.style.display = 'none';
+        return;
+    }
+    
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        const keywordLower = keyword.toLowerCase().replace(/\s+/g, '');
+        const matched = allDevices.filter(d => {
+            const deviceName = (d.name || '').toLowerCase().replace(/\s+/g, '');
+            const deviceModel = (d.model || '').toLowerCase().replace(/\s+/g, '');
+            return deviceName.includes(keywordLower) || deviceModel.includes(keywordLower);
+        }).slice(0, 10); // 最多显示10条
+        
+        if (matched.length > 0) {
+            suggestionsBox.innerHTML = matched.map(d => {
+                const icon = d.device_type === '车机' ? '🚗' : 
+                            d.device_type === '手机' ? '📱' : 
+                            d.device_type === '仪表' ? '📊' : 
+                            d.device_type === '手机卡' ? '📲' : '🔧';
+                const safeName = d.name.replace(/'/g, "\\'").replace(/"/g, '\\"');
+                return `<div class="suggestion-item" data-id="${d.id}" data-type="${d.device_type}" data-name="${safeName}" 
+                            style="padding: 10px 12px; cursor: pointer; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #f0f0f0; hover: background-color: #f5f5f5;">
+                            <span>${icon}</span>
+                            <div style="flex: 1;">
+                                <div style="font-weight: 500;">${escapeHtml(d.name)}</div>
+                                <div style="font-size: 12px; color: #8c8c8c;">${d.model || ''} ${d.device_type}</div>
+                            </div>
+                        </div>`;
+            }).join('');
+            
+            // 绑定点击事件
+            suggestionsBox.querySelectorAll('.suggestion-item').forEach(item => {
+                item.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const id = this.getAttribute('data-id');
+                    const type = this.getAttribute('data-type');
+                    const name = this.getAttribute('data-name');
+                    document.getElementById('deviceSearchInput').value = name;
+                    document.getElementById('searchSuggestions').style.display = 'none';
+                    window.location.href = `/pc/device/${id}?device_type=${encodeURIComponent(type)}`;
+                });
+            });
+            
+            suggestionsBox.style.display = 'block';
+        } else {
+            suggestionsBox.innerHTML = '<div style="padding: 10px 12px; color: #999;">无匹配设备</div>';
+            suggestionsBox.style.display = 'block';
+        }
+    }, 200);
+}
+
+// 处理键盘事件
+function handleDeviceSearchKeydown(event) {
+    if (event.key === 'Enter') {
+        searchDevice();
+    }
+}
+
+// 选择设备（点击建议）
+function selectDevice(deviceId, deviceType, deviceName) {
+    const input = document.getElementById('deviceSearchInput');
+    input.value = deviceName;
+    document.getElementById('searchSuggestions').style.display = 'none';
+    // 跳转到设备详情
+    window.location.href = `/pc/device/${deviceId}?device_type=${encodeURIComponent(deviceType)}`;
+}
+
+// 点击建议项（防止事件冒泡）
+function onSuggestionClick(event, deviceId, deviceType, deviceName) {
+    event.stopPropagation();
+    event.preventDefault();
+    selectDevice(deviceId, deviceType, deviceName);
+    return false;
+}
+
+// 搜索按钮点击
+function searchDevice() {
+    const keyword = document.getElementById('deviceSearchInput').value.trim();
+    if (!keyword) {
+        showToast('请输入设备号或型号');
+        return;
+    }
+    
+    // 检查设备数据是否已加载
+    if (allDevices.length === 0) {
+        showToast('设备数据加载中，请稍后再试');
+        // 重新加载设备数据
+        loadAllDevices();
+        return;
+    }
+    
+    // 模糊匹配（包含精确匹配）
+    // 移除搜索关键词中的空格，提高匹配成功率
+    const keywordLower = keyword.toLowerCase().replace(/\s+/g, '');
+    const matched = allDevices.filter(d => {
+        const deviceName = (d.name || '').toLowerCase().replace(/\s+/g, '');
+        const deviceModel = (d.model || '').toLowerCase().replace(/\s+/g, '');
+        const nameMatch = deviceName.includes(keywordLower);
+        const modelMatch = deviceModel.includes(keywordLower);
+        return nameMatch || modelMatch;
+    });
+    
+    if (matched.length === 0) {
+        showToast('无此设备');
+    } else if (matched.length === 1) {
+        // 只有一个匹配，直接跳转
+        window.location.href = `/pc/device/${matched[0].id}?device_type=${encodeURIComponent(matched[0].device_type)}`;
+    } else {
+        // 检查是否有精确匹配（忽略空格）
+        const exactMatch = matched.find(d => {
+            const deviceName = (d.name || '').toLowerCase().replace(/\s+/g, '');
+            return deviceName === keywordLower;
+        });
+        if (exactMatch) {
+            window.location.href = `/pc/device/${exactMatch.id}?device_type=${encodeURIComponent(exactMatch.device_type)}`;
+            return;
+        }
+        // 多个匹配，显示建议列表
+        const suggestionsBox = document.getElementById('searchSuggestions');
+        suggestionsBox.innerHTML = matched.map(d => {
+            const icon = d.device_type === '车机' ? '🚗' : 
+                        d.device_type === '手机' ? '📱' : 
+                        d.device_type === '仪表' ? '📊' : 
+                        d.device_type === '手机卡' ? '📲' : '🔧';
+            const safeName = d.name.replace(/'/g, "\\'").replace(/"/g, '\\"');
+            return `<div class="suggestion-item" data-id="${d.id}" data-type="${d.device_type}" data-name="${safeName}" 
+                        style="padding: 10px 12px; cursor: pointer; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #f0f0f0;">
+                        <span>${icon}</span>
+                        <div style="flex: 1;">
+                            <div style="font-weight: 500;">${escapeHtml(d.name)}</div>
+                            <div style="font-size: 12px; color: #8c8c8c;">${d.model || ''} ${d.device_type}</div>
+                        </div>
+                    </div>`;
+        }).join('');
+        
+        // 绑定点击事件
+        suggestionsBox.querySelectorAll('.suggestion-item').forEach(item => {
+            item.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const id = this.getAttribute('data-id');
+                const type = this.getAttribute('data-type');
+                const name = this.getAttribute('data-name');
+                document.getElementById('deviceSearchInput').value = name;
+                document.getElementById('searchSuggestions').style.display = 'none';
+                window.location.href = `/pc/device/${id}?device_type=${encodeURIComponent(type)}`;
+            });
+        });
+        
+        suggestionsBox.style.display = 'block';
+        showToast('找到多个匹配设备，请选择');
+    }
+}
+
+// 点击外部关闭建议
+ document.addEventListener('click', function(event) {
+    const searchBox = document.getElementById('deviceSearchInput');
+    const suggestionsBox = document.getElementById('searchSuggestions');
+    if (searchBox && suggestionsBox && !searchBox.contains(event.target) && !suggestionsBox.contains(event.target)) {
+        suggestionsBox.style.display = 'none';
+    }
+});
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// 页面加载时获取设备数据
+loadAllDevices();
 </script>
 {% endblock %}

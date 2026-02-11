@@ -32,6 +32,62 @@
     </div>
 </div>
 
+{% if device_type == 'car' or device_type == 'instrument' %}
+<!-- 组合筛选（仅车机和仪表） -->
+<div class="card" style="margin-bottom: 20px;">
+    <div class="card-header">
+        <span class="card-title">🔍 组合筛选</span>
+        <button onclick="resetFilters()" class="btn btn-default btn-sm">重置筛选</button>
+    </div>
+    <div class="card-body">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+            <div>
+                <label style="display: block; font-size: 13px; color: #666; margin-bottom: 6px;">项目属性</label>
+                <select id="filterProject" onchange="applyFilters()" style="width: 100%; padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px;">
+                    <option value="">全部</option>
+                </select>
+            </div>
+            <div>
+                <label style="display: block; font-size: 13px; color: #666; margin-bottom: 6px;">连接方式</label>
+                <select id="filterConnection" onchange="applyFilters()" style="width: 100%; padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px;">
+                    <option value="">全部</option>
+                </select>
+            </div>
+            <div>
+                <label style="display: block; font-size: 13px; color: #666; margin-bottom: 6px;">系统版本</label>
+                <select id="filterOsVersion" onchange="applyFilters()" style="width: 100%; padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px;">
+                    <option value="">全部</option>
+                </select>
+            </div>
+            <div>
+                <label style="display: block; font-size: 13px; color: #666; margin-bottom: 6px;">系统平台</label>
+                <select id="filterOsPlatform" onchange="applyFilters()" style="width: 100%; padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px;">
+                    <option value="">全部</option>
+                </select>
+            </div>
+            <div>
+                <label style="display: block; font-size: 13px; color: #666; margin-bottom: 6px;">产品名称</label>
+                <select id="filterProduct" onchange="applyFilters()" style="width: 100%; padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px;">
+                    <option value="">全部</option>
+                </select>
+            </div>
+            <div>
+                <label style="display: block; font-size: 13px; color: #666; margin-bottom: 6px;">屏幕方向</label>
+                <select id="filterOrientation" onchange="applyFilters()" style="width: 100%; padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px;">
+                    <option value="">全部</option>
+                </select>
+            </div>
+            <div>
+                <label style="display: block; font-size: 13px; color: #666; margin-bottom: 6px;">分辨率</label>
+                <select id="filterResolution" onchange="applyFilters()" style="width: 100%; padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px;">
+                    <option value="">全部</option>
+                </select>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <div class="filter-tabs">
     <a href="{{ url_for('pc_device_list') }}" class="filter-tab {% if (not device_type or device_type == 'all') and not no_cabinet %}active{% endif %}">全部</a>
     <a href="{{ url_for('pc_device_list', type='car') }}" class="filter-tab {% if device_type == 'car' %}active{% endif %}">车机</a>
@@ -206,6 +262,8 @@ function doSearch(keyword) {
             if (data.success) {
                 allDevices = data.devices;
                 renderSearchResults(allDevices);
+                // 搜索完成后重新初始化筛选器
+                initFilters();
             } else {
                 showToast('搜索失败');
             }
@@ -215,6 +273,9 @@ function doSearch(keyword) {
             showToast('搜索失败，请重试');
         });
 }
+
+// 获取当前页面设备类型
+const currentDeviceType = '{{ device_type }}';
 
 function renderSearchResults(devices) {
     const tbody = document.querySelector('#deviceTable tbody');
@@ -228,7 +289,7 @@ function renderSearchResults(devices) {
     if (devices.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="5" class="empty-state" style="padding: 40px;">
+                <td colspan="12" class="empty-state" style="padding: 40px;">
                     <div class="empty-icon">🔍</div>
                     <p class="empty-title">未找到匹配的设备</p>
                 </td>
@@ -248,16 +309,70 @@ function renderSearchResults(devices) {
         return iconMap[type] || '🔧';
     };
     
-    tbody.innerHTML = devices.map(device => `
-        <tr ${device.status === '报废' ? 'class="disabled"' : ''}>
+    // 根据当前设备类型确定渲染的列数
+    const isCarOrInstrument = currentDeviceType === 'car' || currentDeviceType === 'instrument';
+    const isPhone = currentDeviceType === 'phone';
+    const isSimcard = currentDeviceType === 'simcard';
+    
+    tbody.innerHTML = devices.map((device, index) => {
+        const detailUrl = device.no_cabinet || device.is_circulating || device.is_sealed 
+            ? '/pc/device/' + device.id + '/simple?device_type=' + encodeURIComponent(device.device_type)
+            : '/pc/device/' + device.id + '?device_type=' + encodeURIComponent(device.device_type);
+        
+        let extraCols = '';
+        
+        if (isCarOrInstrument) {
+            // 车机和仪表显示额外字段
+            extraCols = `
+                <td>${device.project_attribute || '-'}</td>
+                <td style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${device.connection_method || ''}">${device.connection_method || '-'}</td>
+                <td>${device.os_version || '-'}</td>
+                <td>${device.os_platform || '-'}</td>
+                <td>${device.product_name || '-'}</td>
+                <td>${device.screen_orientation || '-'}</td>
+                <td>${device.screen_resolution || '-'}</td>
+            `;
+        } else if (isPhone) {
+            // 手机显示额外字段
+            const imei = device.imei || '';
+            const sn = device.sn || '';
+            extraCols = `
+                <td>${device.system_version || '-'}</td>
+                <td style="font-size: 12px;" title="${imei}">${imei.length > 15 ? imei.substring(0, 15) + '...' : imei || '-'}</td>
+                <td style="font-size: 12px;" title="${sn}">${sn.length > 15 ? sn.substring(0, 15) + '...' : sn || '-'}</td>
+                <td>${device.carrier || '-'}</td>
+            `;
+        } else if (isSimcard) {
+            // 手机卡显示额外字段
+            extraCols = `
+                <td>${device.model || '-'}</td>
+                <td>${device.carrier || '-'}</td>
+            `;
+        } else {
+            // 默认显示类型和备注
+            extraCols = `
+                <td class="device-type">${device.device_type}</td>
+                <td style="color: #8c8c8c; font-size: 13px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${device.remark || ''}">${device.remark || '-'}</td>
+            `;
+        }
+        
+        return `<tr ${device.status === '报废' ? 'class="disabled"' : ''}>
+            <td>${index + 1}</td>
+            <td>${device.model || '-'}</td>
             <td>
                 <span class="device-icon">${getDeviceIcon(device.device_type)}</span>
                 ${device.status === '报废'
                     ? `<span class="device-name">${escapeHtml(device.name)}</span>`
-                    : `<a href="${device.no_cabinet || device.is_circulating || device.is_sealed ? '/pc/device/' + device.id + '/simple?device_type=' + encodeURIComponent(device.device_type) : '/pc/device/' + device.id + '?device_type=' + encodeURIComponent(device.device_type)}" class="device-name" style="color: #1890ff; font-weight: 500;">${escapeHtml(device.name)}</a>`
+                    : `<a href="${detailUrl}" class="device-name" style="color: #1890ff; font-weight: 500;">${escapeHtml(device.name)}</a>`
                 }
             </td>
-            <td class="device-type">${device.device_type}</td>
+            <td>
+                ${device.jira_address 
+                    ? `<a href="http://jira.carbit.lo/browse/${escapeHtml(device.jira_address)}" target="_blank" style="color: #1890ff; text-decoration: none;">${escapeHtml(device.jira_address)}</a>`
+                    : '-'
+                }
+            </td>
+            ${extraCols}
             <td>
                 ${device.no_cabinet
                     ? '<span class="status-tag status-no-cabinet">无柜号</span>'
@@ -268,15 +383,14 @@ function renderSearchResults(devices) {
                             : `<span class="status-tag ${getStatusClass(device.status)}">${device.status}</span>`
                 }
             </td>
-            <td style="color: #8c8c8c; font-size: 13px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${device.remark ? escapeHtml(device.remark) : '-'}</td>
             <td>
                 ${device.status === '报废'
                     ? '<button class="btn btn-default btn-sm" disabled>已报废</button>'
-                    : `<a href="${device.no_cabinet || device.is_circulating || device.is_sealed ? '/pc/device/' + device.id + '/simple?device_type=' + encodeURIComponent(device.device_type) : '/pc/device/' + device.id + '?device_type=' + encodeURIComponent(device.device_type)}" class="btn btn-primary btn-sm">查看详情</a>`
+                    : `<a href="${detailUrl}" class="btn btn-primary btn-sm">查看详情</a>`
                 }
             </td>
-        </tr>
-    `).join('');
+        </tr>`;
+    }).join('');
 }
 
 function restoreOriginalList() {
@@ -302,5 +416,183 @@ function escapeHtml(text) {
     div.textContent = text;
     return div.innerHTML;
 }
+
+// ==================== 组合筛选功能 ====================
+let originalDevices = []; // 保存原始设备数据
+
+// 从页面表格中读取设备数据
+function loadDevicesFromTable() {
+    const devices = [];
+    const rows = document.querySelectorAll('#deviceTable tbody tr');
+    
+    rows.forEach(row => {
+        if (row.classList.contains('empty-state') || row.querySelector('.empty-state')) return;
+        
+        const cells = row.querySelectorAll('td');
+        if (cells.length < 5) return;
+        
+        // 根据列数判断设备类型并提取数据
+        const device = {
+            id: row.querySelector('a[href*="/pc/device/"]')?.href?.match(/\/pc\/device\/([^?]+)/)?.[1] || '',
+            name: cells[2]?.textContent?.trim() || '',
+            device_type: cells[3]?.textContent?.trim() || '',
+            model: cells[1]?.textContent?.trim() || '',
+            jira_address: cells[3]?.querySelector('a')?.textContent?.trim() || '',
+            project_attribute: cells[4]?.textContent?.trim() || '',
+            connection_method: cells[5]?.textContent?.trim() || '',
+            os_version: cells[6]?.textContent?.trim() || '',
+            os_platform: cells[7]?.textContent?.trim() || '',
+            product_name: cells[8]?.textContent?.trim() || '',
+            screen_orientation: cells[9]?.textContent?.trim() || '',
+            screen_resolution: cells[10]?.textContent?.trim() || ''
+        };
+        
+        devices.push(device);
+    });
+    
+    return devices;
+}
+
+// 从API获取所有设备数据用于筛选选项
+function loadAllDevicesForFilterOptions() {
+    fetch('/api/search?keyword=')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success && data.devices) {
+                initFilterOptions(data.devices);
+            }
+        })
+        .catch(() => {
+            // 如果API失败，使用当前页面数据
+            initFilterOptions(originalDevices);
+        });
+}
+
+// 初始化筛选器选项
+function initFilters() {
+    const isCarOrInstrument = currentDeviceType === 'car' || currentDeviceType === 'instrument';
+    if (!isCarOrInstrument) return;
+    
+    // 从API获取所有设备数据来生成筛选选项
+    loadAllDevicesForFilterOptions();
+}
+
+// 根据设备数据填充筛选选项
+function initFilterOptions(deviceList) {
+    if (!deviceList || deviceList.length === 0) {
+        console.log('没有设备数据，无法初始化筛选器');
+        return;
+    }
+    
+    // 收集所有唯一的值
+    const projectSet = new Set();
+    const connectionSet = new Set();
+    const osVersionSet = new Set();
+    const osPlatformSet = new Set();
+    const productSet = new Set();
+    const orientationSet = new Set();
+    const resolutionSet = new Set();
+    
+    deviceList.forEach(d => {
+        if (d.project_attribute && d.project_attribute !== '-') projectSet.add(d.project_attribute);
+        if (d.connection_method && d.connection_method !== '-') connectionSet.add(d.connection_method);
+        if (d.os_version && d.os_version !== '-') osVersionSet.add(d.os_version);
+        if (d.os_platform && d.os_platform !== '-') osPlatformSet.add(d.os_platform);
+        if (d.product_name && d.product_name !== '-') productSet.add(d.product_name);
+        if (d.screen_orientation && d.screen_orientation !== '-') orientationSet.add(d.screen_orientation);
+        if (d.screen_resolution && d.screen_resolution !== '-') resolutionSet.add(d.screen_resolution);
+    });
+    
+    // 清空并填充下拉框
+    clearAndFillSelect('filterProject', projectSet);
+    clearAndFillSelect('filterConnection', connectionSet);
+    clearAndFillSelect('filterOsVersion', osVersionSet);
+    clearAndFillSelect('filterOsPlatform', osPlatformSet);
+    clearAndFillSelect('filterProduct', productSet);
+    clearAndFillSelect('filterOrientation', orientationSet);
+    clearAndFillSelect('filterResolution', resolutionSet);
+}
+
+function clearAndFillSelect(selectId, valueSet) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+    
+    // 保留第一个"全部"选项
+    const firstOption = select.options[0];
+    select.innerHTML = '';
+    select.appendChild(firstOption);
+    
+    const values = Array.from(valueSet).sort();
+    values.forEach(value => {
+        if (value && value.trim()) {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = value;
+            select.appendChild(option);
+        }
+    });
+}
+
+
+
+// 应用筛选
+function applyFilters() {
+    const project = document.getElementById('filterProject')?.value || '';
+    const connection = document.getElementById('filterConnection')?.value || '';
+    const osVersion = document.getElementById('filterOsVersion')?.value || '';
+    const osPlatform = document.getElementById('filterOsPlatform')?.value || '';
+    const product = document.getElementById('filterProduct')?.value || '';
+    const orientation = document.getElementById('filterOrientation')?.value || '';
+    const resolution = document.getElementById('filterResolution')?.value || '';
+    
+    // 从原始数据中筛选
+    let filtered = allDevices.filter(d => {
+        if (project && d.project_attribute !== project) return false;
+        if (connection && d.connection_method !== connection) return false;
+        if (osVersion && d.os_version !== osVersion) return false;
+        if (osPlatform && d.os_platform !== osPlatform) return false;
+        if (product && d.product_name !== product) return false;
+        if (orientation && d.screen_orientation !== orientation) return false;
+        if (resolution && d.screen_resolution !== resolution) return false;
+        return true;
+    });
+    
+    renderSearchResults(filtered);
+    
+    // 显示筛选结果数量
+    const pagination = document.querySelector('.pagination');
+    if (pagination) pagination.style.display = 'none';
+}
+
+// 重置筛选
+function resetFilters() {
+    document.getElementById('filterProject').value = '';
+    document.getElementById('filterConnection').value = '';
+    document.getElementById('filterOsVersion').value = '';
+    document.getElementById('filterOsPlatform').value = '';
+    document.getElementById('filterProduct').value = '';
+    document.getElementById('filterOrientation').value = '';
+    document.getElementById('filterResolution').value = '';
+    
+    // 恢复原始列表
+    if (document.getElementById('searchInput').value.trim()) {
+        // 如果有搜索关键词，重新搜索
+        doSearch(document.getElementById('searchInput').value.trim());
+    } else {
+        // 否则恢复原始列表
+        restoreOriginalList();
+    }
+}
+
+// 页面加载完成后初始化筛选器
+document.addEventListener('DOMContentLoaded', function() {
+    // 等待页面完全加载后初始化筛选器
+    setTimeout(() => {
+        // 从页面表格加载设备数据
+        originalDevices = loadDevicesFromTable();
+        allDevices = originalDevices;
+        initFilters();
+    }, 300);
+});
 </script>
 {% endblock %}

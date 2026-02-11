@@ -32,6 +32,15 @@
     </div>
 </div>
 
+<!-- 搜索 -->
+<div class="search-bar" style="margin-bottom: 20px;">
+    <div class="search-input-wrap" style="max-width: 500px;">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="searchInput" class="search-input" placeholder="搜索：设备名称、类型、操作、借用人、原因..." onkeyup="handleSearch(event)" style="width: 100%; padding: 10px 40px; border: 1px solid #d9d9d9; border-radius: 8px; font-size: 14px;">
+        <button class="clear-btn" id="clearSearchBtn" onclick="clearSearch()" style="display:none; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #999;">✕</button>
+    </div>
+</div>
+
 <!-- 记录列表 -->
 <div class="card">
     <div class="card-header">
@@ -129,12 +138,140 @@
         {% endif %}
         
         {% else %}
-        <div class="empty-state">
+        <div class="empty-state" id="emptyState">
             <div class="empty-icon">📋</div>
-            <p class="empty-title">暂无借用记录</p>
-            <a href="{{ url_for('pc_device_list') }}" class="btn btn-primary">去借设备</a>
+            <p class="empty-title" id="emptyTitle">暂无借用记录</p>
+            <a href="{{ url_for('pc_device_list') }}" class="btn btn-primary" id="emptyBtn">去借设备</a>
         </div>
         {% endif %}
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let allRecords = [];
+let isSearching = false;
+
+// 初始化记录数据
+{% if records %}
+allRecords = [
+    {% for record in records %}
+    {
+        device_name: '{{ record.device_name|replace("'", "\\'") }}',
+        device_type: '{{ record.device_type }}',
+        operation_type: '{{ record.operation_type.value }}',
+        borrower: '{{ record.borrower|replace("'", "\\'") }}',
+        operator: '{{ record.operator|replace("'", "\\'") }}' || '',
+        reason: '{{ (record.reason or "")|replace("'", "\\'") }}',
+        remark: '{{ (record.remark or "")|replace("'", "\\'") }}',
+        operation_time: '{{ record.operation_time.strftime("%Y-%m-%d %H:%M:%S") }}',
+        device_id: '{{ record.device_id }}',
+        is_admin_borrower: {{ 'true' if is_admin_user(record.borrower) else 'false' }},
+        is_admin_operator: {{ 'true' if is_admin_user(record.operator) else 'false' }}
+    },
+    {% endfor %}
+];
+{% endif %}
+
+function handleSearch(event) {
+    const keyword = event.target.value.trim().toLowerCase();
+    const clearBtn = document.getElementById('clearSearchBtn');
+    
+    if (keyword) {
+        clearBtn.style.display = 'block';
+    } else {
+        clearBtn.style.display = 'none';
+        restoreOriginalList();
+        return;
+    }
+    
+    if (isSearching) return;
+    isSearching = true;
+    
+    // 本地搜索
+    const filtered = allRecords.filter(r => {
+        return r.device_name.toLowerCase().includes(keyword) ||
+               r.device_type.toLowerCase().includes(keyword) ||
+               r.operation_type.toLowerCase().includes(keyword) ||
+               r.borrower.toLowerCase().includes(keyword) ||
+               r.operator.toLowerCase().includes(keyword) ||
+               (r.reason && r.reason.toLowerCase().includes(keyword)) ||
+               (r.remark && r.remark.toLowerCase().includes(keyword));
+    });
+    
+    renderSearchResults(filtered, keyword);
+    isSearching = false;
+}
+
+function renderSearchResults(records, keyword) {
+    const tbody = document.querySelector('.data-table tbody');
+    const pagination = document.querySelector('.pagination');
+    const emptyState = document.getElementById('emptyState');
+    
+    if (pagination) pagination.style.display = 'none';
+    
+    if (records.length === 0) {
+        if (tbody) tbody.innerHTML = '';
+        if (emptyState) {
+            emptyState.style.display = 'block';
+            document.getElementById('emptyTitle').textContent = '未找到匹配的记录';
+            document.getElementById('emptyBtn').style.display = 'none';
+        }
+        return;
+    }
+    
+    if (emptyState) emptyState.style.display = 'none';
+    
+    const getIcon = (type) => {
+        const map = {'车机': '🚗', '手机': '📱', '仪表': '📊', '手机卡': '📲', '其它设备': '🔧'};
+        return map[type] || '📦';
+    };
+    
+    const getStatusClass = (op) => {
+        if (op.includes('借出')) return 'status-borrowed';
+        if (op.includes('归还')) return 'status-available';
+        if (op.includes('丢失') || op.includes('损坏') || op.includes('未找到')) return 'status-lost';
+        if (op.includes('报废')) return 'status-scrapped';
+        if (op.includes('续期') || op.includes('保管人变更')) return 'status-no-cabinet';
+        return 'status-borrowed';
+    };
+    
+    tbody.innerHTML = records.map(r => `
+        <tr>
+            <td style="font-size: 13px; color: #8c8c8c;">${r.operation_time}</td>
+            <td>
+                <span style="font-size: 16px; margin-right: 4px;">${getIcon(r.device_type)}</span>
+                <a href="/pc/device/${r.device_id}?device_type=${encodeURIComponent(r.device_type)}" style="font-weight: 500; color: #1890ff; text-decoration: none;">${escapeHtml(r.device_name)}</a>
+            </td>
+            <td>${r.device_type}</td>
+            <td><span class="status-tag ${getStatusClass(r.operation_type)}">${r.operation_type}</span></td>
+            <td>${escapeHtml(r.borrower)}${r.is_admin_borrower ? '<span class="status-tag status-lost" style="margin-left: 4px; font-size: 10px; padding: 1px 4px;">管</span>' : ''}</td>
+            <td>${escapeHtml(r.operator)}${r.is_admin_operator ? '<span class="status-tag status-lost" style="margin-left: 4px; font-size: 10px; padding: 1px 4px;">管</span>' : ''}</td>
+            <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #595959;">
+                ${r.reason && r.reason !== 'nan' ? escapeHtml(r.reason) : ''}
+                ${r.remark && r.remark !== 'nan' ? '<span style="color: #8c8c8c;"> | ' + escapeHtml(r.remark) + '</span>' : ''}
+                ${!r.reason && !r.remark ? '-' : ''}
+            </td>
+        </tr>
+    `).join('');
+}
+
+function clearSearch() {
+    const input = document.getElementById('searchInput');
+    input.value = '';
+    document.getElementById('clearSearchBtn').style.display = 'none';
+    restoreOriginalList();
+}
+
+function restoreOriginalList() {
+    location.reload();
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
 {% endblock %}
