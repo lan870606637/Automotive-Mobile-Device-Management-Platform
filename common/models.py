@@ -353,3 +353,36 @@ class Notification:
             "create_time": self.create_time.strftime("%Y-%m-%d %H:%M:%S"),
             "notification_type": self.notification_type,
         }
+
+
+@dataclass
+class Announcement:
+    """公告"""
+    id: str
+    title: str  # 公告标题
+    content: str  # 公告内容
+    announcement_type: str = "normal"  # 公告类型：normal(普通), special(特殊)
+    is_active: bool = True  # 是否上架
+    sort_order: int = 0  # 排序顺序（数字越小越靠前）
+    creator: str = ""  # 创建人
+    create_time: Optional[datetime] = None  # 创建时间
+    update_time: Optional[datetime] = None  # 更新时间
+    force_show_version: int = 0  # 强制显示版本号，增加后用户会重新看到弹窗
+
+    def __post_init__(self):
+        if self.create_time is None:
+            self.create_time = datetime.now()
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "title": self.title,
+            "content": self.content,
+            "announcement_type": self.announcement_type,
+            "is_active": "是" if self.is_active else "否",
+            "sort_order": self.sort_order,
+            "creator": self.creator,
+            "create_time": self.create_time.strftime("%Y-%m-%d %H:%M:%S") if self.create_time else "",
+            "update_time": self.update_time.strftime("%Y-%m-%d %H:%M:%S") if self.update_time else "",
+            "force_show_version": self.force_show_version,
+        }

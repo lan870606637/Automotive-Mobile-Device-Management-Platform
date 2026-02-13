@@ -3390,6 +3390,46 @@ def api_mark_all_read():
     return jsonify({'success': True, 'count': count})
 
 
+# ==================== 公告API ====================
+
+@app.route('/api/announcements', methods=['GET'])
+@login_required
+def api_user_announcements():
+    """获取公告列表API（用户端）"""
+    # 普通公告
+    normal_announcements = api_client.get_active_normal_announcements()
+    # 特殊公告
+    special_announcements = api_client.get_active_special_announcements()
+    
+    return jsonify({
+        'success': True,
+        'normal_announcements': [a.to_dict() for a in normal_announcements],
+        'special_announcements': [a.to_dict() for a in special_announcements]
+    })
+
+
+@app.route('/api/announcements/normal', methods=['GET'])
+@login_required
+def api_user_normal_announcements():
+    """获取普通公告列表API"""
+    announcements = api_client.get_active_normal_announcements()
+    return jsonify({
+        'success': True,
+        'announcements': [a.to_dict() for a in announcements]
+    })
+
+
+@app.route('/api/announcements/special', methods=['GET'])
+@login_required
+def api_user_special_announcements():
+    """获取特殊公告列表API"""
+    announcements = api_client.get_active_special_announcements()
+    return jsonify({
+        'success': True,
+        'announcements': [a.to_dict() for a in announcements]
+    })
+
+
 # ==================== 错误处理 ====================
 
 @app.errorhandler(404)

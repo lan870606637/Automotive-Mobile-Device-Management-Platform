@@ -20,7 +20,7 @@ from flask import Flask, render_template, request, jsonify, session, redirect, u
 from dotenv import load_dotenv
 
 # 从 common 导入
-from common.models import DeviceStatus, DeviceType, OperationType, EntrySource, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, Admin
+from common.models import DeviceStatus, DeviceType, OperationType, EntrySource, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, Admin, Announcement
 from common.api_client import api_client
 from common.utils import mask_phone, is_mobile_device
 from common.config import SECRET_KEY, SERVER_URL, ADMIN_SERVICE_PORT
@@ -574,6 +574,27 @@ def admin_pc_overdue():
                          admin_name=session.get('admin_name', '管理员'))
 
 
+@app.route('/admin/pc/announcements')
+@admin_required
+def admin_pc_announcements():
+    """PC端公告管理页面"""
+    # 获取所有公告
+    announcements = api_client.get_announcements()
+    
+    # 分类统计
+    normal_count = len([a for a in announcements if a.announcement_type == 'normal'])
+    special_count = len([a for a in announcements if a.announcement_type == 'special'])
+    active_count = len([a for a in announcements if a.is_active])
+    
+    return render_template('admin/pc/announcements.html',
+                         announcements=announcements,
+                         normal_count=normal_count,
+                         special_count=special_count,
+                         active_count=active_count,
+                         admin_name=session.get('admin_name', '管理员'),
+                         overdue_count=get_overdue_count())
+
+
 @app.route('/api/devices/overdue', methods=['GET'])
 @admin_required
 def api_devices_overdue():
@@ -729,6 +750,165 @@ def api_overdue_export():
         headers={'Content-Disposition': f'attachment; filename=逾期设备_{datetime.now().strftime("%Y%m%d")}.csv'}
     )
     return response
+
+
+# ==================== 公告管理API ====================
+
+@app.route('/api/announcements', methods=['GET'])
+@admin_required
+def api_get_announcements():
+    """获取公告列表API"""
+    announcement_type = request.args.get('type', None)
+    active_only = request.args.get('active_only', 'false').lower() == 'true'
+    
+    announcements = api_client.get_announcements(announcement_type, active_only)
+    
+    return jsonify({
+        'success': True,
+        'announcements': [a.to_dict() for a in announcements]
+    })
+
+
+@app.route('/api/announcements', methods=['POST'])
+@admin_required
+def api_create_announcement():
+    """创建公告API"""
+    data = request.get_json()
+    
+    title = data.get('title', '').strip()
+    content = data.get('content', '').strip()
+    announcement_type = data.get('announcement_type', 'normal')
+    sort_order = data.get('sort_order', 0)
+    
+    if not title or not content:
+        return jsonify({'success': False, 'message': '标题和内容不能为空'})
+    
+    if announcement_type not in ['normal', 'special']:
+        return jsonify({'success': False, 'message': '公告类型无效'})
+    
+    try:
+        announcement = api_client.create_announcement(
+            title=title,
+            content=content,
+            announcement_type=announcement_type,
+            sort_order=int(sort_order),
+            creator=session.get('admin_name', '管理员')
+        )
+        
+        # 添加操作日志
+        api_client.add_operation_log(
+            f"创建{'特殊' if announcement_type == 'special' else '普通'}公告: {title}",
+            "公告管理"
+        )
+        
+        return jsonify({
+            'success': True,
+            'announcement': announcement.to_dict(),
+            'message': '公告创建成功'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'创建失败: {str(e)}'})
+
+
+@app.route('/api/announcements/<announcement_id>', methods=['GET'])
+@admin_required
+def api_get_announcement(announcement_id):
+    """获取单个公告API"""
+    announcement = api_client.get_announcement_by_id(announcement_id)
+    if not announcement:
+        return jsonify({'success': False, 'message': '公告不存在'})
+    
+    return jsonify({
+        'success': True,
+        'announcement': announcement.to_dict()
+    })
+
+
+@app.route('/api/announcements/<announcement_id>', methods=['PUT'])
+@admin_required
+def api_update_announcement(announcement_id):
+    """更新公告API"""
+    data = request.get_json()
+    
+    try:
+        announcement = api_client.update_announcement(announcement_id, data)
+        if not announcement:
+            return jsonify({'success': False, 'message': '公告不存在'})
+        
+        # 添加操作日志
+        api_client.add_operation_log(
+            f"更新公告: {announcement.title}",
+            "公告管理"
+        )
+        
+        return jsonify({
+            'success': True,
+            'announcement': announcement.to_dict(),
+            'message': '公告更新成功'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'更新失败: {str(e)}'})
+
+
+@app.route('/api/announcements/<announcement_id>/toggle', methods=['POST'])
+@admin_required
+def api_toggle_announcement(announcement_id):
+    """切换公告上架/下架状态API"""
+    announcement = api_client.toggle_announcement_status(announcement_id)
+    if not announcement:
+        return jsonify({'success': False, 'message': '公告不存在'})
+    
+    status = "上架" if announcement.is_active else "下架"
+    api_client.add_operation_log(
+        f"{status}公告: {announcement.title}",
+        "公告管理"
+    )
+    
+    return jsonify({
+        'success': True,
+        'is_active': announcement.is_active,
+        'message': f'公告已{status}'
+    })
+
+
+@app.route('/api/announcements/<announcement_id>', methods=['DELETE'])
+@admin_required
+def api_delete_announcement(announcement_id):
+    """删除公告API"""
+    announcement = api_client.get_announcement_by_id(announcement_id)
+    if not announcement:
+        return jsonify({'success': False, 'message': '公告不存在'})
+    
+    title = announcement.title
+    success = api_client.delete_announcement(announcement_id)
+    if success:
+        api_client.add_operation_log(
+            f"删除公告: {title}",
+            "公告管理"
+        )
+        return jsonify({'success': True, 'message': '公告已删除'})
+    else:
+        return jsonify({'success': False, 'message': '删除失败'})
+
+
+@app.route('/api/announcements/<announcement_id>/force-show', methods=['POST'])
+@admin_required
+def api_force_show_announcement(announcement_id):
+    """再次公告API - 增加版本号让用户重新看到弹窗"""
+    announcement = api_client.force_show_announcement(announcement_id)
+    if not announcement:
+        return jsonify({'success': False, 'message': '公告不存在'})
+    
+    api_client.add_operation_log(
+        f"再次公告: {announcement.title} (版本{announcement.force_show_version})",
+        "公告管理"
+    )
+    
+    return jsonify({
+        'success': True,
+        'message': '已触发再次公告，用户将重新看到此公告弹窗',
+        'force_show_version': announcement.force_show_version
+    })
 
 
 @app.route('/admin/logout')

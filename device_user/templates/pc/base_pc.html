@@ -67,6 +67,15 @@
 
         <!-- 主内容区 -->
         <main class="main-content">
+            <!-- 公告栏（普通公告滚动） -->
+            <div id="announcementBar" class="announcement-bar" style="display: none;">
+                <div class="announcement-bar-icon">📢</div>
+                <div class="announcement-bar-content">
+                    <div id="announcementScroller" class="announcement-scroller"></div>
+                </div>
+                <button class="announcement-bar-close" onclick="hideAnnouncementBar()">×</button>
+            </div>
+
             <!-- 顶部栏 -->
             <header class="pc-header">
                 <h1 class="page-title">{% block page_title %}{% endblock %}</h1>
@@ -100,6 +109,22 @@
         </div>
     </div>
 
+    <!-- 特殊公告弹窗 -->
+    <div id="specialAnnouncementModal" class="pc-modal">
+        <div class="pc-modal-content" style="max-width: 500px;">
+            <div class="pc-modal-header" style="background: #ff4d4f; color: white;">
+                <h3>🔔 重要公告</h3>
+                <button class="pc-modal-close" onclick="closeSpecialAnnouncement()" style="color: white;">&times;</button>
+            </div>
+            <div class="pc-modal-body">
+                <div id="specialAnnouncementContent" style="font-size: 15px; line-height: 1.8;"></div>
+            </div>
+            <div class="pc-modal-footer">
+                <button class="btn btn-primary" onclick="closeSpecialAnnouncement()">我知道了</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast提示 -->
     <div id="toast" class="pc-toast"></div>
 
@@ -107,6 +132,8 @@
     <script>
         // 通知相关功能
         let unreadCount = 0;
+        let specialAnnouncements = [];
+        let currentSpecialIndex = 0;
 
         // 加载未读通知数量
         async function loadUnreadCount() {
@@ -214,8 +241,114 @@
             document.getElementById('notificationModal').classList.remove('show');
         }
 
-        // 页面加载时获取未读数量
-        document.addEventListener('DOMContentLoaded', loadUnreadCount);
+        // ==================== 公告相关功能 ====================
+
+        // 获取已查看的特殊公告信息（包含版本号）
+        function getViewedAnnouncements() {
+            const viewed = localStorage.getItem('viewedSpecialAnnouncements');
+            return viewed ? JSON.parse(viewed) : {};
+        }
+
+        // 标记特殊公告为已查看（记录ID和版本号）
+        function markAnnouncementViewed(announcement) {
+            const viewed = getViewedAnnouncements();
+            viewed[announcement.id] = announcement.force_show_version || 0;
+            localStorage.setItem('viewedSpecialAnnouncements', JSON.stringify(viewed));
+        }
+
+        // 检查是否需要显示公告（未查看或版本号已更新）
+        function shouldShowAnnouncement(announcement) {
+            const viewed = getViewedAnnouncements();
+            const viewedVersion = viewed[announcement.id];
+            const currentVersion = announcement.force_show_version || 0;
+            // 未查看过，或版本号已更新
+            return viewedVersion === undefined || currentVersion > viewedVersion;
+        }
+
+        // 加载公告
+        async function loadAnnouncements() {
+            try {
+                const response = await fetch('/api/announcements');
+                const data = await response.json();
+
+                // 处理普通公告
+                if (data.normal_announcements && data.normal_announcements.length > 0) {
+                    showAnnouncementBar(data.normal_announcements);
+                }
+
+                // 处理特殊公告（过滤掉已查看且版本未更新的）
+                if (data.special_announcements && data.special_announcements.length > 0) {
+                    specialAnnouncements = data.special_announcements.filter(a => shouldShowAnnouncement(a));
+                    currentSpecialIndex = 0;
+                    if (specialAnnouncements.length > 0) {
+                        showSpecialAnnouncement();
+                    }
+                }
+            } catch (error) {
+                console.error('加载公告失败:', error);
+            }
+        }
+
+        // 显示普通公告栏
+        function showAnnouncementBar(announcements) {
+            const bar = document.getElementById('announcementBar');
+            const scroller = document.getElementById('announcementScroller');
+
+            if (!bar || !scroller) return;
+
+            // 构建滚动内容（不复制，避免显示重复）
+            const items = announcements.map(a => `<span class="announcement-item">${a.title}: ${a.content}</span>`).join('');
+            scroller.innerHTML = items;
+
+            bar.style.display = 'flex';
+        }
+
+        // 隐藏公告栏
+        function hideAnnouncementBar() {
+            const bar = document.getElementById('announcementBar');
+            if (bar) {
+                bar.style.display = 'none';
+            }
+        }
+
+        // 显示特殊公告弹窗
+        function showSpecialAnnouncement() {
+            if (currentSpecialIndex >= specialAnnouncements.length) return;
+
+            const announcement = specialAnnouncements[currentSpecialIndex];
+            const modal = document.getElementById('specialAnnouncementModal');
+            const content = document.getElementById('specialAnnouncementContent');
+
+            if (modal && content) {
+                content.innerHTML = `<h4 style="margin: 0 0 12px 0; color: #ff4d4f;">${announcement.title}</h4><p style="margin: 0;">${announcement.content}</p>`;
+                modal.classList.add('show');
+            }
+        }
+
+        // 关闭特殊公告弹窗
+        function closeSpecialAnnouncement() {
+            const modal = document.getElementById('specialAnnouncementModal');
+            if (modal) {
+                modal.classList.remove('show');
+            }
+
+            // 标记当前公告为已查看
+            if (currentSpecialIndex < specialAnnouncements.length) {
+                markAnnouncementViewed(specialAnnouncements[currentSpecialIndex]);
+            }
+
+            // 显示下一个特殊公告
+            currentSpecialIndex++;
+            if (currentSpecialIndex < specialAnnouncements.length) {
+                setTimeout(() => showSpecialAnnouncement(), 300);
+            }
+        }
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            loadUnreadCount();
+            loadAnnouncements();
+        });
 
         // 每30秒刷新一次未读数量
         setInterval(loadUnreadCount, 30000);

@@ -1,0 +1,492 @@
+<!-- 
+  电脑端后台管理 - 公告管理页面
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>公告管理 - 车载测试设备管理系统</title>
+    <link rel="stylesheet" href="/static/admin/admin_pc.css">
+    <style>
+        .announcement-item {
+            padding: 16px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .announcement-item:hover {
+            background: #fafafa;
+        }
+        .announcement-item.special {
+            border-left: 4px solid #ff4d4f;
+        }
+        .announcement-title {
+            font-weight: 600;
+            font-size: 15px;
+            margin-bottom: 8px;
+        }
+        .announcement-title .special-badge {
+            background: #ff4d4f;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-right: 8px;
+        }
+        .announcement-content {
+            color: #666;
+            font-size: 14px;
+            line-height: 1.6;
+            margin-bottom: 8px;
+        }
+        .announcement-meta {
+            font-size: 12px;
+            color: #999;
+        }
+        .announcement-actions {
+            margin-top: 12px;
+        }
+        .status-tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .status-tag.active {
+            background: #f6ffed;
+            color: #52c41a;
+            border: 1px solid #b7eb8f;
+        }
+        .status-tag.inactive {
+            background: #fff1f0;
+            color: #ff4d4f;
+            border: 1px solid #ffa39e;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+        }
+        .modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-content {
+            background: white;
+            border-radius: 8px;
+            width: 500px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .modal-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .modal-header h3 {
+            margin: 0;
+            font-size: 16px;
+        }
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            color: #999;
+        }
+        .modal-body {
+            padding: 20px;
+        }
+        .modal-footer {
+            padding: 16px 20px;
+            border-top: 1px solid #f0f0f0;
+            text-align: right;
+        }
+        .form-group {
+            margin-bottom: 16px;
+        }
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        .form-input, .form-textarea {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #d9d9d9;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .form-textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .checkbox-group input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+        }
+        .hint-text {
+            font-size: 12px;
+            color: #999;
+            margin-top: 4px;
+        }
+    </style>
+</head>
+<body class="pc-admin-body">
+    <div class="pc-admin-wrapper">
+        <!-- 侧边栏 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <span class="logo">🔧</span>
+                <span class="logo-text">后台管理</span>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="/admin/pc/dashboard" class="nav-item">
+                    <span class="nav-icon">📊</span>
+                    <span>仪表盘</span>
+                </a>
+                <a href="/admin/pc/devices" class="nav-item">
+                    <span class="nav-icon">📱</span>
+                    <span>设备管理</span>
+                </a>
+                <a href="/admin/pc/users" class="nav-item">
+                    <span class="nav-icon">👥</span>
+                    <span>用户管理</span>
+                </a>
+                <a href="/admin/pc/records" class="nav-item">
+                    <span class="nav-icon">📋</span>
+                    <span>记录查询</span>
+                </a>
+                <a href="/admin/pc/logs" class="nav-item">
+                    <span class="nav-icon">📜</span>
+                    <span>操作日志</span>
+                </a>
+                <a href="/admin/pc/overdue" class="nav-item">
+                    <span class="nav-icon">⚠️</span>
+                    <span>过期未还</span>
+                    {% if overdue_count > 0 %}
+                    <span class="nav-badge">{{ overdue_count }}</span>
+                    {% endif %}
+                </a>
+                <a href="/admin/pc/announcements" class="nav-item active">
+                    <span class="nav-icon">📢</span>
+                    <span>公告管理</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <span>👤 {{ admin_name }}</span>
+                <a href="/admin/logout" class="logout-btn">退出</a>
+            </div>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <header class="content-header">
+                <h1>📢 公告管理</h1>
+                <div class="header-actions">
+                    <button class="btn btn-primary" onclick="openCreateModal()">➕ 新增公告</button>
+                </div>
+            </header>
+
+            <!-- 统计信息 -->
+            <div class="stats-row" style="margin-bottom: 20px;">
+                <div class="stat-card-large">
+                    <div class="stat-icon-bg">📢</div>
+                    <div class="stat-info">
+                        <span class="stat-value">{{ announcements|length }}</span>
+                        <span class="stat-label">公告总数</span>
+                    </div>
+                </div>
+                <div class="stat-card-large">
+                    <div class="stat-icon-bg">📄</div>
+                    <div class="stat-info">
+                        <span class="stat-value">{{ normal_count }}</span>
+                        <span class="stat-label">普通公告</span>
+                    </div>
+                </div>
+                <div class="stat-card-large">
+                    <div class="stat-icon-bg">🔔</div>
+                    <div class="stat-info">
+                        <span class="stat-value">{{ special_count }}</span>
+                        <span class="stat-label">特殊公告</span>
+                    </div>
+                </div>
+                <div class="stat-card-large">
+                    <div class="stat-icon-bg">✅</div>
+                    <div class="stat-info">
+                        <span class="stat-value">{{ active_count }}</span>
+                        <span class="stat-label">上架中</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 公告列表 -->
+            <div class="content-card">
+                <div class="card-header">
+                    <h3>公告列表</h3>
+                    <div style="display: flex; gap: 8px;">
+                        <select id="filterType" class="form-input" style="width: 120px;" onchange="filterAnnouncements()">
+                            <option value="">全部类型</option>
+                            <option value="normal">普通公告</option>
+                            <option value="special">特殊公告</option>
+                        </select>
+                        <select id="filterStatus" class="form-input" style="width: 120px;" onchange="filterAnnouncements()">
+                            <option value="">全部状态</option>
+                            <option value="active">已上架</option>
+                            <option value="inactive">已下架</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="announcementList">
+                    {% for announcement in announcements %}
+                    <div class="announcement-item {{ 'special' if announcement.announcement_type == 'special' else '' }}" 
+                         data-type="{{ announcement.announcement_type }}" 
+                         data-active="{{ 'true' if announcement.is_active else 'false' }}">
+                        <div class="announcement-title">
+                            {% if announcement.announcement_type == 'special' %}
+                            <span class="special-badge">特殊</span>
+                            {% endif %}
+                            {{ announcement.title }}
+                            <span class="status-tag {{ 'active' if announcement.is_active else 'inactive' }}" style="margin-left: 8px;">
+                                {{ '上架中' if announcement.is_active else '已下架' }}
+                            </span>
+                        </div>
+                        <div class="announcement-content">{{ announcement.content }}</div>
+                        <div class="announcement-meta">
+                            <span>创建人: {{ announcement.creator or '-' }}</span> | 
+                            <span>创建时间: {{ announcement.create_time or '-' }}</span> | 
+                            <span>排序: {{ announcement.sort_order }}</span>
+                        </div>
+                        <div class="announcement-actions">
+                            <button class="btn btn-sm btn-primary" onclick="openEditModal('{{ announcement.id }}')">编辑</button>
+                            <button class="btn btn-sm {{ 'btn-warning' if announcement.is_active else 'btn-success' }}" 
+                                    onclick="toggleStatus('{{ announcement.id }}')">
+                                {{ '下架' if announcement.is_active else '上架' }}
+                            </button>
+                            {% if announcement.announcement_type == 'special' %}
+                            <button class="btn btn-sm btn-info" onclick="forceShow('{{ announcement.id }}')" title="让用户重新看到此公告弹窗">再次公告</button>
+                            {% endif %}
+                            <button class="btn btn-sm btn-danger" onclick="deleteAnnouncement('{{ announcement.id }}')">删除</button>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div style="padding: 60px; text-align: center; color: #999;">
+                        <div style="font-size: 48px; margin-bottom: 16px;">📢</div>
+                        <p>暂无公告，点击上方"新增公告"创建</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 新增/编辑公告弹窗 -->
+    <div class="modal" id="announcementModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">新增公告</h3>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">公告标题 <span style="color: #ff4d4f;">*</span></label>
+                    <input type="text" id="announcementTitle" class="form-input" placeholder="请输入公告标题">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">公告内容 <span style="color: #ff4d4f;">*</span></label>
+                    <textarea id="announcementContent" class="form-textarea" placeholder="请输入公告内容"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">公告类型</label>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="isSpecial">
+                        <label for="isSpecial">特殊公告</label>
+                    </div>
+                    <div class="hint-text">特殊公告会在用户端弹窗显示，最多显示3条，多的会自动下架最旧的</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">排序顺序</label>
+                    <input type="number" id="sortOrder" class="form-input" value="0" min="0">
+                    <div class="hint-text">数字越小越靠前，同序号按创建时间排序</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-default" onclick="closeModal()">取消</button>
+                <button class="btn btn-primary" onclick="saveAnnouncement()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast提示 -->
+    <div id="toast" class="toast"></div>
+
+    <script>
+        let editingId = null;
+
+        function openCreateModal() {
+            editingId = null;
+            document.getElementById('modalTitle').textContent = '新增公告';
+            document.getElementById('announcementTitle').value = '';
+            document.getElementById('announcementContent').value = '';
+            document.getElementById('isSpecial').checked = false;
+            document.getElementById('sortOrder').value = '0';
+            document.getElementById('announcementModal').classList.add('active');
+        }
+
+        function openEditModal(id) {
+            editingId = id;
+            document.getElementById('modalTitle').textContent = '编辑公告';
+            
+            // 获取公告数据
+            fetch(`/api/announcements/${id}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        const announcement = data.announcement;
+                        document.getElementById('announcementTitle').value = announcement.title;
+                        document.getElementById('announcementContent').value = announcement.content;
+                        document.getElementById('isSpecial').checked = announcement.announcement_type === 'special';
+                        document.getElementById('sortOrder').value = announcement.sort_order || 0;
+                        document.getElementById('announcementModal').classList.add('active');
+                    } else {
+                        showToast('获取公告失败');
+                    }
+                });
+        }
+
+        function closeModal() {
+            document.getElementById('announcementModal').classList.remove('active');
+            editingId = null;
+        }
+
+        function saveAnnouncement() {
+            const title = document.getElementById('announcementTitle').value.trim();
+            const content = document.getElementById('announcementContent').value.trim();
+            const isSpecial = document.getElementById('isSpecial').checked;
+            const sortOrder = parseInt(document.getElementById('sortOrder').value) || 0;
+
+            if (!title || !content) {
+                showToast('请填写标题和内容');
+                return;
+            }
+
+            const data = {
+                title: title,
+                content: content,
+                announcement_type: isSpecial ? 'special' : 'normal',
+                sort_order: sortOrder
+            };
+
+            const url = editingId ? `/api/announcements/${editingId}` : '/api/announcements';
+            const method = editingId ? 'PUT' : 'POST';
+
+            fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            })
+            .then(r => r.json())
+            .then(result => {
+                if (result.success) {
+                    showToast(editingId ? '公告已更新' : '公告已创建');
+                    closeModal();
+                    setTimeout(() => location.reload(), 500);
+                } else {
+                    showToast(result.message || '操作失败');
+                }
+            })
+            .catch(() => showToast('网络错误'));
+        }
+
+        function toggleStatus(id) {
+            fetch(`/api/announcements/${id}/toggle`, {
+                method: 'POST'
+            })
+            .then(r => r.json())
+            .then(result => {
+                if (result.success) {
+                    showToast(result.message);
+                    setTimeout(() => location.reload(), 500);
+                } else {
+                    showToast(result.message || '操作失败');
+                }
+            })
+            .catch(() => showToast('网络错误'));
+        }
+
+        function deleteAnnouncement(id) {
+            if (!confirm('确定要删除该公告吗？')) return;
+            
+            fetch(`/api/announcements/${id}`, {
+                method: 'DELETE'
+            })
+            .then(r => r.json())
+            .then(result => {
+                if (result.success) {
+                    showToast('公告已删除');
+                    setTimeout(() => location.reload(), 500);
+                } else {
+                    showToast(result.message || '删除失败');
+                }
+            })
+            .catch(() => showToast('网络错误'));
+        }
+
+        function forceShow(id) {
+            if (!confirm('确定要再次公告？所有用户将重新看到此公告弹窗。')) return;
+            
+            fetch(`/api/announcements/${id}/force-show`, {
+                method: 'POST'
+            })
+            .then(r => r.json())
+            .then(result => {
+                if (result.success) {
+                    showToast(result.message);
+                } else {
+                    showToast(result.message || '操作失败');
+                }
+            })
+            .catch(() => showToast('网络错误'));
+        }
+
+        function filterAnnouncements() {
+            const type = document.getElementById('filterType').value;
+            const status = document.getElementById('filterStatus').value;
+            const items = document.querySelectorAll('.announcement-item');
+
+            items.forEach(item => {
+                const itemType = item.dataset.type;
+                const itemActive = item.dataset.active;
+
+                let show = true;
+                if (type && itemType !== type) show = false;
+                if (status === 'active' && itemActive !== 'true') show = false;
+                if (status === 'inactive' && itemActive !== 'false') show = false;
+
+                item.style.display = show ? 'block' : 'none';
+            });
+        }
+
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 2000);
+        }
+    </script>
+</body>
+</html>

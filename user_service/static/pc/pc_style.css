@@ -1218,3 +1218,130 @@ a { text-decoration: none; color: inherit; }
     background-clip: text;
     font-weight: 700;
 }
+
+/* ========== 公告栏样式 ========== */
+.announcement-bar {
+    display: flex;
+    align-items: center;
+    background: linear-gradient(90deg, #fff7e6 0%, #ffe7ba 100%);
+    border-bottom: 1px solid #ffd591;
+    padding: 10px 20px;
+    margin-bottom: 0;
+}
+
+.announcement-bar-icon {
+    font-size: 20px;
+    margin-right: 12px;
+    flex-shrink: 0;
+}
+
+.announcement-bar-content {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+}
+
+.announcement-scroller {
+    display: flex;
+    white-space: nowrap;
+    animation: scroll-announcement 30s linear infinite;
+}
+
+.announcement-item {
+    display: inline-block;
+    padding: 0 50px;
+    font-size: 14px;
+    color: #d46b08;
+}
+
+@keyframes scroll-announcement {
+    0% { transform: translateX(100%); }
+    100% { transform: translateX(-100%); }
+}
+
+.announcement-bar-close {
+    background: none;
+    border: none;
+    font-size: 20px;
+    color: #d46b08;
+    cursor: pointer;
+    padding: 0 8px;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+}
+
+.announcement-bar-close:hover {
+    opacity: 1;
+}
+
+/* 弹窗样式 */
+.pc-modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+}
+
+.pc-modal.show {
+    display: flex;
+}
+
+.pc-modal-content {
+    background: #fff;
+    border-radius: var(--radius-lg);
+    width: 90%;
+    max-width: 500px;
+    box-shadow: var(--shadow-hover);
+    overflow: hidden;
+    animation: modalFadeIn 0.3s ease;
+}
+
+@keyframes modalFadeIn {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+.pc-modal-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid #f0f0f0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.pc-modal-header h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0;
+}
+
+.pc-modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+}
+
+.pc-modal-close:hover {
+    opacity: 1;
+}
+
+.pc-modal-body {
+    padding: 20px;
+}
+
+.pc-modal-footer {
+    padding: 16px 20px;
+    border-top: 1px solid #f0f0f0;
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}

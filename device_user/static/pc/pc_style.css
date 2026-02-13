@@ -1431,3 +1431,62 @@ a { text-decoration: none; color: inherit; }
     color: #999;
     font-size: 14px;
 }
+
+/* ========== 公告栏样式 ========== */
+.announcement-bar {
+    display: flex;
+    align-items: center;
+    background: linear-gradient(135deg, #fff7e6 0%, #fffbf0 100%);
+    border-bottom: 1px solid #ffd591;
+    padding: 10px 16px;
+    margin: -24px -24px 0 -24px;
+}
+
+.announcement-bar-icon {
+    font-size: 20px;
+    margin-right: 12px;
+    flex-shrink: 0;
+}
+
+.announcement-bar-content {
+    flex: 1;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.announcement-scroller {
+    display: inline-block;
+    animation: scroll-announcement 30s linear infinite;
+}
+
+.announcement-scroller .announcement-item {
+    display: inline-block;
+    margin-right: 80px;
+    color: #d48806;
+    font-size: 14px;
+}
+
+.announcement-bar-close {
+    background: none;
+    border: none;
+    font-size: 18px;
+    color: #d48806;
+    cursor: pointer;
+    padding: 4px 8px;
+    margin-left: 12px;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+}
+
+.announcement-bar-close:hover {
+    opacity: 1;
+}
+
+@keyframes scroll-announcement {
+    0% {
+        transform: translateX(100%);
+    }
+    100% {
+        transform: translateX(-100%);
+    }
+}

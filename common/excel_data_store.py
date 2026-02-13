@@ -8,7 +8,7 @@ import pandas as pd
 from datetime import datetime
 from typing import List, Optional
 
-from .models import Device, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, OperationLog, Admin, Notification
+from .models import Device, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, OperationLog, Admin, Notification, Announcement
 from .models import DeviceStatus, DeviceType, OperationType, EntrySource
 
 # Excel文件路径
@@ -25,6 +25,7 @@ OPERATION_LOG_FILE = os.path.join(EXCEL_DIR, '操作日志表.xlsx')
 VIEW_RECORD_FILE = os.path.join(EXCEL_DIR, '查看记录表.xlsx')
 ADMIN_FILE = os.path.join(EXCEL_DIR, '管理员表.xlsx')
 NOTIFICATION_FILE = os.path.join(EXCEL_DIR, '通知表.xlsx')
+ANNOUNCEMENT_FILE = os.path.join(EXCEL_DIR, '公告表.xlsx')
 
 
 class ExcelDataStore:
@@ -1215,3 +1216,72 @@ class ExcelDataStore:
         
         df = pd.DataFrame(data)
         df.to_excel(ADMIN_FILE, index=False)
+
+    @staticmethod
+    def load_announcements() -> List[Announcement]:
+        """从Excel加载公告列表"""
+        announcements = []
+        if not os.path.exists(ANNOUNCEMENT_FILE):
+            return announcements
+
+        try:
+            df = pd.read_excel(ANNOUNCEMENT_FILE)
+            for _, row in df.iterrows():
+                if pd.isna(row.get('公告ID')):
+                    continue
+
+                try:
+                    create_time = None
+                    if pd.notna(row.get('创建时间')):
+                        create_time = pd.to_datetime(row['创建时间'])
+                    
+                    update_time = None
+                    if pd.notna(row.get('更新时间')):
+                        update_time = pd.to_datetime(row['更新时间'])
+
+                    def safe_str(val):
+                        if pd.isna(val) or str(val).lower() == 'nan':
+                            return ''
+                        return str(val)
+
+                    announcement = Announcement(
+                        id=str(row['公告ID']),
+                        title=str(row.get('标题', '')),
+                        content=str(row.get('内容', '')),
+                        announcement_type=safe_str(row.get('公告类型', 'normal')),
+                        is_active=str(row.get('是否上架', '是')) == '是',
+                        sort_order=int(row.get('排序', 0)) if pd.notna(row.get('排序')) else 0,
+                        creator=safe_str(row.get('创建人', '')),
+                        create_time=create_time,
+                        update_time=update_time,
+                        force_show_version=int(row.get('强制显示版本', 0)) if pd.notna(row.get('强制显示版本')) else 0,
+                    )
+                    announcements.append(announcement)
+                except Exception as e:
+                    ExcelDataStore._safe_print(f"解析公告失败: {e}")
+                    continue
+        except Exception as e:
+            ExcelDataStore._safe_print(f"加载公告失败: {e}")
+
+        return announcements
+
+    @staticmethod
+    def save_announcements(announcements: List[Announcement]):
+        """保存公告列表到Excel"""
+        data = []
+        for announcement in announcements:
+            data.append({
+                '公告ID': announcement.id,
+                '标题': announcement.title,
+                '内容': announcement.content,
+                '公告类型': announcement.announcement_type,
+                '是否上架': '是' if announcement.is_active else '否',
+                '排序': announcement.sort_order,
+                '创建人': announcement.creator,
+                '创建时间': announcement.create_time.strftime('%Y-%m-%d %H:%M:%S') if announcement.create_time else '',
+                '更新时间': announcement.update_time.strftime('%Y-%m-%d %H:%M:%S') if announcement.update_time else '',
+                '强制显示版本': announcement.force_show_version,
+            })
+
+        df = pd.DataFrame(data)
+        df.to_excel(ANNOUNCEMENT_FILE, index=False)

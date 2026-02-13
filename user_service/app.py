@@ -1062,13 +1062,18 @@ def pc_device_detail(device_id):
     renew_disabled_reason = ''
     remaining_hours = 0
     remaining_days = 0
+    is_overdue = False
+    overdue_hours = 0
+    overdue_days = 0
 
     # 计算剩余时间（无论设备状态如何，只要有预计归还日期）
     if device.expected_return_date:
         time_diff = datetime.now() - device.expected_return_date
         if time_diff.total_seconds() > 0:  # 已逾期
+            is_overdue = True
             overdue_days = int(time_diff.total_seconds() // (24 * 3600))
-            remaining_hours = -overdue_days * 24 - int((time_diff.total_seconds() % (24 * 3600)) // 3600)
+            overdue_hours = int(time_diff.total_seconds() // 3600)
+            remaining_hours = -overdue_hours
             remaining_days = -overdue_days
         else:  # 未逾期
             remaining_seconds = device.expected_return_date.timestamp() - datetime.now().timestamp()
@@ -1102,6 +1107,9 @@ def pc_device_detail(device_id):
                          can_borrow=can_borrow,
                          can_renew=can_renew,
                          renew_disabled_reason=renew_disabled_reason,
+                         is_overdue=is_overdue,
+                         overdue_hours=overdue_hours,
+                         overdue_days=overdue_days,
                          remaining_days=remaining_days,
                          remaining_hours=remaining_hours,
                          user=user,
@@ -2725,6 +2733,24 @@ def api_mark_all_read():
     )
 
     return jsonify({'success': True, 'count': count})
+
+
+# ==================== 公告API ====================
+
+@app.route('/api/announcements', methods=['GET'])
+@login_required
+def api_user_announcements():
+    """获取公告列表API（用户端）"""
+    # 普通公告
+    normal_announcements = api_client.get_active_normal_announcements()
+    # 特殊公告
+    special_announcements = api_client.get_active_special_announcements()
+    
+    return jsonify({
+        'success': True,
+        'normal_announcements': [a.to_dict() for a in normal_announcements],
+        'special_announcements': [a.to_dict() for a in special_announcements]
+    })
 
 
 # ==================== 错误处理 ====================

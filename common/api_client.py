@@ -8,7 +8,7 @@ import os
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 
-from .models import Device, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, OperationLog, ViewRecord, Notification
+from .models import Device, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, OperationLog, ViewRecord, Notification, Announcement
 from .models import DeviceStatus, DeviceType, OperationType, EntrySource, Admin
 from .excel_data_store import ExcelDataStore
 
@@ -54,6 +54,7 @@ class APIClient:
             ExcelDataStore.save_operation_logs(self._operation_logs)
             ExcelDataStore.save_view_records(self._view_records)
             ExcelDataStore.save_notifications(self._notifications)
+            ExcelDataStore.save_announcements(self._announcements)
         except PermissionError as e:
             self._safe_print(f"警告: Excel文件被占用，无法保存数据: {e}")
             self._safe_print("请关闭所有打开的Excel文件后重试")
@@ -114,10 +115,15 @@ class APIClient:
             self._notifications = ExcelDataStore.load_notifications()
             self._safe_print(f"从Excel加载: 通知{len(self._notifications)}条")
 
+            # 从Excel加载公告列表
+            self._announcements = ExcelDataStore.load_announcements()
+            self._safe_print(f"从Excel加载: 公告{len(self._announcements)}条")
+
         except Exception as e:
             # 通知加载失败时使用空列表，不影响其他数据加载
             self._notifications = []
-            self._safe_print(f"加载通知失败: {e}")
+            self._announcements = []
+            self._safe_print(f"加载数据失败: {e}")
     
     def _device_to_dict(self, device: Device) -> dict:
         """设备转字典"""
@@ -1605,6 +1611,137 @@ class APIClient:
         else:
             records = [r for r in self._view_records if r.device_id == device_id]
         return sorted(records, key=lambda x: x.view_time, reverse=True)[:limit]
+
+    # ==================== 公告管理 ====================
+
+    def get_announcements(self, announcement_type: str = None, active_only: bool = False) -> List[Announcement]:
+        """获取公告列表
+        
+        Args:
+            announcement_type: 公告类型过滤 (None=全部, 'normal'=普通, 'special'=特殊)
+            active_only: 是否只获取上架的公告
+        """
+        announcements = self._announcements
+        
+        if active_only:
+            announcements = [a for a in announcements if a.is_active]
+        
+        if announcement_type:
+            announcements = [a for a in announcements if a.announcement_type == announcement_type]
+        
+        # 按排序字段排序，然后按创建时间倒序
+        return sorted(announcements, key=lambda x: (x.sort_order, -x.create_time.timestamp() if x.create_time else 0))
+
+    def get_active_normal_announcements(self) -> List[Announcement]:
+        """获取上架的普通公告列表（按排序显示）"""
+        announcements = [a for a in self._announcements if a.is_active and a.announcement_type == 'normal']
+        return sorted(announcements, key=lambda x: (x.sort_order, -x.create_time.timestamp() if x.create_time else 0))
+
+    def get_active_special_announcements(self) -> List[Announcement]:
+        """获取上架的特殊公告列表（最多3条）"""
+        announcements = [a for a in self._announcements if a.is_active and a.announcement_type == 'special']
+        # 按排序字段排序，然后按创建时间倒序，取前3条
+        announcements = sorted(announcements, key=lambda x: (x.sort_order, -x.create_time.timestamp() if x.create_time else 0))
+        return announcements[:3]
+
+    def get_announcement_by_id(self, announcement_id: str) -> Optional[Announcement]:
+        """根据ID获取公告"""
+        for announcement in self._announcements:
+            if announcement.id == announcement_id:
+                return announcement
+        return None
+
+    def create_announcement(self, title: str, content: str, announcement_type: str = 'normal', 
+                           sort_order: int = 0, creator: str = '') -> Announcement:
+        """创建公告"""
+        announcement = Announcement(
+            id=str(uuid.uuid4()),
+            title=title,
+            content=content,
+            announcement_type=announcement_type,
+            is_active=True,
+            sort_order=sort_order,
+            creator=creator,
+            create_time=datetime.now(),
+            update_time=datetime.now()
+        )
+        self._announcements.append(announcement)
+        
+        # 如果是特殊公告，检查是否超过3条，超过则下架最旧的
+        if announcement_type == 'special':
+            active_special = [a for a in self._announcements if a.is_active and a.announcement_type == 'special']
+            if len(active_special) > 3:
+                # 按创建时间排序，下架最旧的
+                active_special_sorted = sorted(active_special, key=lambda x: x.create_time or datetime.min)
+                for old_announcement in active_special_sorted[:-3]:
+                    old_announcement.is_active = False
+                    old_announcement.update_time = datetime.now()
+        
+        self._save_data()
+        return announcement
+
+    def update_announcement(self, announcement_id: str, data: dict) -> Optional[Announcement]:
+        """更新公告"""
+        announcement = self.get_announcement_by_id(announcement_id)
+        if not announcement:
+            return None
+        
+        if 'title' in data:
+            announcement.title = data['title']
+        if 'content' in data:
+            announcement.content = data['content']
+        if 'announcement_type' in data:
+            announcement.announcement_type = data['announcement_type']
+        if 'sort_order' in data:
+            announcement.sort_order = data['sort_order']
+        
+        announcement.update_time = datetime.now()
+        
+        # 如果更新为特殊公告，检查是否超过3条
+        if announcement.announcement_type == 'special' and announcement.is_active:
+            active_special = [a for a in self._announcements if a.is_active and a.announcement_type == 'special']
+            if len(active_special) > 3:
+                active_special_sorted = sorted(active_special, key=lambda x: x.create_time or datetime.min)
+                for old_announcement in active_special_sorted[:-3]:
+                    if old_announcement.id != announcement_id:
+                        old_announcement.is_active = False
+                        old_announcement.update_time = datetime.now()
+        
+        self._save_data()
+        return announcement
+
+    def toggle_announcement_status(self, announcement_id: str) -> Optional[Announcement]:
+        """切换公告上架/下架状态"""
+        announcement = self.get_announcement_by_id(announcement_id)
+        if not announcement:
+            return None
+        
+        announcement.is_active = not announcement.is_active
+        announcement.update_time = datetime.now()
+        self._save_data()
+        return announcement
+
+    def delete_announcement(self, announcement_id: str) -> bool:
+        """删除公告"""
+        announcement = self.get_announcement_by_id(announcement_id)
+        if not announcement:
+            return False
+        
+        self._announcements.remove(announcement)
+        self._save_data()
+        return True
+
+    def force_show_announcement(self, announcement_id: str) -> Optional[Announcement]:
+        """再次公告 - 增加版本号让用户重新看到弹窗"""
+        announcement = self.get_announcement_by_id(announcement_id)
+        if not announcement:
+            return None
+        
+        # 增加版本号
+        announcement.force_show_version += 1
+        announcement.update_time = datetime.now()
+        self._save_data()
+        return announcement
 
 
 # 全局 API 客户端实例
