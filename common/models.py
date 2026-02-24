@@ -247,7 +247,8 @@ class User:
     phone: str
     password: str = "123456"  # 默认密码
     borrower_name: str = ""   # 借用人名称（必填，唯一）
-    borrow_count: int = 0
+    borrow_count: int = 0     # 借用次数
+    return_count: int = 0     # 归还次数
     is_frozen: bool = False
     is_admin: bool = False    # 是否为管理员
     is_deleted: bool = False  # 是否已删除
@@ -261,9 +262,29 @@ class User:
             "password": self.password,
             "borrower_name": self.borrower_name,
             "borrow_count": self.borrow_count,
+            "return_count": self.return_count,
             "is_frozen": "已冻结" if self.is_frozen else "正常",
             "is_admin": "是" if self.is_admin else "否",
             "create_time": self.create_time.strftime("%Y-%m-%d %H:%M:%S") if self.create_time else "",
+        }
+
+
+@dataclass
+class UserLike:
+    """用户点赞记录"""
+    id: str
+    from_user_id: str       # 点赞用户ID
+    to_user_id: str         # 被点赞用户ID
+    create_date: str        # 点赞日期（YYYY-MM-DD）
+    create_time: datetime   # 点赞时间
+    
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "from_user_id": self.from_user_id,
+            "to_user_id": self.to_user_id,
+            "create_date": self.create_date,
+            "create_time": self.create_time.strftime("%Y-%m-%d %H:%M:%S"),
         }
 
 

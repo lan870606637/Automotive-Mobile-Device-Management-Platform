@@ -55,6 +55,10 @@
                     <span class="nav-icon">🌍</span>
                     <span class="nav-text">全部借用记录</span>
                 </a>
+                <a href="{{ url_for('pc_user_rankings') }}" class="nav-item {% if active_nav == 'user_rankings' %}active{% endif %}">
+                    <span class="nav-icon">🏆</span>
+                    <span class="nav-text">用户排行榜</span>
+                </a>
             </nav>
             <div class="sidebar-footer">
                 <div class="user-info-mini">
@@ -73,7 +77,6 @@
                 <div class="announcement-bar-content">
                     <div id="announcementScroller" class="announcement-scroller"></div>
                 </div>
-                <button class="announcement-bar-close" onclick="hideAnnouncementBar()">×</button>
             </div>
 
             {% block content %}{% endblock %}
@@ -92,6 +95,27 @@
             </div>
             <div class="pc-modal-footer">
                 <button class="btn btn-primary" onclick="closeSpecialAnnouncement()">我知道了</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 通知铃铛 -->
+    <div class="notification-bell-wrapper" onclick="toggleNotificationModal.call(this, event)">
+        <button class="notification-bell" type="button">
+            <span class="bell-icon">🔔</span>
+            <span class="notification-badge" id="notificationBadge" style="display: none;">0</span>
+        </button>
+    </div>
+
+    <!-- 通知弹窗 -->
+    <div class="notification-modal" id="notificationModal" onclick="if(event.target === this) this.classList.remove('active');">
+        <div class="notification-modal-content">
+            <div class="notification-modal-header">
+                <h3>🔔 通知</h3>
+                <button class="close-btn" onclick="toggleNotificationModal(event)">&times;</button>
+            </div>
+            <div class="notification-modal-body" id="notificationBody">
+                <!-- 通知内容将通过JS动态渲染 -->
             </div>
         </div>
     </div>
@@ -158,11 +182,44 @@
 
             if (!bar || !scroller) return;
 
-            // 构建滚动内容（不复制，避免显示重复）
+            // 构建滚动内容（只显示一轮，不复制）
             const items = announcements.map(a => `<span class="announcement-item">${a.title}: ${a.content}</span>`).join('');
             scroller.innerHTML = items;
 
             bar.style.display = 'flex';
+
+            // 检查是否需要恢复位置（5分钟内刷新）
+            const saved = localStorage.getItem(STORAGE_KEY);
+            let shouldResume = false;
+            let resumeDelay = 0;
+
+            if (saved) {
+                try {
+                    const data = JSON.parse(saved);
+                    const elapsed = Date.now() - data.timestamp;
+                    if (elapsed < 5 * 60 * 1000) {
+                        shouldResume = true;
+                        // 计算续接位置（减去2秒初始延迟）
+                        resumeDelay = Math.max(0, (data.position + elapsed) / 1000 - 2);
+                    }
+                } catch (e) {
+                    console.error('解析滚动位置失败:', e);
+                }
+            }
+
+            if (shouldResume) {
+                // 立即开始动画，从记忆位置续接
+                scroller.style.animationDelay = `-${resumeDelay}s`;
+                scroller.classList.add('scrolling');
+            } else {
+                // 先完整显示2秒，然后开始滚动
+                setTimeout(() => {
+                    scroller.classList.add('scrolling');
+                }, 2000);
+            }
+
+            // 开始保存滚动位置
+            startScrollPositionTracking();
         }
 
         // 隐藏公告栏
@@ -171,6 +228,54 @@
             if (bar) {
                 bar.style.display = 'none';
             }
+        }
+
+        // ==================== 滚动位置记忆功能 ====================
+        const SCROLL_DURATION = 40000; // 动画周期40秒
+        const STORAGE_KEY = 'announcementScrollPosition';
+        let scrollSaveInterval = null;
+
+        // 保存滚动位置
+        function saveScrollPosition() {
+            const scroller = document.getElementById('announcementScroller');
+            if (!scroller || !scroller.classList.contains('scrolling')) return;
+
+            try {
+                const transform = window.getComputedStyle(scroller).transform;
+                if (transform && transform !== 'none') {
+                    const matrix = transform.match(/matrix\(([^)]+)\)/);
+                    if (matrix) {
+                        const values = matrix[1].split(', ');
+                        const translateX = parseFloat(values[4]) || 0;
+
+                        // 计算当前位置在动画周期中的时间点（相对于整个内容宽度）
+                        const contentWidth = scroller.scrollWidth;
+                        const currentPos = Math.abs(translateX) % contentWidth;
+                        const position = (currentPos / contentWidth) * SCROLL_DURATION;
+
+                        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                            position: position,
+                            timestamp: Date.now()
+                        }));
+                    }
+                }
+            } catch (e) {
+                console.error('保存滚动位置失败:', e);
+            }
+        }
+
+        // 开始跟踪滚动位置
+        function startScrollPositionTracking() {
+            // 清除之前的定时器
+            if (scrollSaveInterval) {
+                clearInterval(scrollSaveInterval);
+            }
+
+            // 每秒保存一次位置
+            scrollSaveInterval = setInterval(saveScrollPosition, 1000);
+
+            // 页面卸载前保存一次
+            window.addEventListener('beforeunload', saveScrollPosition);
         }
 
         // 显示特殊公告弹窗
@@ -209,7 +314,156 @@
         // 页面加载时初始化
         document.addEventListener('DOMContentLoaded', function() {
             loadAnnouncements();
+            loadNotifications();
         });
+
+        // ==================== 通知功能 ====================
+        let allNotifications = [];
+
+        // 加载通知
+        async function loadNotifications() {
+            try {
+                const response = await fetch('/api/notifications');
+                const data = await response.json();
+                allNotifications = data.notifications || [];
+                renderNotifications();
+                updateNotificationBadge();
+            } catch (error) {
+                console.error('加载通知失败:', error);
+            }
+        }
+
+        // 从LocalStorage获取已读通知ID
+        function getReadNotificationIds() {
+            const readIds = localStorage.getItem('read_notification_ids');
+            return readIds ? JSON.parse(readIds) : [];
+        }
+
+        // 保存已读通知ID到LocalStorage
+        function saveReadNotificationId(id) {
+            const readIds = getReadNotificationIds();
+            if (!readIds.includes(id)) {
+                readIds.push(id);
+                localStorage.setItem('read_notification_ids', JSON.stringify(readIds));
+            }
+        }
+
+        // 标记单个通知为已读
+        async function markNotificationAsRead(notification) {
+            saveReadNotificationId(notification.id);
+            try {
+                await fetch(`/api/notifications/${notification.id}/read`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            } catch (error) {
+                console.error('标记通知已读失败:', error);
+            }
+        }
+
+        // 标记所有当前通知为已读
+        async function markAllAsRead() {
+            allNotifications.forEach(notification => {
+                saveReadNotificationId(notification.id);
+            });
+            try {
+                await fetch('/api/notifications/read-all', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            } catch (error) {
+                console.error('标记所有通知已读失败:', error);
+            }
+            document.querySelectorAll('.notification-item.notification-unread').forEach(item => {
+                item.classList.remove('notification-unread');
+            });
+            updateNotificationBadge();
+        }
+
+        // 处理通知项点击
+        async function handleNotificationClick(notification, element) {
+            if (element.classList.contains('notification-unread')) {
+                await markNotificationAsRead(notification);
+                element.classList.remove('notification-unread');
+                updateNotificationBadge();
+            }
+        }
+
+        // 更新角标显示
+        function updateNotificationBadge() {
+            const readIds = getReadNotificationIds();
+            // 统计未读通知：通过is_read字段和LocalStorage共同判断
+            const unreadCount = allNotifications.filter(n => {
+                return !n.is_read && !readIds.includes(n.id);
+            }).length;
+            const badge = document.getElementById('notificationBadge');
+            if (badge) {
+                if (unreadCount > 0) {
+                    badge.textContent = unreadCount;
+                    badge.style.display = 'block';
+                } else {
+                    badge.style.display = 'none';
+                }
+            }
+        }
+
+        // 渲染通知列表
+        function renderNotifications() {
+            const body = document.getElementById('notificationBody');
+            if (!body) return;
+            
+            if (allNotifications.length === 0) {
+                body.innerHTML = `
+                    <div class="notification-empty">
+                        <div class="empty-icon">📭</div>
+                        <p>暂无通知</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = '';
+            allNotifications.forEach((notification, index) => {
+                // 根据通知类型显示不同内容
+                let content = notification.content || '';
+                const title = notification.title || '通知';
+                
+                // 如果有标题，显示标题+内容
+                if (title && title !== '通知') {
+                    content = `<strong>${title}</strong>：${content}`;
+                }
+                
+                // 如果有设备信息，添加到内容中
+                if (notification.device_name) {
+                    content += `<br><span style="color: #666; font-size: 12px;">相关设备: ${notification.device_name}</span>`;
+                }
+
+                const isUnread = !notification.is_read && !getReadNotificationIds().includes(notification.id);
+                const unreadClass = isUnread ? 'notification-unread' : '';
+                const time = notification.create_time || notification.time || '';
+                
+                html += `
+                    <div class="notification-item ${unreadClass}" data-index="${index}" onclick="handleNotificationClick(allNotifications[${index}], this)">
+                        <div class="notification-content">${content}</div>
+                        <div class="notification-time">${time}</div>
+                    </div>
+                `;
+            });
+            body.innerHTML = html;
+        }
+
+        // 切换通知弹窗
+        function toggleNotificationModal(evt) {
+            if (evt) evt.stopPropagation();
+            const modal = document.getElementById('notificationModal');
+            if (!modal) return;
+            if (modal.classList.contains('active')) {
+                modal.classList.remove('active');
+            } else {
+                modal.classList.add('active');
+                markAllAsRead();
+            }
+        }
     </script>
     {% block extra_js %}{% endblock %}
 </body>

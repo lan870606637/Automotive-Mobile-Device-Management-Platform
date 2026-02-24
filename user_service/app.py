@@ -99,10 +99,22 @@ def get_device_stats():
     total_devices = len(all_devices)
     available_devices = len([d for d in all_devices if d.status in [DeviceStatus.IN_STOCK, DeviceStatus.IN_CUSTODY, DeviceStatus.CIRCULATING, DeviceStatus.NO_CABINET]])
     borrowed_devices_count = len([d for d in all_devices if d.status == DeviceStatus.BORROWED])
+
+    # 获取车机/仪表筛选选项
+    car_devices = [d for d in all_devices if d.device_type.value in ['车机', '仪表']]
+    os_versions = sorted(set(d.os_version for d in car_devices if d.os_version))
+    os_platforms = sorted(set(d.os_platform for d in car_devices if d.os_platform))
+    product_names = sorted(set(d.product_name for d in car_devices if d.product_name))
+    resolutions = sorted(set(d.screen_resolution for d in car_devices if d.screen_resolution))
+
     return {
         'total_devices': total_devices,
         'available_devices': available_devices,
-        'borrowed_devices_count': borrowed_devices_count
+        'borrowed_devices_count': borrowed_devices_count,
+        'os_versions': os_versions,
+        'os_platforms': os_platforms,
+        'product_names': product_names,
+        'resolutions': resolutions
     }
 
 
@@ -756,7 +768,9 @@ def pc_dashboard():
         if '借出' in record.operation_type.value or '转借' in record.operation_type.value:
             # 显示最终借用人（设备当前借用人）
             final_borrower = device.borrower if device.borrower else record.borrower
-            item = {'device_name': device.name, 'device_type': device.device_type.value, 'borrower': final_borrower, 'time': record.operation_time, 'type': ''}
+            # 生成稳定的通知ID：设备名_类型_时间戳
+            notification_id = f"{device.name}_{record.operation_type.value}_{record.operation_time.strftime('%Y%m%d%H%M%S')}"
+            item = {'device_name': device.name, 'device_type': device.device_type.value, 'borrower': final_borrower, 'time': record.operation_time, 'type': '', 'id': notification_id}
 
             # 我保管的设备被别人借走（排除自己操作的）
             if device.cabinet_number == user['borrower_name'] and device.borrower and device.borrower != user['borrower_name'] and record.borrower != user['borrower_name']:
@@ -786,7 +800,9 @@ def pc_dashboard():
         # 处理报废通知 - 如果我是该设备的借用人
         elif '报废' in record.operation_type.value:
             if record.borrower == user['borrower_name']:
+                notification_id = f"{device.name}_报废_{record.operation_time.strftime('%Y%m%d%H%M%S')}"
                 item = {
+                    'id': notification_id,
                     'device_name': device.name,
                     'device_type': device.device_type.value,
                     'borrower': record.borrower,
@@ -798,7 +814,9 @@ def pc_dashboard():
         # 处理状态变更通知 - 如果我是该设备的借用人或保管人
         elif '状态变更' in record.operation_type.value:
             if record.borrower == user['borrower_name']:
+                notification_id = f"{device.name}_状态变更_{record.operation_time.strftime('%Y%m%d%H%M%S')}"
                 item = {
+                    'id': notification_id,
                     'device_name': device.name,
                     'device_type': device.device_type.value,
                     'borrower': record.borrower,
@@ -808,7 +826,9 @@ def pc_dashboard():
                 }
                 my_items_borrowed.append(item)
             elif device.cabinet_number == user['borrower_name']:
+                notification_id = f"{device.name}_状态变更_{record.operation_time.strftime('%Y%m%d%H%M%S')}"
                 item = {
+                    'id': notification_id,
                     'device_name': device.name,
                     'device_type': device.device_type.value,
                     'borrower': record.borrower,
@@ -821,7 +841,9 @@ def pc_dashboard():
         # 处理保管人变更通知 - 如果我是原保管人或新保管人
         elif '保管人变更' in record.operation_type.value:
             if user['borrower_name'] in record.reason:
+                notification_id = f"{device.name}_保管人变更_{record.operation_time.strftime('%Y%m%d%H%M%S')}"
                 item = {
+                    'id': notification_id,
                     'device_name': device.name,
                     'device_type': device.device_type.value,
                     'borrower': record.borrower,
@@ -831,7 +853,9 @@ def pc_dashboard():
                 }
                 my_items_borrowed.append(item)
             elif record.remark and user['borrower_name'] in record.remark:
+                notification_id = f"{device.name}_保管人变更_{record.operation_time.strftime('%Y%m%d%H%M%S')}"
                 item = {
+                    'id': notification_id,
                     'device_name': device.name,
                     'device_type': device.device_type.value,
                     'borrower': record.borrower,
@@ -842,6 +866,53 @@ def pc_dashboard():
                 my_items_borrowed.append(item)
 
     my_items_borrowed = sorted(my_items_borrowed, key=lambda x: x['time'], reverse=True)[:20]
+
+    # 获取系统通知（包括逾期提醒等）
+    system_notifications = api_client.get_notifications(
+        user_id=user['user_id'],
+        user_name=user['borrower_name'],
+        unread_only=False
+    )
+    
+    # 将系统通知转换为与 my_items_borrowed 相同的格式
+    for notification in system_notifications:
+        my_items_borrowed.append({
+            'device_name': notification.device_name or '',
+            'device_type': '',
+            'borrower': notification.user_name or '',
+            'time': notification.create_time,
+            'type': '系统通知',
+            'title': notification.title,
+            'content': notification.content,
+            'notification_id': notification.id,
+            'is_read': notification.is_read
+        })
+    
+    # 按时间排序，取最新的20条
+    my_items_borrowed = sorted(my_items_borrowed, key=lambda x: x['time'], reverse=True)[:20]
+
+    # 获取当前用户的排行（使用与排行榜页面一致的数据源）
+    current_user_name = user['borrower_name']
+    
+    # 借用次数排行
+    borrow_rankings = api_client.get_user_rankings('borrow')
+    borrow_rank = None
+    borrow_total = 0
+    for ranking in borrow_rankings:
+        if ranking['user_name'] == current_user_name:
+            borrow_rank = ranking['rank']
+            borrow_total = ranking['count']
+            break
+    
+    # 归还次数排行
+    return_rankings = api_client.get_user_rankings('return')
+    return_rank = None
+    return_total = 0
+    for ranking in return_rankings:
+        if ranking['user_name'] == current_user_name:
+            return_rank = ranking['rank']
+            return_total = ranking['count']
+            break
 
     return render_template('pc/dashboard.html',
                          user=user,
@@ -854,7 +925,11 @@ def pc_dashboard():
                          my_custodian_count=my_custodian_count,
                          recent_records=recent_records,
                          notifications=my_items_borrowed,
-                         notification_count=len(my_items_borrowed))
+                         notification_count=len([n for n in my_items_borrowed if not n.get('is_read', False)]),
+                         borrow_rank=borrow_rank,
+                         borrow_total=borrow_total,
+                         return_rank=return_rank,
+                         return_total=return_total)
 
 
 @app.route('/pc/devices')
@@ -868,6 +943,15 @@ def pc_device_list():
     status = request.args.get('status', 'all')
     search = request.args.get('search', '').strip()
     no_cabinet = request.args.get('no_cabinet', '')
+
+    # 获取组合筛选参数（车机/仪表）
+    filter_project = request.args.get('filter_project', '').strip()
+    filter_connection = request.args.get('filter_connection', '').strip()
+    filter_os_version = request.args.get('filter_os_version', '').strip()
+    filter_os_platform = request.args.get('filter_os_platform', '').strip()
+    filter_product = request.args.get('filter_product', '').strip()
+    filter_orientation = request.args.get('filter_orientation', '').strip()
+    filter_resolution = request.args.get('filter_resolution', '').strip()
 
     # 获取设备
     if device_type == 'car':
@@ -888,14 +972,14 @@ def pc_device_list():
     else:
         devices = api_client.get_all_devices()
         title = '全部设备'
-    
+
     # 状态过滤
     if status == 'available':
         # 在库或保管中都算可用
         devices = [d for d in devices if d.status in [DeviceStatus.IN_STOCK, DeviceStatus.IN_CUSTODY]]
     elif status == 'borrowed':
         devices = [d for d in devices if d.status == DeviceStatus.BORROWED]
-    
+
     # 搜索过滤 - 支持所有字段和组合搜索
     if search:
         search_lower = search.lower()
@@ -909,7 +993,7 @@ def pc_device_list():
                      search_lower in (d.remark or '').lower() or
                      search_lower in d.status.value.lower() or
                      search_lower in d.device_type.value.lower())
-            
+
             # 车机/仪表特有字段
             if not match and d.device_type.value in ['车机', '仪表']:
                 match = (search_lower in (d.project_attribute or '').lower() or
@@ -920,22 +1004,167 @@ def pc_device_list():
                          search_lower in (d.screen_orientation or '').lower() or
                          search_lower in (d.screen_resolution or '').lower() or
                          search_lower in (d.hardware_version or '').lower())
-            
+
             # 手机特有字段
             if not match and d.device_type.value == '手机':
                 match = (search_lower in (d.system_version or '').lower() or
                          search_lower in (d.imei or '').lower() or
                          search_lower in (d.sn or '').lower() or
                          search_lower in (d.carrier or '').lower())
-            
+
             # 手机卡特有字段
             if not match and d.device_type.value == '手机卡':
                 match = search_lower in (d.carrier or '').lower()
-            
+
             if match:
                 filtered_devices.append(d)
         devices = filtered_devices
-    
+
+    # 级联筛选：计算每个下拉框的可用选项（基于其他筛选条件，不包括自己）
+    if device_type in ['car', 'instrument']:
+        # 基础筛选设备列表（创建副本，避免修改原始列表）
+        base_devices = list(devices)
+        if no_cabinet == '1':
+            base_devices = [d for d in base_devices if d.status == DeviceStatus.NO_CABINET]
+
+        # 计算每个下拉框的选项（基于除自己外的其他筛选条件）
+        # 项目属性选项：基于除项目属性外的其他筛选条件
+        filtered_for_project = base_devices
+        if filter_connection:
+            filtered_for_project = [d for d in filtered_for_project if d.connection_method == filter_connection]
+        if filter_os_version:
+            filtered_for_project = [d for d in filtered_for_project if d.os_version == filter_os_version]
+        if filter_os_platform:
+            filtered_for_project = [d for d in filtered_for_project if d.os_platform == filter_os_platform]
+        if filter_product:
+            filtered_for_project = [d for d in filtered_for_project if d.product_name == filter_product]
+        if filter_orientation:
+            filtered_for_project = [d for d in filtered_for_project if d.screen_orientation == filter_orientation]
+        if filter_resolution:
+            filtered_for_project = [d for d in filtered_for_project if d.screen_resolution == filter_resolution]
+        project_attributes = sorted(set(d.project_attribute for d in filtered_for_project if d.project_attribute))
+
+        # 连接方式选项：基于除连接方式外的其他筛选条件
+        filtered_for_connection = base_devices
+        if filter_project:
+            filtered_for_connection = [d for d in filtered_for_connection if d.project_attribute == filter_project]
+        if filter_os_version:
+            filtered_for_connection = [d for d in filtered_for_connection if d.os_version == filter_os_version]
+        if filter_os_platform:
+            filtered_for_connection = [d for d in filtered_for_connection if d.os_platform == filter_os_platform]
+        if filter_product:
+            filtered_for_connection = [d for d in filtered_for_connection if d.product_name == filter_product]
+        if filter_orientation:
+            filtered_for_connection = [d for d in filtered_for_connection if d.screen_orientation == filter_orientation]
+        if filter_resolution:
+            filtered_for_connection = [d for d in filtered_for_connection if d.screen_resolution == filter_resolution]
+        connection_methods = sorted(set(d.connection_method for d in filtered_for_connection if d.connection_method))
+
+        # 系统版本选项
+        filtered_for_os_version = base_devices
+        if filter_project:
+            filtered_for_os_version = [d for d in filtered_for_os_version if d.project_attribute == filter_project]
+        if filter_connection:
+            filtered_for_os_version = [d for d in filtered_for_os_version if d.connection_method == filter_connection]
+        if filter_os_platform:
+            filtered_for_os_version = [d for d in filtered_for_os_version if d.os_platform == filter_os_platform]
+        if filter_product:
+            filtered_for_os_version = [d for d in filtered_for_os_version if d.product_name == filter_product]
+        if filter_orientation:
+            filtered_for_os_version = [d for d in filtered_for_os_version if d.screen_orientation == filter_orientation]
+        if filter_resolution:
+            filtered_for_os_version = [d for d in filtered_for_os_version if d.screen_resolution == filter_resolution]
+        os_versions = sorted(set(d.os_version for d in filtered_for_os_version if d.os_version))
+
+        # 系统平台选项
+        filtered_for_os_platform = base_devices
+        if filter_project:
+            filtered_for_os_platform = [d for d in filtered_for_os_platform if d.project_attribute == filter_project]
+        if filter_connection:
+            filtered_for_os_platform = [d for d in filtered_for_os_platform if d.connection_method == filter_connection]
+        if filter_os_version:
+            filtered_for_os_platform = [d for d in filtered_for_os_platform if d.os_version == filter_os_version]
+        if filter_product:
+            filtered_for_os_platform = [d for d in filtered_for_os_platform if d.product_name == filter_product]
+        if filter_orientation:
+            filtered_for_os_platform = [d for d in filtered_for_os_platform if d.screen_orientation == filter_orientation]
+        if filter_resolution:
+            filtered_for_os_platform = [d for d in filtered_for_os_platform if d.screen_resolution == filter_resolution]
+        os_platforms = sorted(set(d.os_platform for d in filtered_for_os_platform if d.os_platform))
+
+        # 产品名称选项
+        filtered_for_product = base_devices
+        if filter_project:
+            filtered_for_product = [d for d in filtered_for_product if d.project_attribute == filter_project]
+        if filter_connection:
+            filtered_for_product = [d for d in filtered_for_product if d.connection_method == filter_connection]
+        if filter_os_version:
+            filtered_for_product = [d for d in filtered_for_product if d.os_version == filter_os_version]
+        if filter_os_platform:
+            filtered_for_product = [d for d in filtered_for_product if d.os_platform == filter_os_platform]
+        if filter_orientation:
+            filtered_for_product = [d for d in filtered_for_product if d.screen_orientation == filter_orientation]
+        if filter_resolution:
+            filtered_for_product = [d for d in filtered_for_product if d.screen_resolution == filter_resolution]
+        product_names = sorted(set(d.product_name for d in filtered_for_product if d.product_name))
+
+        # 屏幕方向选项
+        filtered_for_orientation = base_devices
+        if filter_project:
+            filtered_for_orientation = [d for d in filtered_for_orientation if d.project_attribute == filter_project]
+        if filter_connection:
+            filtered_for_orientation = [d for d in filtered_for_orientation if d.connection_method == filter_connection]
+        if filter_os_version:
+            filtered_for_orientation = [d for d in filtered_for_orientation if d.os_version == filter_os_version]
+        if filter_os_platform:
+            filtered_for_orientation = [d for d in filtered_for_orientation if d.os_platform == filter_os_platform]
+        if filter_product:
+            filtered_for_orientation = [d for d in filtered_for_orientation if d.product_name == filter_product]
+        if filter_resolution:
+            filtered_for_orientation = [d for d in filtered_for_orientation if d.screen_resolution == filter_resolution]
+        orientations = sorted(set(d.screen_orientation for d in filtered_for_orientation if d.screen_orientation))
+
+        # 分辨率选项
+        filtered_for_resolution = base_devices
+        if filter_project:
+            filtered_for_resolution = [d for d in filtered_for_resolution if d.project_attribute == filter_project]
+        if filter_connection:
+            filtered_for_resolution = [d for d in filtered_for_resolution if d.connection_method == filter_connection]
+        if filter_os_version:
+            filtered_for_resolution = [d for d in filtered_for_resolution if d.os_version == filter_os_version]
+        if filter_os_platform:
+            filtered_for_resolution = [d for d in filtered_for_resolution if d.os_platform == filter_os_platform]
+        if filter_product:
+            filtered_for_resolution = [d for d in filtered_for_resolution if d.product_name == filter_product]
+        if filter_orientation:
+            filtered_for_resolution = [d for d in filtered_for_resolution if d.screen_orientation == filter_orientation]
+        resolutions = sorted(set(d.screen_resolution for d in filtered_for_resolution if d.screen_resolution))
+    else:
+        project_attributes = []
+        connection_methods = []
+        os_versions = []
+        os_platforms = []
+        product_names = []
+        orientations = []
+        resolutions = []
+
+    # 应用所有筛选条件得到最终设备列表
+    if device_type in ['car', 'instrument']:
+        if filter_project:
+            devices = [d for d in devices if d.project_attribute == filter_project]
+        if filter_connection:
+            devices = [d for d in devices if d.connection_method == filter_connection]
+        if filter_os_version:
+            devices = [d for d in devices if d.os_version == filter_os_version]
+        if filter_os_platform:
+            devices = [d for d in devices if d.os_platform == filter_os_platform]
+        if filter_product:
+            devices = [d for d in devices if d.product_name == filter_product]
+        if filter_orientation:
+            devices = [d for d in devices if d.screen_orientation == filter_orientation]
+        if filter_resolution:
+            devices = [d for d in devices if d.screen_resolution == filter_resolution]
+
     # 处理设备列表，添加 no_cabinet 和 is_circulating 属性
     device_list = []
     for device in devices:
@@ -964,8 +1193,9 @@ def pc_device_list():
     end = start + per_page
     paginated_devices = device_list[start:end]
     
+    # 获取全局统计（用于侧边栏显示）
     stats = get_device_stats()
-    
+
     return render_template('pc/device_list.html',
                          devices=paginated_devices,
                          title=title,
@@ -977,7 +1207,23 @@ def pc_device_list():
                          total_pages=total_pages,
                          total=total,
                          user=get_current_user(),
-                         **stats)
+                         filter_project=filter_project,
+                         filter_connection=filter_connection,
+                         filter_os_version=filter_os_version,
+                         filter_os_platform=filter_os_platform,
+                         filter_product=filter_product,
+                         filter_orientation=filter_orientation,
+                         filter_resolution=filter_resolution,
+                         project_attributes=project_attributes,
+                         connection_methods=connection_methods,
+                         os_versions=os_versions,
+                         os_platforms=os_platforms,
+                         product_names=product_names,
+                         orientations=orientations,
+                         resolutions=resolutions,
+                         total_devices=stats['total_devices'],
+                         available_devices=stats['available_devices'],
+                         borrowed_devices_count=stats['borrowed_devices_count'])
 
 
 @app.route('/pc/device/<device_id>')
@@ -1026,8 +1272,48 @@ def pc_device_detail(device_id):
             'is_creator': remark.creator == user['borrower_name']
         })
 
-    # 获取设备借用记录
-    raw_records = api_client.get_device_records(device_id, device_type, limit=20)
+    # 获取设备借用记录（获取全部用于统计排行）
+    all_raw_records = api_client.get_device_records(device_id, device_type, limit=10000)
+    
+    # 统计每个用户的借用次数和归还次数
+    borrow_counts = {}  # 借用次数统计
+    return_counts = {}  # 归还次数统计
+    
+    for record in all_raw_records:
+        borrower = record.borrower
+        if not borrower:
+            continue
+            
+        if '借出' in record.operation_type.value:
+            borrow_counts[borrower] = borrow_counts.get(borrower, 0) + 1
+        elif '归还' in record.operation_type.value:
+            return_counts[borrower] = return_counts.get(borrower, 0) + 1
+    
+    # 计算当前用户的排行
+    current_user = user['borrower_name']
+    
+    # 借用次数排行
+    borrow_rank = None
+    borrow_total = borrow_counts.get(current_user, 0)
+    if borrow_total > 0:
+        sorted_borrow = sorted(borrow_counts.items(), key=lambda x: x[1], reverse=True)
+        for idx, (name, count) in enumerate(sorted_borrow, 1):
+            if name == current_user:
+                borrow_rank = idx
+                break
+    
+    # 归还次数排行
+    return_rank = None
+    return_total = return_counts.get(current_user, 0)
+    if return_total > 0:
+        sorted_return = sorted(return_counts.items(), key=lambda x: x[1], reverse=True)
+        for idx, (name, count) in enumerate(sorted_return, 1):
+            if name == current_user:
+                return_rank = idx
+                break
+    
+    # 格式化显示用的记录列表（限制20条）
+    raw_records = all_raw_records[:20]
     record_list = []
     for record in raw_records:
         record_list.append({
@@ -1114,6 +1400,10 @@ def pc_device_detail(device_id):
                          remaining_hours=remaining_hours,
                          user=user,
                          now=datetime.now().strftime('%Y-%m-%d %H:%M'),
+                         borrow_rank=borrow_rank,
+                         borrow_total=borrow_total,
+                         return_rank=return_rank,
+                         return_total=return_total,
                          **stats)
 
 
@@ -1342,6 +1632,17 @@ def pc_all_records():
                          return_count=return_count,
                          page=page,
                          total_pages=total_pages,
+                         user=get_current_user(),
+                         **stats)
+
+
+@app.route('/pc/user-rankings')
+@login_required
+def pc_user_rankings():
+    """PC端用户排行榜页面"""
+    stats = get_device_stats()
+    return render_template('pc/user_rankings.html',
+                         ranking_type='borrow',
                          user=get_current_user(),
                          **stats)
 
@@ -2751,6 +3052,56 @@ def api_user_announcements():
         'normal_announcements': [a.to_dict() for a in normal_announcements],
         'special_announcements': [a.to_dict() for a in special_announcements]
     })
+
+
+# ==================== 用户排名API ====================
+
+@app.route('/api/user-rankings', methods=['GET'])
+@login_required
+def api_user_rankings():
+    """获取用户排名列表API"""
+    ranking_type = request.args.get('type', 'borrow')  # 'borrow' 或 'return'
+    
+    if ranking_type not in ['borrow', 'return']:
+        return jsonify({'success': False, 'message': '排名类型无效'})
+    
+    rankings = api_client.get_user_rankings(ranking_type)
+    
+    # 获取当前用户今天的点赞次数
+    user = get_current_user()
+    today_likes = api_client.get_user_today_likes(user['user_id'])
+    remaining_likes = 5 - today_likes
+    
+    return jsonify({
+        'success': True,
+        'rankings': rankings,
+        'remaining_likes': max(0, remaining_likes)
+    })
+
+
+@app.route('/api/user-like', methods=['POST'])
+@login_required
+def api_user_like():
+    """用户点赞API"""
+    data = request.get_json()
+    to_user_id = data.get('to_user_id')
+    
+    if not to_user_id:
+        return jsonify({'success': False, 'message': '请选择要点赞的用户'})
+    
+    user = get_current_user()
+    success, message = api_client.add_like(user['user_id'], to_user_id)
+    
+    if success:
+        # 获取点赞后的点赞数
+        like_count = api_client.get_user_like_count(to_user_id)
+        return jsonify({
+            'success': True,
+            'message': message,
+            'like_count': like_count
+        })
+    else:
+        return jsonify({'success': False, 'message': message})
 
 
 # ==================== 错误处理 ====================

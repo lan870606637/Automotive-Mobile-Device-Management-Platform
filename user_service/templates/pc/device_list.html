@@ -45,42 +45,63 @@
                 <label style="display: block; font-size: 13px; color: #666; margin-bottom: 6px;">项目属性</label>
                 <select id="filterProject" onchange="applyFilters()" style="width: 100%; padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px;">
                     <option value="">全部</option>
+                    {% for v in project_attributes %}
+                    <option value="{{ v }}" {% if filter_project and filter_project.strip() == v.strip() %}selected{% endif %}>{{ v }}</option>
+                    {% endfor %}
                 </select>
             </div>
             <div>
                 <label style="display: block; font-size: 13px; color: #666; margin-bottom: 6px;">连接方式</label>
                 <select id="filterConnection" onchange="applyFilters()" style="width: 100%; padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px;">
                     <option value="">全部</option>
+                    {% for v in connection_methods %}
+                    <option value="{{ v }}" {% if filter_connection and filter_connection.strip() == v.strip() %}selected{% endif %}>{{ v }}</option>
+                    {% endfor %}
                 </select>
             </div>
             <div>
                 <label style="display: block; font-size: 13px; color: #666; margin-bottom: 6px;">系统版本</label>
                 <select id="filterOsVersion" onchange="applyFilters()" style="width: 100%; padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px;">
                     <option value="">全部</option>
+                    {% for v in os_versions %}
+                    <option value="{{ v }}" {% if filter_os_version and filter_os_version.strip() == v.strip() %}selected{% endif %}>{{ v }}</option>
+                    {% endfor %}
                 </select>
             </div>
             <div>
                 <label style="display: block; font-size: 13px; color: #666; margin-bottom: 6px;">系统平台</label>
                 <select id="filterOsPlatform" onchange="applyFilters()" style="width: 100%; padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px;">
                     <option value="">全部</option>
+                    {% for v in os_platforms %}
+                    <option value="{{ v }}" {% if filter_os_platform and filter_os_platform.strip() == v.strip() %}selected{% endif %}>{{ v }}</option>
+                    {% endfor %}
                 </select>
             </div>
             <div>
                 <label style="display: block; font-size: 13px; color: #666; margin-bottom: 6px;">产品名称</label>
                 <select id="filterProduct" onchange="applyFilters()" style="width: 100%; padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px;">
                     <option value="">全部</option>
+                    {% for v in product_names %}
+                    <option value="{{ v }}" {% if filter_product and filter_product.strip() == v.strip() %}selected{% endif %}>{{ v }}</option>
+                    {% endfor %}
                 </select>
             </div>
             <div>
                 <label style="display: block; font-size: 13px; color: #666; margin-bottom: 6px;">屏幕方向</label>
                 <select id="filterOrientation" onchange="applyFilters()" style="width: 100%; padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px;">
                     <option value="">全部</option>
+                    {% for v in orientations %}
+                    <option value="{{ v }}" {% if filter_orientation and filter_orientation.strip() == v.strip() %}selected{% endif %}>{{ v }}</option>
+                    {% endfor %}
                 </select>
             </div>
             <div>
                 <label style="display: block; font-size: 13px; color: #666; margin-bottom: 6px;">分辨率</label>
                 <select id="filterResolution" onchange="applyFilters()" style="width: 100%; padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px;">
                     <option value="">全部</option>
+                    {% for v in resolutions %}
+                    <option value="{{ v }}" {% if filter_resolution and filter_resolution.strip() == v.strip() %}selected{% endif %}>{{ v }}</option>
+                    {% endfor %}
                 </select>
             </div>
         </div>
@@ -215,9 +236,9 @@
         <!-- 分页 -->
         {% if total_pages > 1 %}
         <div class="pagination">
-            <a href="{{ url_for('pc_device_list', type=device_type, no_cabinet='1' if no_cabinet else '', page=page-1) }}" class="page-btn" {% if page <= 1 %}style="pointer-events: none; opacity: 0.5;"{% endif %}>‹ 上一页</a>
+            <a href="{{ url_for('pc_device_list', type=device_type, no_cabinet='1' if no_cabinet else '', page=page-1, filter_project=filter_project, filter_connection=filter_connection, filter_os_version=filter_os_version, filter_os_platform=filter_os_platform, filter_product=filter_product, filter_orientation=filter_orientation, filter_resolution=filter_resolution) }}" class="page-btn" {% if page <= 1 %}style="pointer-events: none; opacity: 0.5;"{% endif %}>‹ 上一页</a>
             <span class="page-info">{{ page }} / {{ total_pages }} 页 (共{{ total }}台)</span>
-            <a href="{{ url_for('pc_device_list', type=device_type, no_cabinet='1' if no_cabinet else '', page=page+1) }}" class="page-btn" {% if page >= total_pages %}style="pointer-events: none; opacity: 0.5;"{% endif %}>下一页 ›</a>
+            <a href="{{ url_for('pc_device_list', type=device_type, no_cabinet='1' if no_cabinet else '', page=page+1, filter_project=filter_project, filter_connection=filter_connection, filter_os_version=filter_os_version, filter_os_platform=filter_os_platform, filter_product=filter_product, filter_orientation=filter_orientation, filter_resolution=filter_resolution) }}" class="page-btn" {% if page >= total_pages %}style="pointer-events: none; opacity: 0.5;"{% endif %}>下一页 ›</a>
         </div>
         {% endif %}
         {% else %}
@@ -478,64 +499,19 @@ function initFilters() {
 }
 
 // 根据设备数据填充筛选选项
+// 注意：级联筛选选项已由后端计算并渲染到模板中，这里不需要再填充
+// 保留此函数用于搜索结果的筛选选项更新
 function initFilterOptions(deviceList) {
-    if (!deviceList || deviceList.length === 0) {
-        console.log('没有设备数据，无法初始化筛选器');
-        return;
-    }
-    
-    // 收集所有唯一的值
-    const projectSet = new Set();
-    const connectionSet = new Set();
-    const osVersionSet = new Set();
-    const osPlatformSet = new Set();
-    const productSet = new Set();
-    const orientationSet = new Set();
-    const resolutionSet = new Set();
-    
-    deviceList.forEach(d => {
-        if (d.project_attribute && d.project_attribute !== '-') projectSet.add(d.project_attribute);
-        if (d.connection_method && d.connection_method !== '-') connectionSet.add(d.connection_method);
-        if (d.os_version && d.os_version !== '-') osVersionSet.add(d.os_version);
-        if (d.os_platform && d.os_platform !== '-') osPlatformSet.add(d.os_platform);
-        if (d.product_name && d.product_name !== '-') productSet.add(d.product_name);
-        if (d.screen_orientation && d.screen_orientation !== '-') orientationSet.add(d.screen_orientation);
-        if (d.screen_resolution && d.screen_resolution !== '-') resolutionSet.add(d.screen_resolution);
-    });
-    
-    // 清空并填充下拉框
-    clearAndFillSelect('filterProject', projectSet);
-    clearAndFillSelect('filterConnection', connectionSet);
-    clearAndFillSelect('filterOsVersion', osVersionSet);
-    clearAndFillSelect('filterOsPlatform', osPlatformSet);
-    clearAndFillSelect('filterProduct', productSet);
-    clearAndFillSelect('filterOrientation', orientationSet);
-    clearAndFillSelect('filterResolution', resolutionSet);
-}
-
-function clearAndFillSelect(selectId, valueSet) {
-    const select = document.getElementById(selectId);
-    if (!select) return;
-    
-    // 保留第一个"全部"选项
-    const firstOption = select.options[0];
-    select.innerHTML = '';
-    select.appendChild(firstOption);
-    
-    const values = Array.from(valueSet).sort();
-    values.forEach(value => {
-        if (value && value.trim()) {
-            const option = document.createElement('option');
-            option.value = value;
-            option.textContent = value;
-            select.appendChild(option);
-        }
-    });
+    // 级联筛选选项已由后端模板渲染，不需要前端再填充
+    // 此函数保留用于兼容，但不再执行填充操作
+    console.log('级联筛选选项已由后端提供，跳过前端填充');
 }
 
 
 
-// 应用筛选
+
+
+// 应用筛选 - 改为服务端筛选
 function applyFilters() {
     const project = document.getElementById('filterProject')?.value || '';
     const connection = document.getElementById('filterConnection')?.value || '';
@@ -544,44 +520,28 @@ function applyFilters() {
     const product = document.getElementById('filterProduct')?.value || '';
     const orientation = document.getElementById('filterOrientation')?.value || '';
     const resolution = document.getElementById('filterResolution')?.value || '';
-    
-    // 从原始数据中筛选
-    let filtered = allDevices.filter(d => {
-        if (project && d.project_attribute !== project) return false;
-        if (connection && d.connection_method !== connection) return false;
-        if (osVersion && d.os_version !== osVersion) return false;
-        if (osPlatform && d.os_platform !== osPlatform) return false;
-        if (product && d.product_name !== product) return false;
-        if (orientation && d.screen_orientation !== orientation) return false;
-        if (resolution && d.screen_resolution !== resolution) return false;
-        return true;
-    });
-    
-    renderSearchResults(filtered);
-    
-    // 显示筛选结果数量
-    const pagination = document.querySelector('.pagination');
-    if (pagination) pagination.style.display = 'none';
+
+    console.log('applyFilters called, osPlatform:', osPlatform);
+
+    // 构建URL参数
+    const params = new URLSearchParams();
+    params.set('type', currentDeviceType);
+    if (project) params.set('filter_project', project);
+    if (connection) params.set('filter_connection', connection);
+    if (osVersion) params.set('filter_os_version', osVersion);
+    if (osPlatform) params.set('filter_os_platform', osPlatform);
+    if (product) params.set('filter_product', product);
+    if (orientation) params.set('filter_orientation', orientation);
+    if (resolution) params.set('filter_resolution', resolution);
+
+    // 跳转到服务端进行筛选
+    window.location.href = '/pc/devices?' + params.toString();
 }
 
-// 重置筛选
+// 重置筛选 - 改为服务端重置
 function resetFilters() {
-    document.getElementById('filterProject').value = '';
-    document.getElementById('filterConnection').value = '';
-    document.getElementById('filterOsVersion').value = '';
-    document.getElementById('filterOsPlatform').value = '';
-    document.getElementById('filterProduct').value = '';
-    document.getElementById('filterOrientation').value = '';
-    document.getElementById('filterResolution').value = '';
-    
-    // 恢复原始列表
-    if (document.getElementById('searchInput').value.trim()) {
-        // 如果有搜索关键词，重新搜索
-        doSearch(document.getElementById('searchInput').value.trim());
-    } else {
-        // 否则恢复原始列表
-        restoreOriginalList();
-    }
+    // 跳转到当前设备类型页面，不带筛选参数
+    window.location.href = '/pc/devices?type=' + currentDeviceType;
 }
 
 // 页面加载完成后初始化筛选器

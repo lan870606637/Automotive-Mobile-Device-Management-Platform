@@ -8,7 +8,7 @@ import pandas as pd
 from datetime import datetime
 from typing import List, Optional
 
-from .models import Device, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, OperationLog, Admin, Notification, Announcement
+from .models import Device, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, OperationLog, Admin, Notification, Announcement, UserLike
 from .models import DeviceStatus, DeviceType, OperationType, EntrySource
 
 # Excel文件路径
@@ -26,6 +26,18 @@ VIEW_RECORD_FILE = os.path.join(EXCEL_DIR, '查看记录表.xlsx')
 ADMIN_FILE = os.path.join(EXCEL_DIR, '管理员表.xlsx')
 NOTIFICATION_FILE = os.path.join(EXCEL_DIR, '通知表.xlsx')
 ANNOUNCEMENT_FILE = os.path.join(EXCEL_DIR, '公告表.xlsx')
+USER_LIKE_FILE = os.path.join(EXCEL_DIR, '用户点赞表.xlsx')
+
+
+def safe_str(val):
+    """安全字符串转换,处理NaN和浮点数.0后缀问题"""
+    if pd.isna(val) or str(val).lower() == 'nan':
+        return ''
+    val_str = str(val)
+    # 如果字符串以 .0 结尾,说明是浮点数,需要去除
+    if val_str.endswith('.0'):
+        val_str = val_str[:-2]
+    return val_str
 
 
 class ExcelDataStore:
@@ -52,12 +64,6 @@ class ExcelDataStore:
             for _, row in df.iterrows():
                 if pd.isna(row.get('设备ID')):
                     continue
-                
-                # 处理可能为NaN的字符串字段
-                def safe_str(val):
-                    if pd.isna(val) or str(val).lower() == 'nan':
-                        return ''
-                    return str(val)
 
                 create_time = None
                 if pd.notna(row.get('创建时间')):
@@ -175,12 +181,7 @@ class ExcelDataStore:
             for _, row in df.iterrows():
                 if pd.isna(row.get('设备ID')):
                     continue
-                
-                def safe_str(val):
-                    if pd.isna(val) or str(val).lower() == 'nan':
-                        return ''
-                    return str(val)
-                
+
                 create_time = None
                 if pd.notna(row.get('创建时间')):
                     try:
@@ -292,11 +293,6 @@ class ExcelDataStore:
                     continue
                 
                 # 处理可能为NaN的字符串字段
-                def safe_str(val):
-                    if pd.isna(val) or str(val).lower() == 'nan':
-                        return ''
-                    return str(val)
-                
                 # 手机默认状态为保管中，如果Excel中是'在库'则转换为'保管中'
                 status_value = row['状态'] if pd.notna(row.get('状态')) else None
                 if status_value == '在库':
@@ -406,12 +402,7 @@ class ExcelDataStore:
             for _, row in df.iterrows():
                 if pd.isna(row.get('设备ID')):
                     continue
-                
-                def safe_str(val):
-                    if pd.isna(val) or str(val).lower() == 'nan':
-                        return ''
-                    return str(val)
-                
+
                 # 手机卡默认状态为保管中，如果Excel中是'在库'则转换为'保管中'
                 status_value = row['状态'] if pd.notna(row.get('状态')) else None
                 if status_value == '在库':
@@ -525,12 +516,7 @@ class ExcelDataStore:
             for _, row in df.iterrows():
                 if pd.isna(row.get('设备ID')):
                     continue
-                
-                def safe_str(val):
-                    if pd.isna(val) or str(val).lower() == 'nan':
-                        return ''
-                    return str(val)
-                
+
                 # 其它设备默认状态为保管中，如果Excel中是'在库'则转换为'保管中'
                 status_value = row['状态'] if pd.notna(row.get('状态')) else None
                 if status_value == '在库':
@@ -855,14 +841,8 @@ class ExcelDataStore:
             for _, row in df.iterrows():
                 if pd.isna(row.get('记录ID')):
                     continue
-                
+
                 try:
-                    # 处理可能为NaN的字符串字段
-                    def safe_str(val):
-                        if pd.isna(val) or str(val).lower() == 'nan':
-                            return ''
-                        return str(val)
-                    
                     record = Record(
                         id=str(row['记录ID']),
                         device_id=str(row['设备ID']),
@@ -975,14 +955,26 @@ class ExcelDataStore:
                     create_time = None
                     if pd.notna(row.get('注册时间')):
                         create_time = pd.to_datetime(row['注册时间'])
-                    
+
+                    # 处理手机号 - 去除可能的 .0 后缀
+                    phone_val = row.get('手机号', '')
+                    if pd.notna(phone_val):
+                        phone_str = str(phone_val)
+                        # 如果手机号以 .0 结尾,说明是浮点数,需要去除
+                        if phone_str.endswith('.0'):
+                            phone_str = phone_str[:-2]
+                        phone = phone_str
+                    else:
+                        phone = ''
+
                     user = User(
                         id=str(row['用户ID']),
                         wechat_name=str(row['微信名']),
-                        phone=str(row['手机号']),
+                        phone=phone,
                         password=str(row.get('密码', '123456')),
                         borrower_name=str(row.get('借用人', '')),
                         borrow_count=int(row.get('借用次数', 0)),
+                        return_count=int(row.get('归还次数', 0)),
                         is_frozen=str(row.get('状态', '正常')) == '已冻结',
                         is_admin=str(row.get('是否管理员', '否')) == '是',
                         create_time=create_time,
@@ -1008,6 +1000,7 @@ class ExcelDataStore:
                 '密码': user.password,
                 '借用人': user.borrower_name,
                 '借用次数': user.borrow_count,
+                '归还次数': user.return_count,
                 '状态': '已冻结' if user.is_frozen else '正常',
                 '是否管理员': '是' if user.is_admin else '否',
                 '注册时间': user.create_time.strftime('%Y-%m-%d') if user.create_time else '',
@@ -1239,11 +1232,6 @@ class ExcelDataStore:
                     if pd.notna(row.get('更新时间')):
                         update_time = pd.to_datetime(row['更新时间'])
 
-                    def safe_str(val):
-                        if pd.isna(val) or str(val).lower() == 'nan':
-                            return ''
-                        return str(val)
-
                     announcement = Announcement(
                         id=str(row['公告ID']),
                         title=str(row.get('标题', '')),
@@ -1285,3 +1273,49 @@ class ExcelDataStore:
 
         df = pd.DataFrame(data)
         df.to_excel(ANNOUNCEMENT_FILE, index=False)
+
+    @staticmethod
+    def load_user_likes() -> List[UserLike]:
+        """从Excel加载用户点赞数据"""
+        likes = []
+        if not os.path.exists(USER_LIKE_FILE):
+            return likes
+        
+        try:
+            df = pd.read_excel(USER_LIKE_FILE)
+            for _, row in df.iterrows():
+                try:
+                    create_time_str = safe_str(row.get('点赞时间', ''))
+                    create_time = datetime.strptime(create_time_str, '%Y-%m-%d %H:%M:%S') if create_time_str else datetime.now()
+                    
+                    like = UserLike(
+                        id=safe_str(row.get('点赞ID', '')),
+                        from_user_id=safe_str(row.get('点赞用户ID', '')),
+                        to_user_id=safe_str(row.get('被点赞用户ID', '')),
+                        create_date=safe_str(row.get('点赞日期', '')),
+                        create_time=create_time
+                    )
+                    likes.append(like)
+                except Exception as e:
+                    print(f"解析点赞记录失败: {e}")
+                    continue
+        except Exception as e:
+            print(f"加载点赞数据失败: {e}")
+        
+        return likes
+
+    @staticmethod
+    def save_user_likes(likes: List[UserLike]):
+        """保存用户点赞数据到Excel"""
+        data = []
+        for like in likes:
+            data.append({
+                '点赞ID': like.id,
+                '点赞用户ID': like.from_user_id,
+                '被点赞用户ID': like.to_user_id,
+                '点赞日期': like.create_date,
+                '点赞时间': like.create_time.strftime('%Y-%m-%d %H:%M:%S') if like.create_time else '',
+            })
+
+        df = pd.DataFrame(data)
+        df.to_excel(USER_LIKE_FILE, index=False)

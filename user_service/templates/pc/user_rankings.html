@@ -1,0 +1,596 @@
+{% extends "pc/base_pc.html" %}
+
+{% block title %}用户排行榜 - 设备管理系统{% endblock %}
+
+{% set active_nav = 'user_rankings' %}
+
+{% block content %}
+<h1 class="page-title">🏆 用户排行榜</h1>
+
+<!-- 排名说明 -->
+<div style="background: linear-gradient(135deg, #e6f7ff 0%, #f6ffed 100%); border: 1px solid #91d5ff; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
+    <div style="font-size: 14px; color: #096dd9; line-height: 1.8;">
+        <strong>📋 排行榜规则：</strong><br>
+        • <strong>借用排名：</strong>根据借用设备次数排序，前10名获得专属称号，其余按星级显示<br>
+        • <strong>归还排名：</strong>根据归还设备次数排序，前10名获得专属称号，其余按星级显示<br>
+        • <strong>星级规则：</strong>⭐ 0-10次 | ⭐⭐ 11-50次 | ⭐⭐⭐ 51-100次 | ⭐⭐⭐⭐ 101-200次 | ⭐⭐⭐⭐⭐ 201-500次 | ⭐⭐⭐⭐⭐⭐ 501-1000次 | ⭐⭐⭐⭐⭐⭐⭐ 1001次+<br>
+        • <strong>彩色星星：</strong>5星及以上显示彩色星星，彰显实力！<br>
+        • <strong>点赞规则：</strong>每人每天可点赞5次，给优秀的同事加油！
+    </div>
+</div>
+
+<!-- 用户排名 -->
+<div class="card">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <span class="card-title">📊 排行榜</span>
+        <div style="display: flex; gap: 8px;">
+            <button class="btn btn-sm {{ 'btn-primary' if ranking_type == 'borrow' else 'btn-default' }}" onclick="switchRanking('borrow')">借用排名</button>
+            <button class="btn btn-sm {{ 'btn-primary' if ranking_type == 'return' else 'btn-default' }}" onclick="switchRanking('return')">归还排名</button>
+        </div>
+    </div>
+    <div class="card-body">
+        <!-- 前10名卡片区域 -->
+        <div id="top10Container" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px;">
+            <!-- 前10名将通过JS动态加载 -->
+        </div>
+        
+        <!-- 10名以后列表区域 -->
+        <div id="otherRankingSection" style="margin-top: 24px; display: none;">
+            <div style="font-size: 16px; font-weight: 600; color: #262626; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid #e8e8e8;">
+                📋 更多排名
+            </div>
+            <div id="otherRankingList">
+                <!-- 10名以后将通过JS动态加载 -->
+            </div>
+        </div>
+        
+        <div id="rankingLoading" style="text-align: center; padding: 60px; color: #999;">
+            <div style="font-size: 48px; margin-bottom: 16px;">⏳</div>
+            <p>加载排行榜中...</p>
+        </div>
+    </div>
+</div>
+
+<style>
+/* 排名卡片样式 */
+.ranking-card {
+    background: linear-gradient(135deg, #fff 0%, #f8f9fa 100%);
+    border: 2px solid #e8e8e8;
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    transition: all 0.3s ease;
+    position: relative;
+}
+.ranking-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+}
+.ranking-card.top-1 { 
+    border-color: #ffd700; 
+    background: linear-gradient(135deg, #fff 0%, #fffbe6 100%);
+    box-shadow: 0 4px 12px rgba(255, 215, 0, 0.3);
+}
+.ranking-card.top-2 { 
+    border-color: #c0c0c0; 
+    background: linear-gradient(135deg, #fff 0%, #f5f5f5 100%);
+    box-shadow: 0 4px 12px rgba(192, 192, 192, 0.3);
+}
+.ranking-card.top-3 { 
+    border-color: #cd7f32; 
+    background: linear-gradient(135deg, #fff 0%, #fff7e6 100%);
+    box-shadow: 0 4px 12px rgba(205, 127, 50, 0.3);
+}
+
+.ranking-number {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 18px;
+    flex-shrink: 0;
+}
+.ranking-number.top-1 { 
+    background: linear-gradient(135deg, #ffd700 0%, #ffec8b 100%); 
+    color: #fff; 
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    box-shadow: 0 2px 8px rgba(255, 215, 0, 0.5);
+}
+.ranking-number.top-2 { 
+    background: linear-gradient(135deg, #c0c0c0 0%, #e0e0e0 100%); 
+    color: #fff; 
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    box-shadow: 0 2px 8px rgba(192, 192, 192, 0.5);
+}
+.ranking-number.top-3 { 
+    background: linear-gradient(135deg, #cd7f32 0%, #daa520 100%); 
+    color: #fff; 
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    box-shadow: 0 2px 8px rgba(205, 127, 50, 0.5);
+}
+.ranking-number.normal { 
+    background: #f0f0f0; 
+    color: #666; 
+}
+
+.ranking-avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 600;
+    font-size: 22px;
+    flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.ranking-info {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+.ranking-name {
+    font-weight: 600;
+    font-size: 15px;
+    color: #262626;
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.ranking-title {
+    font-size: 12px;
+    color: #1890ff;
+    font-weight: 600;
+    margin-bottom: 2px;
+    padding: 2px 6px;
+    background: #e6f7ff;
+    border-radius: 4px;
+    display: inline-block;
+    white-space: nowrap;
+}
+.ranking-stars {
+    font-size: 14px;
+    letter-spacing: 1px;
+    line-height: 1.4;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1px;
+}
+.ranking-count {
+    font-size: 12px;
+    color: #8c8c8c;
+    margin-top: 2px;
+}
+
+.ranking-like {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    margin-left: auto;
+    padding-left: 8px;
+}
+.like-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    border: none;
+    background: #f0f5ff;
+    color: #597ef7;
+    font-size: 18px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(89, 126, 247, 0.15);
+}
+.like-btn:hover:not(:disabled) {
+    background: #597ef7;
+    color: #fff;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(89, 126, 247, 0.35);
+}
+.like-btn:disabled {
+    background: #f5f5f5;
+    color: #bfbfbf;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+.like-btn.liked {
+    background: #597ef7;
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(89, 126, 247, 0.4);
+}
+.like-count {
+    font-size: 12px;
+    color: #8c8c8c;
+    font-weight: 500;
+}
+
+.ranking-hint {
+    background: #fff7e6;
+    border: 1px solid #ffd591;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    font-size: 14px;
+    color: #d46b08;
+    grid-column: 1 / -1;
+}
+
+/* 列表区域样式 */
+#otherRankingList .data-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+#otherRankingList .data-table th {
+    background: #fafafa;
+    padding: 12px 16px;
+    text-align: left;
+    font-weight: 600;
+    color: #262626;
+    border-bottom: 1px solid #e8e8e8;
+    font-size: 14px;
+}
+
+#otherRankingList .data-table td {
+    padding: 12px 16px;
+    border-bottom: 1px solid #f0f0f0;
+    vertical-align: middle;
+}
+
+#otherRankingList .data-table tr:hover {
+    background: #fafafa;
+}
+
+/* 列表中的点赞按钮 */
+#otherRankingList .like-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: none;
+    background: #f0f5ff;
+    color: #597ef7;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 3px rgba(89, 126, 247, 0.12);
+    padding: 0;
+}
+
+#otherRankingList .like-btn:hover:not(:disabled) {
+    background: #597ef7;
+    color: #fff;
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(89, 126, 247, 0.3);
+}
+
+#otherRankingList .like-btn:disabled {
+    background: #f5f5f5;
+    color: #bfbfbf;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+#otherRankingList .like-btn.liked {
+    background: #597ef7;
+    color: #fff;
+    box-shadow: 0 1px 6px rgba(89, 126, 247, 0.35);
+}
+</style>
+
+<script>
+let currentRankingType = 'borrow';
+let rankingsData = [];
+let remainingLikes = 5;
+let currentUserId = '{{ user.id }}';
+
+// 切换排名类型
+function switchRanking(type) {
+    currentRankingType = type;
+    // 更新按钮样式
+    const buttons = document.querySelectorAll('.card-header .btn');
+    buttons.forEach(btn => {
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-default');
+    });
+    event.target.classList.remove('btn-default');
+    event.target.classList.add('btn-primary');
+    // 重新加载排名
+    loadRankings();
+}
+
+// 加载排名数据
+async function loadRankings() {
+    const top10Container = document.getElementById('top10Container');
+    const otherSection = document.getElementById('otherRankingSection');
+    const loading = document.getElementById('rankingLoading');
+
+    top10Container.style.display = 'none';
+    otherSection.style.display = 'none';
+    loading.style.display = 'block';
+
+    try {
+        const response = await fetch(`/api/user-rankings?type=${currentRankingType}`);
+        const data = await response.json();
+
+        rankingsData = data.rankings || [];
+        remainingLikes = data.remaining_likes || 0;
+        renderRankings();
+    } catch (error) {
+        console.error('加载排名失败:', error);
+        top10Container.innerHTML = '<div style="text-align: center; color: #999; padding: 40px; grid-column: 1 / -1;">加载失败，请刷新页面重试</div>';
+        top10Container.style.display = 'grid';
+        otherSection.style.display = 'none';
+        loading.style.display = 'none';
+    }
+}
+
+// 渲染排名列表
+function renderRankings() {
+    const top10Container = document.getElementById('top10Container');
+    const otherSection = document.getElementById('otherRankingSection');
+    const otherList = document.getElementById('otherRankingList');
+    const loading = document.getElementById('rankingLoading');
+
+    if (rankingsData.length === 0) {
+        top10Container.innerHTML = '<div style="text-align: center; color: #999; padding: 60px; grid-column: 1 / -1;"><div style="font-size: 48px; margin-bottom: 16px;">📊</div><p>暂无排名数据</p></div>';
+        top10Container.style.display = 'grid';
+        otherSection.style.display = 'none';
+        loading.style.display = 'none';
+        return;
+    }
+
+    // 显示提示
+    let hintHtml = '';
+    if (remainingLikes > 0) {
+        hintHtml = `<div class="ranking-hint">👍 你今天还可以点赞 <strong>${remainingLikes}</strong> 次，给优秀的同事点个赞吧！</div>`;
+    } else {
+        hintHtml = `<div class="ranking-hint">💤 今天的点赞次数已用完，明天再来吧！</div>`;
+    }
+
+    // 分离前10名和其他用户
+    const top10 = rankingsData.filter(user => user.rank <= 10);
+    const others = rankingsData.filter(user => user.rank > 10);
+
+    // 渲染前10名（卡片样式）
+    let top10Html = hintHtml;
+    top10.forEach(user => {
+        const topClass = user.rank <= 3 ? `top-${user.rank}` : 'normal';
+        const numberClass = user.rank <= 3 ? `top-${user.rank}` : 'normal';
+
+        // 生成星星（5星及以上显示彩色）
+        let starsHtml = '';
+        if (user.star_level >= 5) {
+            // 彩色星星 - 5-7星显示深彩虹色
+            const starColors = ['#c41e3a', '#e65100', '#f9a825', '#2e7d32', '#0277bd', '#1565c0', '#6a1b9a'];
+            for (let i = 0; i < user.star_level && i < 7; i++) {
+                starsHtml += `<span style="color: ${starColors[i]};">★</span>`;
+            }
+        } else {
+            starsHtml = '⭐'.repeat(user.star_level);
+        }
+
+        // 获取用户名首字
+        const avatarText = user.user_name ? user.user_name.charAt(0).toUpperCase() : '?';
+
+        // 检查是否是自己
+        const isSelf = user.user_id === currentUserId;
+        const likeDisabled = remainingLikes <= 0 || isSelf;
+
+        // 前10名显示等级（称号+星级）
+        let levelHtml = '';
+        if (user.title) {
+            levelHtml = `<div class="ranking-title">${user.title}</div>`;
+            levelHtml += `<div class="ranking-stars" style="margin-top: 2px;">${starsHtml}</div>`;
+        } else {
+            levelHtml = `<div class="ranking-stars">${starsHtml}</div>`;
+        }
+
+        top10Html += `
+            <div class="ranking-card ${topClass}">
+                <div class="ranking-number ${numberClass}">${user.rank}</div>
+                <div class="ranking-avatar">${avatarText}</div>
+                <div class="ranking-info">
+                    <div class="ranking-name">${user.user_name} ${isSelf ? '<span style="color: #1890ff; font-size: 12px;">(你)</span>' : ''}</div>
+                    ${levelHtml}
+                    <div class="ranking-count">${currentRankingType === 'borrow' ? '借用' : '归还'} ${user.count} 次</div>
+                </div>
+                <div class="ranking-like">
+                    <button class="like-btn ${user.liked ? 'liked' : ''}"
+                            onclick="handleLike('${user.user_id}', this)"
+                            ${likeDisabled ? 'disabled' : ''}
+                            title="${isSelf ? '不能给自己点赞' : (remainingLikes <= 0 ? '今日点赞次数已用完' : '点赞')}">
+                        👍
+                    </button>
+                    <div class="like-count">${user.like_count || 0}</div>
+                </div>
+            </div>
+        `;
+    });
+
+    top10Container.innerHTML = top10Html;
+    top10Container.style.display = 'grid';
+
+    // 渲染10名以后（列表样式）
+    if (others.length > 0) {
+        let othersHtml = '<table class="data-table" style="width: 100%;"><thead><tr><th style="width: 60px;">排名</th><th>用户</th><th style="width: 150px;">等级</th><th style="width: 120px;">次数</th><th style="width: 100px;">点赞</th></tr></thead><tbody>';
+
+        others.forEach(user => {
+            // 生成星星（5星及以上显示彩色）
+            let starsHtml = '';
+            if (user.star_level >= 5) {
+            // 彩色星星 - 5-7星显示深彩虹色
+            const starColors = ['#c41e3a', '#e65100', '#f9a825', '#2e7d32', '#0277bd', '#1565c0', '#6a1b9a'];
+            for (let i = 0; i < user.star_level && i < 7; i++) {
+                starsHtml += `<span style="color: ${starColors[i]}; font-size: 16px;">★</span>`;
+            }
+            } else {
+                starsHtml = '⭐'.repeat(user.star_level);
+            }
+
+            // 获取用户名首字
+            const avatarText = user.user_name ? user.user_name.charAt(0).toUpperCase() : '?';
+
+            // 检查是否是自己
+            const isSelf = user.user_id === currentUserId;
+            const likeDisabled = remainingLikes <= 0 || isSelf;
+
+            // 等级显示（称号+星级）
+            let levelHtml = '';
+            if (user.title) {
+                levelHtml = `<span style="font-size: 12px; color: #1890ff; font-weight: 600; padding: 2px 8px; background: #e6f7ff; border-radius: 4px;">${user.title}</span>`;
+                levelHtml += `<div style="margin-top: 4px;">${starsHtml}</div>`;
+            } else {
+                levelHtml = `<span style="font-size: 14px;">${starsHtml}</span>`;
+            }
+
+            othersHtml += `
+                <tr>
+                    <td><span style="display: inline-block; width: 28px; height: 28px; line-height: 28px; text-align: center; background: #f0f0f0; color: #666; border-radius: 50%; font-weight: 600; font-size: 13px;">${user.rank}</span></td>
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <div style="width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 600; font-size: 14px;">${avatarText}</div>
+                            <span style="font-weight: 500;">${user.user_name} ${isSelf ? '<span style="color: #1890ff; font-size: 12px;">(你)</span>' : ''}</span>
+                        </div>
+                    </td>
+                    <td>${levelHtml}</td>
+                    <td style="color: #8c8c8c;">${user.count} 次</td>
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <button class="like-btn ${user.liked ? 'liked' : ''}"
+                                    onclick="handleLike('${user.user_id}', this)"
+                                    ${likeDisabled ? 'disabled' : ''}
+                                    title="${isSelf ? '不能给自己点赞' : (remainingLikes <= 0 ? '今日点赞次数已用完' : '点赞')}">
+                                👍
+                            </button>
+                            <span style="font-size: 13px; color: #666; font-weight: 600;">${user.like_count || 0}</span>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+
+        othersHtml += '</tbody></table>';
+        otherList.innerHTML = othersHtml;
+        otherSection.style.display = 'block';
+    } else {
+        otherSection.style.display = 'none';
+    }
+
+    loading.style.display = 'none';
+}
+
+// 处理点赞
+async function handleLike(userId, btn) {
+    if (remainingLikes <= 0) {
+        showToast('今天的点赞次数已用完');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/user-like', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ to_user_id: userId })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // 更新按钮状态
+            btn.classList.add('liked');
+            btn.disabled = true;
+
+            // 更新点赞数 - 查找对应的点赞数元素
+            const cardLikeCount = btn.closest('.ranking-like, td')?.querySelector('.like-count');
+            if (cardLikeCount) {
+                cardLikeCount.textContent = data.like_count || 0;
+            }
+
+            // 更新数据中的点赞状态
+            const userIndex = rankingsData.findIndex(u => u.user_id === userId);
+            if (userIndex !== -1) {
+                rankingsData[userIndex].liked = true;
+                rankingsData[userIndex].like_count = data.like_count || 0;
+            }
+
+            // 更新剩余点赞数
+            remainingLikes--;
+
+            // 更新提示文本
+            updateRankingHint();
+
+            showToast('点赞成功！');
+        } else {
+            showToast(data.message || '点赞失败');
+        }
+    } catch (error) {
+        console.error('点赞失败:', error);
+        showToast('点赞失败，请重试');
+    }
+}
+
+// 更新排行榜提示
+function updateRankingHint() {
+    const hintDiv = document.querySelector('.ranking-hint');
+    if (hintDiv) {
+        if (remainingLikes > 0) {
+            hintDiv.innerHTML = `你今天还可以点赞 <strong>${remainingLikes}</strong> 次，给优秀的同事点个赞吧！`;
+        } else {
+            hintDiv.innerHTML = `今天的点赞次数已用完，明天再来吧！`;
+        }
+    }
+}
+
+// 显示提示
+function showToast(message) {
+    const toast = document.createElement('div');
+    toast.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0,0,0,0.8);
+        color: #fff;
+        padding: 14px 28px;
+        border-radius: 8px;
+        font-size: 14px;
+        z-index: 9999;
+        animation: fadeIn 0.3s ease;
+        text-align: center;
+    `;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.3s';
+        setTimeout(() => toast.remove(), 300);
+    }, 2000);
+}
+
+// 页面加载时初始化
+document.addEventListener('DOMContentLoaded', function() {
+    loadRankings();
+});
+</script>
+{% endblock %}

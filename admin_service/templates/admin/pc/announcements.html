@@ -142,6 +142,19 @@
             color: #999;
             margin-top: 4px;
         }
+        .btn-default {
+            background: #fff;
+            border: 1px solid #d9d9d9;
+            color: #595959;
+        }
+        .btn-default:hover:not(:disabled) {
+            border-color: #40a9ff;
+            color: #40a9ff;
+        }
+        .btn-default:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body class="pc-admin-body">
@@ -200,6 +213,12 @@
                 </div>
             </header>
 
+            <!-- 排序说明 -->
+            <div style="background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 4px; padding: 12px 16px; margin-bottom: 20px; font-size: 13px; color: #096dd9;">
+                <span style="margin-right: 6px;">💡</span>
+                <strong>公告顺序说明：</strong>公告的展示顺序按照公告列表中的排序为准。您可以使用每条公告右侧的「上移」「下移」按钮调整公告的先后顺序。
+            </div>
+
             <!-- 统计信息 -->
             <div class="stats-row" style="margin-bottom: 20px;">
                 <div class="stat-card-large">
@@ -253,8 +272,10 @@
                     {% for announcement in announcements %}
                     <div class="announcement-item {{ 'special' if announcement.announcement_type == 'special' else '' }}" 
                          data-type="{{ announcement.announcement_type }}" 
-                         data-active="{{ 'true' if announcement.is_active else 'false' }}">
+                         data-active="{{ 'true' if announcement.is_active else 'false' }}"
+                         data-id="{{ announcement.id }}">
                         <div class="announcement-title">
+                            <span style="display: inline-block; min-width: 32px; color: #999; font-weight: normal;">{{ loop.index }}.</span>
                             {% if announcement.announcement_type == 'special' %}
                             <span class="special-badge">特殊</span>
                             {% endif %}
@@ -266,10 +287,11 @@
                         <div class="announcement-content">{{ announcement.content }}</div>
                         <div class="announcement-meta">
                             <span>创建人: {{ announcement.creator or '-' }}</span> | 
-                            <span>创建时间: {{ announcement.create_time or '-' }}</span> | 
-                            <span>排序: {{ announcement.sort_order }}</span>
+                            <span>创建时间: {{ announcement.create_time or '-' }}</span>
                         </div>
                         <div class="announcement-actions">
+                            <button class="btn btn-sm btn-default" onclick="moveAnnouncement('{{ announcement.id }}', 'up')" {% if loop.first %}disabled{% endif %}>⬆️ 上移</button>
+                            <button class="btn btn-sm btn-default" onclick="moveAnnouncement('{{ announcement.id }}', 'down')" {% if loop.last %}disabled{% endif %}>⬇️ 下移</button>
                             <button class="btn btn-sm btn-primary" onclick="openEditModal('{{ announcement.id }}')">编辑</button>
                             <button class="btn btn-sm {{ 'btn-warning' if announcement.is_active else 'btn-success' }}" 
                                     onclick="toggleStatus('{{ announcement.id }}')">
@@ -316,11 +338,7 @@
                     </div>
                     <div class="hint-text">特殊公告会在用户端弹窗显示，最多显示3条，多的会自动下架最旧的</div>
                 </div>
-                <div class="form-group">
-                    <label class="form-label">排序顺序</label>
-                    <input type="number" id="sortOrder" class="form-input" value="0" min="0">
-                    <div class="hint-text">数字越小越靠前，同序号按创建时间排序</div>
-                </div>
+
             </div>
             <div class="modal-footer">
                 <button class="btn btn-default" onclick="closeModal()">取消</button>
@@ -341,7 +359,6 @@
             document.getElementById('announcementTitle').value = '';
             document.getElementById('announcementContent').value = '';
             document.getElementById('isSpecial').checked = false;
-            document.getElementById('sortOrder').value = '0';
             document.getElementById('announcementModal').classList.add('active');
         }
 
@@ -358,7 +375,6 @@
                         document.getElementById('announcementTitle').value = announcement.title;
                         document.getElementById('announcementContent').value = announcement.content;
                         document.getElementById('isSpecial').checked = announcement.announcement_type === 'special';
-                        document.getElementById('sortOrder').value = announcement.sort_order || 0;
                         document.getElementById('announcementModal').classList.add('active');
                     } else {
                         showToast('获取公告失败');
@@ -375,7 +391,6 @@
             const title = document.getElementById('announcementTitle').value.trim();
             const content = document.getElementById('announcementContent').value.trim();
             const isSpecial = document.getElementById('isSpecial').checked;
-            const sortOrder = parseInt(document.getElementById('sortOrder').value) || 0;
 
             if (!title || !content) {
                 showToast('请填写标题和内容');
@@ -385,8 +400,7 @@
             const data = {
                 title: title,
                 content: content,
-                announcement_type: isSpecial ? 'special' : 'normal',
-                sort_order: sortOrder
+                announcement_type: isSpecial ? 'special' : 'normal'
             };
 
             const url = editingId ? `/api/announcements/${editingId}` : '/api/announcements';
@@ -486,6 +500,25 @@
             setTimeout(() => {
                 toast.classList.remove('show');
             }, 2000);
+        }
+
+        // 移动公告顺序
+        function moveAnnouncement(id, direction) {
+            fetch(`/api/announcements/${id}/move`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ direction: direction })
+            })
+            .then(r => r.json())
+            .then(result => {
+                if (result.success) {
+                    showToast(direction === 'up' ? '已上移' : '已下移');
+                    setTimeout(() => location.reload(), 300);
+                } else {
+                    showToast(result.message || '移动失败');
+                }
+            })
+            .catch(() => showToast('网络错误'));
         }
     </script>
 </body>

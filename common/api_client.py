@@ -8,7 +8,7 @@ import os
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 
-from .models import Device, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, OperationLog, ViewRecord, Notification, Announcement
+from .models import Device, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, OperationLog, ViewRecord, Notification, Announcement, UserLike
 from .models import DeviceStatus, DeviceType, OperationType, EntrySource, Admin
 from .excel_data_store import ExcelDataStore
 
@@ -55,6 +55,7 @@ class APIClient:
             ExcelDataStore.save_view_records(self._view_records)
             ExcelDataStore.save_notifications(self._notifications)
             ExcelDataStore.save_announcements(self._announcements)
+            ExcelDataStore.save_user_likes(self._user_likes)
         except PermissionError as e:
             self._safe_print(f"警告: Excel文件被占用，无法保存数据: {e}")
             self._safe_print("请关闭所有打开的Excel文件后重试")
@@ -119,10 +120,15 @@ class APIClient:
             self._announcements = ExcelDataStore.load_announcements()
             self._safe_print(f"从Excel加载: 公告{len(self._announcements)}条")
 
+            # 从Excel加载用户点赞数据
+            self._user_likes = ExcelDataStore.load_user_likes()
+            self._safe_print(f"从Excel加载: 点赞记录{len(self._user_likes)}条")
+
         except Exception as e:
             # 通知加载失败时使用空列表，不影响其他数据加载
             self._notifications = []
             self._announcements = []
+            self._user_likes = []
             self._safe_print(f"加载数据失败: {e}")
     
     def _device_to_dict(self, device: Device) -> dict:
@@ -743,6 +749,13 @@ class APIClient:
         )
         self._records.append(record)
         
+        # 更新原借用人的归还次数
+        if borrower:
+            for user in self._users:
+                if user.borrower_name == borrower:
+                    user.return_count += 1
+                    break
+        
         # 添加操作日志
         self.add_operation_log(f"强制归还: {borrower} -> {return_person}", device.name)
         self._save_data()
@@ -1289,6 +1302,13 @@ class APIClient:
         )
         self._records.append(record)
 
+        # 更新用户归还次数
+        if borrower:
+            for user in self._users:
+                if user.borrower_name == borrower:
+                    user.return_count += 1
+                    break
+
         self.add_operation_log("强制归还", device.name)
         self._save_data()
 
@@ -1583,6 +1603,27 @@ class APIClient:
                 notification_type=notification_type
             )
 
+    def notify_overdue_reminder(self, device_id: str, device_name: str, borrower: str, operator: str):
+        """通知用户设备逾期归还提醒"""
+        # 查找用户ID
+        user_id = None
+        for user in self._users:
+            if user.borrower_name == borrower:
+                user_id = user.id
+                break
+
+        if user_id:
+            content = f"您借用的设备「{device_name}」已逾期，请及时归还。如有问题请联系管理员。"
+            self.add_notification(
+                user_id=user_id,
+                user_name=borrower,
+                title="设备逾期归还提醒",
+                content=content,
+                device_name=device_name,
+                device_id=device_id,
+                notification_type="warning"
+            )
+
     def reload_data(self):
         """重新加载数据（用于网页端刷新）"""
         self._load_data()
@@ -1652,8 +1693,15 @@ class APIClient:
         return None
 
     def create_announcement(self, title: str, content: str, announcement_type: str = 'normal', 
-                           sort_order: int = 0, creator: str = '') -> Announcement:
+                           sort_order: int = None, creator: str = '') -> Announcement:
         """创建公告"""
+        # 如果没有指定排序，自动分配到最后（取当前最大 sort_order + 1）
+        if sort_order is None:
+            if self._announcements:
+                sort_order = max(a.sort_order for a in self._announcements) + 1
+            else:
+                sort_order = 0
+        
         announcement = Announcement(
             id=str(uuid.uuid4()),
             title=title,
@@ -1742,6 +1790,190 @@ class APIClient:
         announcement.update_time = datetime.now()
         self._save_data()
         return announcement
+
+    def move_announcement(self, announcement_id: str, direction: str) -> Optional[dict]:
+        """移动公告顺序 - 上移或下移
+        
+        Args:
+            announcement_id: 公告ID
+            direction: 'up' 或 'down'
+            
+        Returns:
+            成功返回 {'announcement_title': 公告标题}, 失败返回 None
+        """
+        # 获取当前公告
+        announcement = self.get_announcement_by_id(announcement_id)
+        if not announcement:
+            return None
+        
+        # 获取所有公告的排序列表（按照当前的sort_order和create_time排序）
+        sorted_announcements = sorted(
+            self._announcements, 
+            key=lambda x: (x.sort_order, -x.create_time.timestamp() if x.create_time else 0)
+        )
+        
+        # 找到当前公告的索引
+        try:
+            current_index = sorted_announcements.index(announcement)
+        except ValueError:
+            return None
+        
+        # 检查是否可以移动
+        if direction == 'up' and current_index == 0:
+            return None  # 已经在最前面，无法上移
+        if direction == 'down' and current_index == len(sorted_announcements) - 1:
+            return None  # 已经在最后面，无法下移
+        
+        # 获取要交换位置的公告
+        if direction == 'up':
+            target_index = current_index - 1
+        else:
+            target_index = current_index + 1
+        
+        target_announcement = sorted_announcements[target_index]
+        
+        # 如果两个公告 sort_order 相同，先给所有公告重新分配唯一的 sort_order
+        if announcement.sort_order == target_announcement.sort_order:
+            for i, a in enumerate(sorted_announcements):
+                a.sort_order = i
+        
+        # 交换sort_order
+        announcement.sort_order, target_announcement.sort_order = \
+            target_announcement.sort_order, announcement.sort_order
+        
+        # 更新时间
+        announcement.update_time = datetime.now()
+        target_announcement.update_time = datetime.now()
+        
+        self._save_data()
+        return {'announcement_title': announcement.title}
+
+    # ==================== 用户排名和点赞功能 ====================
+
+    # 借用称号列表（前10名）
+    BORROW_TITLES = [
+        "借物之神", "借物大师", "借物高手", "借物达人", "借物能手",
+        "借物先锋", "借物积极分子", "借物爱好者", "借物新手", "初出茅庐"
+    ]
+
+    # 归还称号列表（前10名）
+    RETURN_TITLES = [
+        "归还真神", "归还大师", "归还高手", "归还达人", "归还能手",
+        "归还先锋", "归还积极分子", "归还爱好者", "归还新手", "守信之星"
+    ]
+
+    def get_star_level(self, count: int) -> int:
+        """根据次数获取星级（1-7星）"""
+        if count >= 1001:
+            return 7
+        elif count >= 501:
+            return 6
+        elif count >= 201:
+            return 5
+        elif count >= 101:
+            return 4
+        elif count >= 51:
+            return 3
+        elif count >= 11:
+            return 2
+        else:
+            return 1
+
+    def get_user_rankings(self, ranking_type: str = 'borrow') -> List[dict]:
+        """获取用户排名列表
+        
+        Args:
+            ranking_type: 'borrow' 借用次数排名, 'return' 归还次数排名
+            
+        Returns:
+            用户排名列表，包含称号/星级信息
+        """
+        # 过滤出有效用户（未冻结、未删除）
+        valid_users = [u for u in self._users if not u.is_frozen and not u.is_deleted]
+        
+        # 根据类型排序
+        if ranking_type == 'borrow':
+            sorted_users = sorted(valid_users, key=lambda x: x.borrow_count, reverse=True)
+            titles = self.BORROW_TITLES
+        else:
+            sorted_users = sorted(valid_users, key=lambda x: x.return_count, reverse=True)
+            titles = self.RETURN_TITLES
+        
+        # 构建排名数据
+        rankings = []
+        for i, user in enumerate(sorted_users):
+            rank = i + 1
+            count = user.borrow_count if ranking_type == 'borrow' else user.return_count
+            
+            # 前10名有专属称号，同时显示真实星级
+            if rank <= 10:
+                title = titles[i] if i < len(titles) else titles[-1]
+            else:
+                title = None
+            # 所有用户都根据实际次数计算星级（1-7星）
+            star_level = self.get_star_level(count)
+            
+            # 获取点赞数
+            like_count = self.get_user_like_count(user.id)
+            
+            rankings.append({
+                'rank': rank,
+                'user_id': user.id,
+                'user_name': user.borrower_name or user.wechat_name,
+                'count': count,
+                'title': title,
+                'star_level': star_level,
+                'like_count': like_count
+            })
+        
+        return rankings
+
+    def get_user_like_count(self, user_id: str) -> int:
+        """获取用户的被点赞数"""
+        return len([like for like in self._user_likes if like.to_user_id == user_id])
+
+    def get_user_today_likes(self, from_user_id: str) -> int:
+        """获取用户今天已点赞的次数"""
+        today = datetime.now().strftime("%Y-%m-%d")
+        return len([like for like in self._user_likes 
+                   if like.from_user_id == from_user_id and like.create_date == today])
+
+    def add_like(self, from_user_id: str, to_user_id: str) -> tuple:
+        """添加点赞
+        
+        Returns:
+            (success, message)
+        """
+        # 检查是否自己点赞自己
+        if from_user_id == to_user_id:
+            return False, "不能给自己点赞"
+        
+        # 检查今天是否已点赞过该用户
+        today = datetime.now().strftime("%Y-%m-%d")
+        existing_like = [like for like in self._user_likes 
+                        if like.from_user_id == from_user_id 
+                        and like.to_user_id == to_user_id 
+                        and like.create_date == today]
+        if existing_like:
+            return False, "今天已经点赞过该用户"
+        
+        # 检查今天点赞次数是否已达上限
+        today_likes = self.get_user_today_likes(from_user_id)
+        if today_likes >= 5:
+            return False, "今天点赞次数已达上限（5次）"
+        
+        # 创建点赞记录
+        like = UserLike(
+            id=str(uuid.uuid4()),
+            from_user_id=from_user_id,
+            to_user_id=to_user_id,
+            create_date=today,
+            create_time=datetime.now()
+        )
+        self._user_likes.append(like)
+        self._save_data()
+        
+        return True, "点赞成功"
 
 
 # 全局 API 客户端实例

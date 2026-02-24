@@ -173,6 +173,8 @@ a { text-decoration: none; color: inherit; }
     margin-left: 220px;
     padding: 24px 32px;
     min-height: 100vh;
+    box-sizing: border-box;
+    max-width: calc(100vw - 220px);
 }
 
 /* ========== 页面标题 ========== */
@@ -897,6 +899,7 @@ a { text-decoration: none; color: inherit; }
     top: 20px;
     right: 20px;
     z-index: 200;
+    cursor: pointer;
 }
 
 .notification-bell {
@@ -950,7 +953,7 @@ a { text-decoration: none; color: inherit; }
     right: 0;
     bottom: 0;
     background: rgba(0,0,0,0.5);
-    z-index: 1000;
+    z-index: 9999;
     align-items: flex-start;
     justify-content: flex-end;
     padding-top: 80px;
@@ -1061,6 +1064,16 @@ a { text-decoration: none; color: inherit; }
 
 .notification-empty p {
     font-size: 14px;
+}
+
+/* 未读通知样式 */
+.notification-item.notification-unread {
+    background: #e6f7ff;
+    border-left: 3px solid var(--primary);
+}
+
+.notification-item.notification-unread:hover {
+    background: #bae7ff;
 }
 
 /* ========== 响应式 ========== */
@@ -1244,7 +1257,11 @@ a { text-decoration: none; color: inherit; }
 .announcement-scroller {
     display: flex;
     white-space: nowrap;
-    animation: scroll-announcement 30s linear infinite;
+    will-change: transform;
+}
+
+.announcement-scroller.scrolling {
+    animation: scroll-announcement 40s linear infinite;
 }
 
 .announcement-item {
@@ -1252,26 +1269,12 @@ a { text-decoration: none; color: inherit; }
     padding: 0 50px;
     font-size: 14px;
     color: #d46b08;
+    flex-shrink: 0;
 }
 
 @keyframes scroll-announcement {
-    0% { transform: translateX(100%); }
+    0% { transform: translateX(0); }
     100% { transform: translateX(-100%); }
-}
-
-.announcement-bar-close {
-    background: none;
-    border: none;
-    font-size: 20px;
-    color: #d46b08;
-    cursor: pointer;
-    padding: 0 8px;
-    opacity: 0.6;
-    transition: opacity 0.2s;
-}
-
-.announcement-bar-close:hover {
-    opacity: 1;
 }
 
 /* 弹窗样式 */

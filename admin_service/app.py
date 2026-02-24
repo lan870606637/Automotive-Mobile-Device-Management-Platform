@@ -656,8 +656,14 @@ def api_device_remind(device_id):
     if not device:
         return jsonify({'success': False, 'message': '设备不存在'})
     
-    # 这里可以实现发送提醒的逻辑（如短信、邮件等）
-    # 目前仅记录操作日志
+    # 发送通知给借用人
+    api_client.notify_overdue_reminder(
+        device_id=device_id,
+        device_name=device.name,
+        borrower=device.borrower,
+        operator=session.get('admin_name', '管理员')
+    )
+    
     api_client.add_operation_log(f"发送归还提醒给: {device.borrower}", device.name)
     
     return jsonify({'success': True, 'message': '提醒已发送'})
@@ -670,6 +676,8 @@ def api_overdue_remind_all():
     all_devices = api_client.get_all_devices()
     
     remind_count = 0
+    reminded_borrowers = set()  # 记录已提醒的借用人，避免重复提醒
+    
     for device in all_devices:
         if device.status == DeviceStatus.BORROWED and device.expected_return_date:
             try:
@@ -678,7 +686,15 @@ def api_overdue_remind_all():
                     now = datetime.now()
                     time_diff = now - expect_time
                     if time_diff.total_seconds() > 3600:
+                        # 发送通知给借用人
+                        api_client.notify_overdue_reminder(
+                            device_id=device.id,
+                            device_name=device.name,
+                            borrower=device.borrower,
+                            operator=session.get('admin_name', '管理员')
+                        )
                         remind_count += 1
+                        reminded_borrowers.add(device.borrower)
                         api_client.add_operation_log(f"批量提醒: {device.borrower}", device.name)
             except Exception:
                 pass
@@ -908,6 +924,32 @@ def api_force_show_announcement(announcement_id):
         'success': True,
         'message': '已触发再次公告，用户将重新看到此公告弹窗',
         'force_show_version': announcement.force_show_version
+    })
+
+
+@app.route('/api/announcements/<announcement_id>/move', methods=['POST'])
+@admin_required
+def api_move_announcement(announcement_id):
+    """移动公告顺序API - 上移或下移"""
+    data = request.get_json() or {}
+    direction = data.get('direction', '')
+    
+    if direction not in ['up', 'down']:
+        return jsonify({'success': False, 'message': '移动方向无效'})
+    
+    result = api_client.move_announcement(announcement_id, direction)
+    if not result:
+        return jsonify({'success': False, 'message': '公告不存在或无法移动'})
+    
+    action_text = '上移' if direction == 'up' else '下移'
+    api_client.add_operation_log(
+        f"{action_text}公告: {result['announcement_title']}",
+        "公告管理"
+    )
+    
+    return jsonify({
+        'success': True,
+        'message': f'已{action_text}'
     })
 
 
