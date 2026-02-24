@@ -2448,7 +2448,36 @@ def pc_my_records():
         })
 
     total_records = len(record_list)
-    borrow_count = len([r for r in record_list if '借出' in r['operation_type']])
+    
+    # 统计 - 借用次数只统计接收方（获得设备），与排行榜逻辑一致
+    user = get_current_user()
+    def is_borrow_record(r):
+        op_type = r['operation_type']
+        borrower = r.get('borrower', '')
+        
+        if '借出' in op_type:
+            # 借出记录，检查borrower是否是当前用户
+            if '——>' in borrower:
+                parts = borrower.split('——>')
+                if len(parts) > 1:
+                    to_user = parts[1].strip()
+                    if to_user == user['borrower_name']:
+                        return True
+            elif borrower.strip() == user['borrower_name']:
+                return True
+        
+        elif op_type == '转借':
+            # 转借记录，只统计接收方（转入方）
+            if '——>' in borrower:
+                parts = borrower.split('——>')
+                if len(parts) > 1:
+                    to_user = parts[1].strip()
+                    if to_user == user['borrower_name']:
+                        return True
+        
+        return False
+    
+    borrow_count = len([r for r in record_list if is_borrow_record(r)])
     return_count = len([r for r in record_list if '归还' in r['operation_type']])
     
     # 分页逻辑 - 每页50条

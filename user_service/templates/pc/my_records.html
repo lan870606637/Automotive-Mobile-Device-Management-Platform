@@ -81,8 +81,13 @@
                                 {# 当前用户是转出方，设备转给别人了 #}
                                 {% set op_type = '转借' %}
                             {% elif to_user == user.borrower_name %}
-                                {# 当前用户是转入方，设备被别人转借过来 #}
-                                {% set op_type = '被转借' %}
+                                {# 当前用户是转入方 #}
+                                {# 在我的记录中，如果我是操作者（转给自己），显示"转借"；否则显示"被转借" #}
+                                {% if record.operator == user.borrower_name %}
+                                    {% set op_type = '转借' %}
+                                {% else %}
+                                    {% set op_type = '被转借' %}
+                                {% endif %}
                             {% else %}
                                 {# 如果都不匹配，根据borrower字段前缀判断 #}
                                 {% if '被转借：' in record.borrower %}
@@ -255,10 +260,36 @@ function renderSearchResults(records, keyword) {
         if (op.includes('丢失') || op.includes('损坏') || op.includes('未找到')) return 'status-lost';
         if (op.includes('报废')) return 'status-scrapped';
         if (op.includes('续期') || op.includes('保管人变更')) return 'status-no-cabinet';
+        if (op.includes('被转借')) return 'status-available';
         return 'status-borrowed';
     };
+
+    // 获取转借记录的显示类型（根据当前用户视角）
+    const getTransferDisplayType = (record) => {
+        if (record.operation_type !== '转借') {
+            return record.operation_type;
+        }
+        // 解析borrower字段，格式: "转出方——>转入方"
+        const borrowerStr = record.borrower.replace(/->/g, '——>');
+        if (!borrowerStr.includes('——>')) {
+            return record.operation_type;
+        }
+        const parts = borrowerStr.split('——>');
+        if (parts.length < 2) {
+            return record.operation_type;
+        }
+        const fromUser = parts[0].replace(/转借：/g, '').replace(/被转借：/g, '').trim();
+        const currentUserName = '{{ user.borrower_name }}';
+        if (fromUser === currentUserName) {
+            return '转借';  // 当前用户是转出方
+        } else {
+            return '被转借';  // 当前用户是转入方或第三方视角
+        }
+    };
     
-    tbody.innerHTML = records.map(r => `
+    tbody.innerHTML = records.map(r => {
+        const displayOpType = getTransferDisplayType(r);
+        return `
         <tr>
             <td style="font-size: 13px; color: #8c8c8c;">${r.operation_time}</td>
             <td>
@@ -266,7 +297,7 @@ function renderSearchResults(records, keyword) {
                 <a href="/pc/device/${r.device_id}?device_type=${encodeURIComponent(r.device_type)}" style="font-weight: 500; color: #1890ff; text-decoration: none;">${escapeHtml(r.device_name)}</a>
             </td>
             <td>${r.device_type}</td>
-            <td><span class="status-tag ${getStatusClass(r.operation_type)}">${r.operation_type}</span></td>
+            <td><span class="status-tag ${getStatusClass(displayOpType)}">${displayOpType}</span></td>
             <td>${escapeHtml(r.borrower)}${r.is_admin_borrower ? '<span class="status-tag status-lost" style="margin-left: 4px; font-size: 10px; padding: 1px 4px;">管</span>' : ''}</td>
             <td>${escapeHtml(r.operator)}${r.is_admin_operator ? '<span class="status-tag status-lost" style="margin-left: 4px; font-size: 10px; padding: 1px 4px;">管</span>' : ''}</td>
             <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #595959;">
@@ -275,7 +306,7 @@ function renderSearchResults(records, keyword) {
                 ${!r.reason && !r.remark ? '-' : ''}
             </td>
         </tr>
-    `).join('');
+    `}).join('');
 }
 
 function clearSearch() {

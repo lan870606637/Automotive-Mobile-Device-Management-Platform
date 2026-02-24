@@ -35,9 +35,31 @@
             {% for record in records %}
             <div class="timeline-item">
                 {% set op_type = record.operation_type.value if record.operation_type is not string else record.operation_type %}
-                {% if op_type == '转借' %}
-                    {# 转借操作统一显示为被转借 #}
-                    {% set op_type = '被转借' %}
+                {% if op_type == '转借' and ('——>' in record.borrower or '->' in record.borrower) %}
+                    {# 转借操作，根据用户视角显示不同文案 #}
+                    {% set borrower_str = record.borrower.replace('->', '——>') %}
+                    {% set parts = borrower_str.split('——>') %}
+                    {% set from_user = parts[0].replace('转借：', '').replace('被转借：', '').strip() %}
+                    {% set to_user = parts[1].strip() if parts|length > 1 else '' %}
+                    {% if from_user == user.borrower_name %}
+                        {# 当前用户是转出方，设备转给别人了 #}
+                        {% set op_type = '转借' %}
+                    {% elif to_user == user.borrower_name %}
+                        {# 当前用户是转入方 #}
+                        {# 在我的记录中，如果我是操作者（转给自己），显示"转借"；否则显示"被转借" #}
+                        {% if record.operator == user.borrower_name %}
+                            {% set op_type = '转借' %}
+                        {% else %}
+                            {% set op_type = '被转借' %}
+                        {% endif %}
+                    {% else %}
+                        {# 如果都不匹配，根据borrower字段前缀判断 #}
+                        {% if '被转借：' in record.borrower %}
+                            {% set op_type = '被转借' %}
+                        {% else %}
+                            {% set op_type = '被转借' %}
+                        {% endif %}
+                    {% endif %}
                 {% endif %}
                 <div class="timeline-dot {% if '借出' in op_type %}dot-borrow{% elif '被转借' in op_type %}dot-return{% else %}dot-return{% endif %}"></div>
                 <div class="timeline-content">

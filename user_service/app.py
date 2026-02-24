@@ -658,6 +658,36 @@ def my_records():
             record.borrower == user['borrower_name']):
             my_records_list.append(record)
     
+    # 统计 - 借用次数只统计接收方（获得设备），与排行榜逻辑一致
+    def is_borrow_record(record):
+        op_type = record.operation_type.value
+        borrower_str = record.borrower or ''
+        
+        if '借出' in op_type:
+            # 借出记录，检查borrower是否是当前用户
+            if '——>' in borrower_str:
+                parts = borrower_str.split('——>')
+                if len(parts) > 1:
+                    to_user = parts[1].strip()
+                    if to_user == user['borrower_name']:
+                        return True
+            elif borrower_str.strip() == user['borrower_name']:
+                return True
+        
+        elif op_type == '转借':
+            # 转借记录，只统计接收方（转入方）
+            if '——>' in borrower_str:
+                parts = borrower_str.split('——>')
+                if len(parts) > 1:
+                    to_user = parts[1].strip()
+                    if to_user == user['borrower_name']:
+                        return True
+        
+        return False
+    
+    borrow_count = len([r for r in my_records_list if is_borrow_record(r)])
+    return_count = len([r for r in my_records_list if '归还' in r.operation_type.value])
+    
     # 分页
     page = request.args.get('page', 1, type=int)
     per_page = 10
@@ -673,6 +703,8 @@ def my_records():
                          page=page,
                          total_pages=total_pages,
                          total_records=total,
+                         borrow_count=borrow_count,
+                         return_count=return_count,
                          active_nav='records')
 
 
@@ -1272,45 +1304,31 @@ def pc_device_detail(device_id):
             'is_creator': remark.creator == user['borrower_name']
         })
 
-    # 获取设备借用记录（获取全部用于统计排行）
+    # 获取设备借用记录
     all_raw_records = api_client.get_device_records(device_id, device_type, limit=10000)
     
-    # 统计每个用户的借用次数和归还次数
-    borrow_counts = {}  # 借用次数统计
-    return_counts = {}  # 归还次数统计
-    
-    for record in all_raw_records:
-        borrower = record.borrower
-        if not borrower:
-            continue
-            
-        if '借出' in record.operation_type.value:
-            borrow_counts[borrower] = borrow_counts.get(borrower, 0) + 1
-        elif '归还' in record.operation_type.value:
-            return_counts[borrower] = return_counts.get(borrower, 0) + 1
-    
-    # 计算当前用户的排行
+    # 使用与排行榜一致的数据源 - 从用户模型获取排行数据
     current_user = user['borrower_name']
     
-    # 借用次数排行
+    # 借用次数排行（使用全局排行数据，与排行榜页面一致）
+    borrow_rankings = api_client.get_user_rankings('borrow')
     borrow_rank = None
-    borrow_total = borrow_counts.get(current_user, 0)
-    if borrow_total > 0:
-        sorted_borrow = sorted(borrow_counts.items(), key=lambda x: x[1], reverse=True)
-        for idx, (name, count) in enumerate(sorted_borrow, 1):
-            if name == current_user:
-                borrow_rank = idx
-                break
+    borrow_total = 0
+    for ranking in borrow_rankings:
+        if ranking['user_name'] == current_user:
+            borrow_rank = ranking['rank']
+            borrow_total = ranking['count']
+            break
     
-    # 归还次数排行
+    # 归还次数排行（使用全局排行数据，与排行榜页面一致）
+    return_rankings = api_client.get_user_rankings('return')
     return_rank = None
-    return_total = return_counts.get(current_user, 0)
-    if return_total > 0:
-        sorted_return = sorted(return_counts.items(), key=lambda x: x[1], reverse=True)
-        for idx, (name, count) in enumerate(sorted_return, 1):
-            if name == current_user:
-                return_rank = idx
-                break
+    return_total = 0
+    for ranking in return_rankings:
+        if ranking['user_name'] == current_user:
+            return_rank = ranking['rank']
+            return_total = ranking['count']
+            break
     
     # 格式化显示用的记录列表（限制20条）
     raw_records = all_raw_records[:20]
@@ -1582,8 +1600,25 @@ def pc_records():
     end = start + per_page
     paginated_records = my_records_list[start:end]
 
-    # 统计
-    borrow_count = len([r for r in my_records_list if '借出' in r.operation_type.value])
+    # 统计 - 借用次数包含借出和转借（转给自己或别人转给我）
+    def is_borrow_record(record):
+        op_type = record.operation_type.value
+        if '借出' in op_type:
+            return True
+        if op_type == '转借':
+            # 检查是否是转给我自己的记录（operator是我 或 borrower字段中包含我作为接收方）
+            if record.operator == user['borrower_name']:
+                return True
+            # 解析borrower字段，检查我是否是接收方
+            if '——>' in record.borrower:
+                parts = record.borrower.split('——>')
+                if len(parts) > 1:
+                    to_user = parts[1].strip()
+                    if to_user == user['borrower_name']:
+                        return True
+        return False
+    
+    borrow_count = len([r for r in my_records_list if is_borrow_record(r)])
     return_count = len([r for r in my_records_list if '归还' in r.operation_type.value])
 
     stats = get_device_stats()
@@ -1906,6 +1941,12 @@ def api_transfer():
     )
     api_client._records.append(record)
     
+    # 给接收方增加借用次数
+    for u in api_client._users:
+        if u.borrower_name == transfer_to:
+            u.borrow_count += 1
+            break
+    
     api_client.add_operation_log(f"转借设备: {original_borrower or '保管人'} -> {transfer_to}", device.name)
     api_client._save_data()
     
@@ -2007,6 +2048,12 @@ def api_transfer_to_me():
         entry_source=EntrySource.USER.value
     )
     api_client._records.append(record)
+    
+    # 给自己增加借用次数
+    for u in api_client._users:
+        if u.borrower_name == user['borrower_name']:
+            u.borrow_count += 1
+            break
     
     api_client.add_operation_log(f"转给自己: {original_borrower} -> {user['borrower_name']}", device.name)
     api_client._save_data()

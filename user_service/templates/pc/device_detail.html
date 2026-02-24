@@ -457,9 +457,10 @@
                     {% for record in records %}
                     <div class="timeline-item">
                         {% set op_type = record.operation_type %}
-                        {% if op_type == '转借' and '——>' in record.borrower %}
+                        {% if op_type == '转借' and ('——>' in record.borrower or '->' in record.borrower) %}
                             {# 转借操作，根据用户视角显示不同文案 #}
-                            {% set parts = record.borrower.split('——>') %}
+                            {% set borrower_str = record.borrower.replace('->', '——>') %}
+                            {% set parts = borrower_str.split('——>') %}
                             {% set from_user = parts[0].replace('转借：', '').replace('被转借：', '').strip() %}
                             {% set to_user = parts[1].strip() if parts|length > 1 else '' %}
                             {% if from_user == user.borrower_name %}
@@ -468,6 +469,11 @@
                             {% elif to_user == user.borrower_name %}
                                 {# 当前用户是转入方，设备被别人转借过来 #}
                                 {% set op_type = '被转借' %}
+                            {% else %}
+                                {# 如果都不匹配，根据borrower字段前缀判断 #}
+                                {% if '被转借：' in record.borrower %}
+                                    {% set op_type = '被转借' %}
+                                {% endif %}
                             {% endif %}
                         {% endif %}
                         <div class="timeline-dot
