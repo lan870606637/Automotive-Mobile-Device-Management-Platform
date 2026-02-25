@@ -47,12 +47,197 @@ def parse_datetime(val) -> Optional[datetime]:
     if isinstance(val, datetime):
         return val
     if isinstance(val, str):
-        for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d']:
+        # 处理带微秒的格式
+        for fmt in ['%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d']:
             try:
                 return datetime.strptime(val, fmt)
             except:
                 continue
     return None
+
+
+def format_datetime(val) -> Optional[str]:
+    """将datetime格式化为数据库字符串"""
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        return val.strftime('%Y-%m-%d %H:%M:%S')
+    if isinstance(val, str):
+        return val
+    return None
+
+
+def init_database():
+    """初始化数据库，创建必要的表"""
+    # 确保数据库目录存在
+    db_dir = os.path.dirname(DB_PATH)
+    if db_dir and not os.path.exists(db_dir):
+        os.makedirs(db_dir)
+    
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        
+        # 创建用户备注表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_remarks (
+                id TEXT PRIMARY KEY,
+                device_id TEXT NOT NULL,
+                device_type TEXT,
+                content TEXT,
+                creator TEXT,
+                create_time TIMESTAMP,
+                is_inappropriate INTEGER DEFAULT 0
+            )
+        ''')
+        
+        # 创建设备表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS devices (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                device_type TEXT NOT NULL,
+                model TEXT,
+                cabinet_number TEXT,
+                status TEXT DEFAULT '在库',
+                remark TEXT,
+                jira_address TEXT,
+                is_deleted INTEGER DEFAULT 0,
+                create_time TIMESTAMP,
+                borrower TEXT,
+                phone TEXT,
+                borrow_time TIMESTAMP,
+                location TEXT,
+                reason TEXT,
+                entry_source TEXT,
+                expected_return_date TIMESTAMP,
+                admin_operator TEXT,
+                ship_time TIMESTAMP,
+                ship_remark TEXT,
+                ship_by TEXT,
+                pre_ship_borrower TEXT,
+                pre_ship_borrow_time TIMESTAMP,
+                pre_ship_expected_return_date TIMESTAMP,
+                lost_time TIMESTAMP,
+                damage_reason TEXT,
+                damage_time TIMESTAMP,
+                previous_borrower TEXT,
+                sn TEXT,
+                system_version TEXT,
+                imei TEXT,
+                carrier TEXT,
+                software_version TEXT,
+                hardware_version TEXT,
+                project_attribute TEXT,
+                connection_method TEXT,
+                os_version TEXT,
+                os_platform TEXT,
+                product_name TEXT,
+                screen_orientation TEXT,
+                screen_resolution TEXT
+            )
+        ''')
+        
+        # 创建借还记录表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS records (
+                id TEXT PRIMARY KEY,
+                device_id TEXT,
+                device_name TEXT,
+                device_type TEXT,
+                operation_type TEXT,
+                operator TEXT,
+                operation_time TIMESTAMP,
+                borrower TEXT,
+                phone TEXT,
+                reason TEXT,
+                entry_source TEXT,
+                remark TEXT
+            )
+        ''')
+        
+        # 创建用户表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id TEXT PRIMARY KEY,
+                wechat_name TEXT,
+                phone TEXT,
+                password TEXT DEFAULT '123456',
+                borrower_name TEXT,
+                borrow_count INTEGER DEFAULT 0,
+                return_count INTEGER DEFAULT 0,
+                is_frozen INTEGER DEFAULT 0,
+                is_admin INTEGER DEFAULT 0,
+                is_deleted INTEGER DEFAULT 0,
+                create_time TIMESTAMP
+            )
+        ''')
+        
+        # 创建查看记录表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS view_records (
+                id TEXT PRIMARY KEY,
+                device_id TEXT,
+                device_type TEXT,
+                viewer TEXT,
+                view_time TIMESTAMP
+            )
+        ''')
+        
+        # 创建操作日志表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS operation_logs (
+                id TEXT PRIMARY KEY,
+                operation_time TIMESTAMP,
+                operator TEXT,
+                operation_content TEXT,
+                device_info TEXT
+            )
+        ''')
+        
+        # 创建通知表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS notifications (
+                id TEXT PRIMARY KEY,
+                user_id TEXT,
+                user_name TEXT,
+                title TEXT,
+                content TEXT,
+                device_name TEXT,
+                device_id TEXT,
+                is_read INTEGER DEFAULT 0,
+                create_time TIMESTAMP,
+                notification_type TEXT DEFAULT 'info'
+            )
+        ''')
+        
+        # 创建公告表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS announcements (
+                id TEXT PRIMARY KEY,
+                title TEXT,
+                content TEXT,
+                announcement_type TEXT DEFAULT 'normal',
+                is_active INTEGER DEFAULT 1,
+                sort_order INTEGER DEFAULT 0,
+                creator TEXT,
+                create_time TIMESTAMP,
+                update_time TIMESTAMP,
+                force_show_version INTEGER DEFAULT 0
+            )
+        ''')
+        
+        # 创建用户点赞表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_likes (
+                id TEXT PRIMARY KEY,
+                from_user_id TEXT,
+                to_user_id TEXT,
+                create_date TEXT,
+                create_time TIMESTAMP
+            )
+        ''')
+        
+        conn.commit()
 
 
 class DatabaseStore:
@@ -175,24 +360,24 @@ class DatabaseStore:
             device.remark,
             device.jira_address,
             1 if device.is_deleted else 0,
-            device.create_time,
+            format_datetime(device.create_time),
             device.borrower,
             device.phone,
-            device.borrow_time,
+            format_datetime(device.borrow_time),
             device.location,
             device.reason,
             device.entry_source,
-            device.expected_return_date,
+            format_datetime(device.expected_return_date),
             device.admin_operator,
-            device.ship_time,
+            format_datetime(device.ship_time),
             device.ship_remark,
             device.ship_by,
             device.pre_ship_borrower,
-            device.pre_ship_borrow_time,
-            device.pre_ship_expected_return_date,
-            device.lost_time,
+            format_datetime(device.pre_ship_borrow_time),
+            format_datetime(device.pre_ship_expected_return_date),
+            format_datetime(device.lost_time),
             device.damage_reason,
-            device.damage_time,
+            format_datetime(device.damage_time),
             device.previous_borrower,
             device.sn,
             device.system_version,
@@ -367,7 +552,7 @@ class DatabaseStore:
                 record.device_type,
                 record.operation_type.value,
                 record.operator,
-                record.operation_time,
+                format_datetime(record.operation_time),
                 record.borrower,
                 record.phone,
                 record.reason,
@@ -475,7 +660,7 @@ class DatabaseStore:
                 1 if user.is_frozen else 0,
                 1 if user.is_admin else 0,
                 1 if user.is_deleted else 0,
-                user.create_time,
+                format_datetime(user.create_time),
             ))
             conn.commit()
     
@@ -562,7 +747,7 @@ class DatabaseStore:
                 notification.device_name,
                 notification.device_id,
                 1 if notification.is_read else 0,
-                notification.create_time,
+                notification.create_time.strftime('%Y-%m-%d %H:%M:%S') if notification.create_time else None,
                 notification.notification_type,
             ))
             conn.commit()
@@ -625,8 +810,8 @@ class DatabaseStore:
                 1 if announcement.is_active else 0,
                 announcement.sort_order,
                 announcement.creator,
-                announcement.create_time,
-                announcement.update_time,
+                format_datetime(announcement.create_time),
+                format_datetime(announcement.update_time),
                 announcement.force_show_version,
             ))
             conn.commit()
@@ -664,7 +849,7 @@ class DatabaseStore:
                 ) VALUES (?, ?, ?, ?, ?)
             ''', (
                 log.id,
-                log.operation_time,
+                format_datetime(log.operation_time),
                 log.operator,
                 log.operation_content,
                 log.device_info,
@@ -710,11 +895,29 @@ class DatabaseStore:
                 remark.device_type,
                 remark.content,
                 remark.creator,
-                remark.create_time,
+                format_datetime(remark.create_time),
                 1 if remark.is_inappropriate else 0,
             ))
             conn.commit()
-    
+
+    @staticmethod
+    def delete_remark(remark_id: str):
+        """删除备注"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM user_remarks WHERE id = ?', (remark_id,))
+            conn.commit()
+
+    @staticmethod
+    def mark_remark_inappropriate(remark_id: str, is_inappropriate: bool = True):
+        """标记备注为不当内容"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('UPDATE user_remarks SET is_inappropriate = ? WHERE id = ?',
+                         (1 if is_inappropriate else 0, remark_id))
+            conn.commit()
+            return cursor.rowcount > 0
+
     # ==================== 查看记录相关操作 ====================
     
     @staticmethod
@@ -748,10 +951,30 @@ class DatabaseStore:
     
     @staticmethod
     def get_user_likes_by_user(user_id: str) -> List[UserLike]:
-        """获取用户的点赞记录"""
+        """获取用户的点赞记录（我赞别人的）"""
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT * FROM user_likes WHERE from_user_id = ?', (user_id,))
+            rows = cursor.fetchall()
+            
+            likes = []
+            for row in rows:
+                like = UserLike(
+                    id=row['id'],
+                    from_user_id=row['from_user_id'],
+                    to_user_id=row['to_user_id'],
+                    create_date=safe_str(row['create_date']),
+                    create_time=parse_datetime(row['create_time']) or datetime.now(),
+                )
+                likes.append(like)
+            return likes
+
+    @staticmethod
+    def get_user_likes_to_user(user_id: str) -> List[UserLike]:
+        """获取用户被点赞的记录（别人赞我的）"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM user_likes WHERE to_user_id = ?', (user_id,))
             rows = cursor.fetchall()
             
             likes = []
@@ -780,6 +1003,84 @@ class DatabaseStore:
                 like.from_user_id,
                 like.to_user_id,
                 like.create_date,
-                like.create_time,
+                format_datetime(like.create_time),
             ))
             conn.commit()
+
+    # ==================== 获取所有数据（兼容方法）====================
+
+    @staticmethod
+    def get_all_remarks() -> List[UserRemark]:
+        """获取所有备注"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM user_remarks ORDER BY create_time DESC')
+            rows = cursor.fetchall()
+
+            remarks = []
+            for row in rows:
+                remark = UserRemark(
+                    id=row['id'],
+                    device_id=row['device_id'],
+                    device_type=safe_str(row['device_type']),
+                    content=safe_str(row['content']),
+                    creator=row['creator'],
+                    create_time=parse_datetime(row['create_time']) or datetime.now(),
+                    is_inappropriate=bool(row['is_inappropriate']),
+                )
+                remarks.append(remark)
+            return remarks
+
+    @staticmethod
+    def get_all_view_records() -> List[Dict]:
+        """获取所有查看记录"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM view_records ORDER BY view_time DESC')
+            rows = cursor.fetchall()
+            return [row_to_dict(row) for row in rows]
+
+    @staticmethod
+    def get_all_notifications() -> List[Notification]:
+        """获取所有通知"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM notifications ORDER BY create_time DESC')
+            rows = cursor.fetchall()
+
+            notifications = []
+            for row in rows:
+                notification = Notification(
+                    id=row['id'],
+                    user_id=row['user_id'],
+                    user_name=safe_str(row['user_name']),
+                    title=row['title'],
+                    content=row['content'],
+                    device_name=safe_str(row['device_name']),
+                    device_id=safe_str(row['device_id']),
+                    is_read=bool(row['is_read']),
+                    create_time=parse_datetime(row['create_time']),
+                    notification_type=safe_str(row['notification_type']),
+                )
+                notifications.append(notification)
+            return notifications
+
+    @staticmethod
+    def get_all_user_likes() -> List[UserLike]:
+        """获取所有用户点赞"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM user_likes ORDER BY create_time DESC')
+            rows = cursor.fetchall()
+
+            likes = []
+            for row in rows:
+                like = UserLike(
+                    id=row['id'],
+                    from_user_id=row['from_user_id'],
+                    to_user_id=row['to_user_id'],
+                    create_date=safe_str(row['create_date']),
+                    create_time=parse_datetime(row['create_time']) or datetime.now(),
+                )
+                likes.append(like)
+            return likes

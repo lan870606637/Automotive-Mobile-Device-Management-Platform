@@ -18,19 +18,14 @@
             
             <!-- 总设备迷你数据 -->
             {% if total_devices is defined %}
-            <div class="sidebar-stats">
-                <div class="stat-row">
-                    <span class="stat-label-mini">📦 总设备</span>
-                    <span class="stat-value-mini">{{ total_devices }}</span>
-                </div>
-                <div class="stat-row">
-                    <span class="stat-label-mini">✅ 在库</span>
-                    <span class="stat-value-mini stat-green">{{ available_devices }}</span>
-                </div>
-                <div class="stat-row">
-                    <span class="stat-label-mini">📤 借出</span>
-                    <span class="stat-value-mini stat-orange">{{ borrowed_devices_count }}</span>
-                </div>
+            <div class="sidebar-stats-mini">
+                <div class="stat-item-mini"><span class="stat-label">📦 总设备</span><span class="stat-value stat-blue">{{ total_devices }}</span></div>
+                <div class="stat-item-mini"><span class="stat-label">✅ 在库</span><span class="stat-value stat-green">{{ in_stock_count }}</span></div>
+                <div class="stat-item-mini"><span class="stat-label">🗄️ 保管中</span><span class="stat-value stat-cyan">{{ in_custody_count }}</span></div>
+                <div class="stat-item-mini"><span class="stat-label">📭 无柜号</span><span class="stat-value stat-orange">{{ no_cabinet_count }}</span></div>
+                <div class="stat-item-mini"><span class="stat-label">🔄 流通</span><span class="stat-value stat-purple">{{ circulating_count }}</span></div>
+                <div class="stat-item-mini"><span class="stat-label">📤 借出</span><span class="stat-value stat-yellow">{{ borrowed_devices_count }}</span></div>
+                <div class="stat-item-mini"><span class="stat-label">❌ 无法使用</span><span class="stat-value stat-red">{{ unavailable_count }}</span></div>
             </div>
             {% endif %}
             
@@ -71,11 +66,19 @@
 
         <!-- 主内容区 -->
         <main class="main-content">
-            <!-- 公告栏（普通公告滚动） -->
+            <!-- 公告栏（重新设计） -->
             <div id="announcementBar" class="announcement-bar" style="display: none;">
                 <div class="announcement-bar-icon">📢</div>
                 <div class="announcement-bar-content">
                     <div id="announcementScroller" class="announcement-scroller"></div>
+                </div>
+                <div class="announcement-bar-actions">
+                    <button class="announcement-bar-btn" onclick="showAllAnnouncements()" title="查看全部公告">
+                        📋
+                    </button>
+                    <button class="announcement-bar-btn" onclick="hideAnnouncementBar()" title="关闭">
+                        ✕
+                    </button>
                 </div>
             </div>
 
@@ -85,16 +88,49 @@
 
     <!-- 特殊公告弹窗 -->
     <div id="specialAnnouncementModal" class="pc-modal">
-        <div class="pc-modal-content" style="max-width: 500px;">
-            <div class="pc-modal-header" style="background: #ff4d4f; color: white;">
-                <h3>🔔 重要公告</h3>
-                <button class="pc-modal-close" onclick="closeSpecialAnnouncement()" style="color: white;">&times;</button>
+        <div class="pc-modal-content" style="max-width: 520px;">
+            <div class="pc-modal-header">
+                <h3>重要公告</h3>
+                <button class="pc-modal-close" onclick="closeSpecialAnnouncement()">&times;</button>
             </div>
             <div class="pc-modal-body">
-                <div id="specialAnnouncementContent" style="font-size: 15px; line-height: 1.8;"></div>
+                <div id="specialAnnouncementContent"></div>
             </div>
             <div class="pc-modal-footer">
                 <button class="btn btn-primary" onclick="closeSpecialAnnouncement()">我知道了</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 公告详情弹窗 -->
+    <div id="announcementDetailModal" class="pc-modal announcement-detail-modal">
+        <div class="pc-modal-content">
+            <div class="pc-modal-header">
+                <h3>公告详情</h3>
+                <button class="pc-modal-close" onclick="closeAnnouncementDetail()">&times;</button>
+            </div>
+            <div class="pc-modal-body">
+                <div id="announcementDetailContent"></div>
+            </div>
+            <div class="pc-modal-footer">
+                <button class="btn btn-primary" onclick="closeAnnouncementDetail()">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 全部公告弹窗 -->
+    <div id="allAnnouncementsModal" class="pc-modal">
+        <div class="pc-modal-content" style="max-width: 640px;">
+            <div class="pc-modal-header">
+                <h3>📋 全部公告</h3>
+                <button class="pc-modal-close" onclick="closeAllAnnouncements()">&times;</button>
+            </div>
+            <div class="pc-modal-body">
+                <div id="allAnnouncementsList" class="announcement-list"></div>
+            </div>
+            <div class="pc-modal-footer">
+                <button class="btn btn-default" onclick="markAllAnnouncementsRead()">全部已读</button>
+                <button class="btn btn-primary" onclick="closeAllAnnouncements()">关闭</button>
             </div>
         </div>
     </div>
@@ -125,7 +161,11 @@
 
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     <script>
-        // ==================== 公告相关功能 ====================
+        // ==================== 公告相关功能（重新设计） ====================
+
+        // 存储所有公告数据
+        let allNormalAnnouncements = [];
+        let allSpecialAnnouncements = [];
         let specialAnnouncements = [];
         let currentSpecialIndex = 0;
 
@@ -147,7 +187,6 @@
             const viewed = getViewedAnnouncements();
             const viewedVersion = viewed[announcement.id];
             const currentVersion = announcement.force_show_version || 0;
-            // 未查看过，或版本号已更新
             return viewedVersion === undefined || currentVersion > viewedVersion;
         }
 
@@ -159,11 +198,13 @@
 
                 // 处理普通公告
                 if (data.normal_announcements && data.normal_announcements.length > 0) {
+                    allNormalAnnouncements = data.normal_announcements;
                     showAnnouncementBar(data.normal_announcements);
                 }
 
-                // 处理特殊公告（过滤掉已查看且版本未更新的）
+                // 处理特殊公告
                 if (data.special_announcements && data.special_announcements.length > 0) {
+                    allSpecialAnnouncements = data.special_announcements;
                     specialAnnouncements = data.special_announcements.filter(a => shouldShowAnnouncement(a));
                     currentSpecialIndex = 0;
                     if (specialAnnouncements.length > 0) {
@@ -175,51 +216,28 @@
             }
         }
 
-        // 显示普通公告栏
+        // 显示普通公告栏（重新设计）
         function showAnnouncementBar(announcements) {
             const bar = document.getElementById('announcementBar');
             const scroller = document.getElementById('announcementScroller');
 
             if (!bar || !scroller) return;
 
-            // 构建滚动内容（只显示一轮，不复制）
-            const items = announcements.map(a => `<span class="announcement-item">${a.title}: ${a.content}</span>`).join('');
-            scroller.innerHTML = items;
+            // 构建滚动内容（复制一份实现无缝滚动）
+            const items = announcements.map((a, index) => `
+                <span class="announcement-item" onclick="showAnnouncementDetail(${index})" title="点击查看详情">
+                    <span class="item-badge ${a.announcement_type === 'special' ? 'important' : 'normal'}">
+                        ${a.announcement_type === 'special' ? '重要' : '公告'}
+                    </span>
+                    <span class="item-title">${escapeHtml(a.title)}</span>
+                    <span class="item-content">${escapeHtml(a.content)}</span>
+                </span>
+            `).join('');
+
+            // 复制一份内容实现无缝滚动
+            scroller.innerHTML = items + items;
 
             bar.style.display = 'flex';
-
-            // 检查是否需要恢复位置（5分钟内刷新）
-            const saved = localStorage.getItem(STORAGE_KEY);
-            let shouldResume = false;
-            let resumeDelay = 0;
-
-            if (saved) {
-                try {
-                    const data = JSON.parse(saved);
-                    const elapsed = Date.now() - data.timestamp;
-                    if (elapsed < 5 * 60 * 1000) {
-                        shouldResume = true;
-                        // 计算续接位置（减去2秒初始延迟）
-                        resumeDelay = Math.max(0, (data.position + elapsed) / 1000 - 2);
-                    }
-                } catch (e) {
-                    console.error('解析滚动位置失败:', e);
-                }
-            }
-
-            if (shouldResume) {
-                // 立即开始动画，从记忆位置续接
-                scroller.style.animationDelay = `-${resumeDelay}s`;
-                scroller.classList.add('scrolling');
-            } else {
-                // 先完整显示2秒，然后开始滚动
-                setTimeout(() => {
-                    scroller.classList.add('scrolling');
-                }, 2000);
-            }
-
-            // 开始保存滚动位置
-            startScrollPositionTracking();
         }
 
         // 隐藏公告栏
@@ -227,58 +245,103 @@
             const bar = document.getElementById('announcementBar');
             if (bar) {
                 bar.style.display = 'none';
+                sessionStorage.setItem('announcementBarClosed', 'true');
             }
         }
 
-        // ==================== 滚动位置记忆功能 ====================
-        const SCROLL_DURATION = 40000; // 动画周期40秒
-        const STORAGE_KEY = 'announcementScrollPosition';
-        let scrollSaveInterval = null;
+        // 显示公告详情
+        function showAnnouncementDetail(index) {
+            const announcement = allNormalAnnouncements[index];
+            if (!announcement) return;
 
-        // 保存滚动位置
-        function saveScrollPosition() {
-            const scroller = document.getElementById('announcementScroller');
-            if (!scroller || !scroller.classList.contains('scrolling')) return;
+            const modal = document.getElementById('announcementDetailModal');
+            const content = document.getElementById('announcementDetailContent');
 
-            try {
-                const transform = window.getComputedStyle(scroller).transform;
-                if (transform && transform !== 'none') {
-                    const matrix = transform.match(/matrix\(([^)]+)\)/);
-                    if (matrix) {
-                        const values = matrix[1].split(', ');
-                        const translateX = parseFloat(values[4]) || 0;
-
-                        // 计算当前位置在动画周期中的时间点（相对于整个内容宽度）
-                        const contentWidth = scroller.scrollWidth;
-                        const currentPos = Math.abs(translateX) % contentWidth;
-                        const position = (currentPos / contentWidth) * SCROLL_DURATION;
-
-                        localStorage.setItem(STORAGE_KEY, JSON.stringify({
-                            position: position,
-                            timestamp: Date.now()
-                        }));
-                    }
-                }
-            } catch (e) {
-                console.error('保存滚动位置失败:', e);
+            if (modal && content) {
+                const isSpecial = announcement.announcement_type === 'special';
+                content.innerHTML = `
+                    <div class="announcement-detail-header">
+                        <div class="announcement-detail-icon">${isSpecial ? '🔔' : '📢'}</div>
+                        <div class="announcement-detail-title">
+                            <h4>${escapeHtml(announcement.title)}</h4>
+                            <div class="announcement-detail-meta">
+                                <span>📅 ${announcement.create_time || '未知时间'}</span>
+                                <span>👤 ${announcement.creator || '系统管理员'}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="announcement-detail-content">
+                        ${escapeHtml(announcement.content).replace(/\n/g, '<br>')}
+                    </div>
+                `;
+                modal.classList.add('show');
             }
         }
 
-        // 开始跟踪滚动位置
-        function startScrollPositionTracking() {
-            // 清除之前的定时器
-            if (scrollSaveInterval) {
-                clearInterval(scrollSaveInterval);
+        // 关闭公告详情
+        function closeAnnouncementDetail() {
+            const modal = document.getElementById('announcementDetailModal');
+            if (modal) {
+                modal.classList.remove('show');
             }
-
-            // 每秒保存一次位置
-            scrollSaveInterval = setInterval(saveScrollPosition, 1000);
-
-            // 页面卸载前保存一次
-            window.addEventListener('beforeunload', saveScrollPosition);
         }
 
-        // 显示特殊公告弹窗
+        // 显示全部公告列表
+        function showAllAnnouncements() {
+            const modal = document.getElementById('allAnnouncementsModal');
+            const list = document.getElementById('allAnnouncementsList');
+
+            if (!modal || !list) return;
+
+            const allAnnouncements = [...allSpecialAnnouncements, ...allNormalAnnouncements];
+
+            if (allAnnouncements.length === 0) {
+                list.innerHTML = '<div class="empty-notice">暂无公告</div>';
+            } else {
+                list.innerHTML = allAnnouncements.map((a, index) => {
+                    const isSpecial = a.announcement_type === 'special';
+                    return `
+                        <div class="announcement-list-item ${isSpecial ? 'special' : ''} ${a.is_active ? 'active' : ''}">
+                            <div class="item-header">
+                                <span class="item-order">${index + 1}</span>
+                                <span class="item-title-text">${escapeHtml(a.title)}</span>
+                                <div class="item-badges">
+                                    ${isSpecial ? '<span class="status-tag status-lost">特殊公告</span>' : ''}
+                                    <span class="status-tag ${a.is_active ? 'status-available' : 'status-damaged'}">
+                                        ${a.is_active ? '已上架' : '已下架'}
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="item-content-text">${escapeHtml(a.content)}</div>
+                            <div class="item-footer">
+                                <span class="item-meta">
+                                    📅 ${a.create_time || '未知时间'} · 👤 ${a.creator || '系统管理员'}
+                                </span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            modal.classList.add('show');
+        }
+
+        // 关闭全部公告弹窗
+        function closeAllAnnouncements() {
+            const modal = document.getElementById('allAnnouncementsModal');
+            if (modal) {
+                modal.classList.remove('show');
+            }
+        }
+
+        // 标记所有公告已读
+        function markAllAnnouncementsRead() {
+            allSpecialAnnouncements.forEach(a => markAnnouncementViewed(a));
+            showToast('已全部标记为已读');
+            closeAllAnnouncements();
+        }
+
+        // 显示特殊公告弹窗（重新设计）
         function showSpecialAnnouncement() {
             if (currentSpecialIndex >= specialAnnouncements.length) return;
 
@@ -287,7 +350,10 @@
             const content = document.getElementById('specialAnnouncementContent');
 
             if (modal && content) {
-                content.innerHTML = `<h4 style="margin: 0 0 12px 0; color: #ff4d4f;">${announcement.title}</h4><p style="margin: 0;">${announcement.content}</p>`;
+                content.innerHTML = `
+                    <h4>${escapeHtml(announcement.title)}</h4>
+                    <p>${escapeHtml(announcement.content).replace(/\n/g, '<br>')}</p>
+                `;
                 modal.classList.add('show');
             }
         }
@@ -299,16 +365,22 @@
                 modal.classList.remove('show');
             }
 
-            // 标记当前公告为已查看
             if (currentSpecialIndex < specialAnnouncements.length) {
                 markAnnouncementViewed(specialAnnouncements[currentSpecialIndex]);
             }
 
-            // 显示下一个特殊公告
             currentSpecialIndex++;
             if (currentSpecialIndex < specialAnnouncements.length) {
                 setTimeout(() => showSpecialAnnouncement(), 300);
             }
+        }
+
+        // HTML转义函数
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
 
         // 页面加载时初始化
@@ -392,7 +464,6 @@
         // 更新角标显示
         function updateNotificationBadge() {
             const readIds = getReadNotificationIds();
-            // 统计未读通知：通过is_read字段和LocalStorage共同判断
             const unreadCount = allNotifications.filter(n => {
                 return !n.is_read && !readIds.includes(n.id);
             }).length;
@@ -424,31 +495,27 @@
 
             let html = '';
             allNotifications.forEach((notification, index) => {
-                // 根据通知类型显示不同内容
                 let content = notification.content || '';
                 const title = notification.title || '通知';
                 
-                // 根据通知类型设置标题颜色
-                let titleColor = '#333'; // 默认黑色
+                let titleColor = '#333';
                 const notificationType = notification.notification_type || '';
                 const titleLower = title.toLowerCase();
                 
                 if (notificationType === 'error' || titleLower.includes('丢失') || titleLower.includes('强制归还')) {
-                    titleColor = '#f56c6c'; // 红色 - 错误/丢失/强制归还
+                    titleColor = '#f56c6c';
                 } else if (notificationType === 'warning' || titleLower.includes('逾期') || titleLower.includes('损坏') || titleLower.includes('转借')) {
-                    titleColor = '#e6a23c'; // 橙色 - 警告/逾期/损坏/转借
+                    titleColor = '#e6a23c';
                 } else if (notificationType === 'success' || titleLower.includes('归还') || titleLower.includes('借出')) {
-                    titleColor = '#67c23a'; // 绿色 - 成功/归还/借出
+                    titleColor = '#67c23a';
                 } else if (titleLower.includes('续期') || titleLower.includes('变更')) {
-                    titleColor = '#409eff'; // 蓝色 - 续期/变更
+                    titleColor = '#409eff';
                 }
                 
-                // 如果有标题，显示标题+内容（带颜色）
                 if (title && title !== '通知') {
                     content = `<strong style="color: ${titleColor};">${title}</strong>：${content}`;
                 }
                 
-                // 如果有设备信息，添加到内容中
                 if (notification.device_name) {
                     content += `<br><span style="color: #666; font-size: 12px;">相关设备: ${notification.device_name}</span>`;
                 }
@@ -477,6 +544,18 @@
             } else {
                 modal.classList.add('active');
                 markAllAsRead();
+            }
+        }
+
+        // Toast提示函数
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            if (toast) {
+                toast.textContent = message;
+                toast.classList.add('show');
+                setTimeout(() => {
+                    toast.classList.remove('show');
+                }, 2000);
             }
         }
     </script>

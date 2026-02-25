@@ -74,6 +74,41 @@ a { text-decoration: none; color: inherit; }
     background: rgba(0,0,0,0.2);
 }
 
+.sidebar-stats-mini {
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    background: rgba(0,0,0,0.15);
+}
+
+.stat-item-mini {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 2px 0;
+    font-size: 11px;
+    color: rgba(255,255,255,0.75);
+}
+
+.stat-item-mini .stat-label {
+    color: rgba(255,255,255,0.6);
+}
+
+.stat-item-mini .stat-value {
+    font-weight: 500;
+    color: rgba(255,255,255,0.95);
+    min-width: 20px;
+    text-align: right;
+    font-size: 11px;
+}
+
+.stat-item-mini .stat-value.stat-blue { color: #69c0ff; }
+.stat-item-mini .stat-value.stat-green { color: #95de64; }
+.stat-item-mini .stat-value.stat-cyan { color: #5cdbd3; }
+.stat-item-mini .stat-value.stat-orange { color: #ffc069; }
+.stat-item-mini .stat-value.stat-purple { color: #b37feb; }
+.stat-item-mini .stat-value.stat-yellow { color: #fff566; }
+.stat-item-mini .stat-value.stat-red { color: #ff7875; }
+
 .stat-row {
     display: flex;
     justify-content: space-between;
@@ -94,6 +129,9 @@ a { text-decoration: none; color: inherit; }
 
 .stat-value-mini.stat-green { color: #52c41a; }
 .stat-value-mini.stat-orange { color: #fa8c16; }
+.stat-value-mini.stat-blue { color: #1890ff; }
+.stat-value-mini.stat-purple { color: #722ed1; }
+.stat-value-mini.stat-gray { color: #8c8c8c; }
 
 .sidebar-nav {
     flex: 1;
@@ -1133,10 +1171,10 @@ a { text-decoration: none; color: inherit; }
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 20px 12px;
+    padding: 14px 12px;
     background: #fafafa;
     border: 1px solid #d9d9d9;
-    border-radius: 12px;
+    border-radius: 10px;
     text-decoration: none;
     transition: all 0.2s ease;
     box-shadow: 0 1px 3px rgba(0,0,0,0.06);
@@ -1157,8 +1195,8 @@ a { text-decoration: none; color: inherit; }
 .quick-action-card.records:hover { border-color: #13c2c2; }
 
 .quick-action-icon {
-    font-size: 28px;
-    margin-bottom: 8px;
+    font-size: 24px;
+    margin-bottom: 6px;
 }
 
 .quick-action-title {
@@ -1179,10 +1217,10 @@ a { text-decoration: none; color: inherit; }
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 20px 16px;
+    padding: 12px 16px;
     background: #fff;
     border: 2px solid #e8e8e8;
-    border-radius: 16px;
+    border-radius: 12px;
     transition: all 0.3s ease;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
     position: relative;
@@ -1211,20 +1249,20 @@ a { text-decoration: none; color: inherit; }
 }
 
 .my-device-icon {
-    font-size: 36px;
-    margin-bottom: 8px;
+    font-size: 28px;
+    margin-bottom: 4px;
     filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
 }
 
 .my-device-title {
-    font-size: 14px;
+    font-size: 13px;
     color: #1a202c;
     font-weight: 600;
-    margin-bottom: 6px;
+    margin-bottom: 2px;
 }
 
 .my-device-count {
-    font-size: 28px;
+    font-size: 24px;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -1232,49 +1270,386 @@ a { text-decoration: none; color: inherit; }
     font-weight: 700;
 }
 
-/* ========== 公告栏样式 ========== */
+/* ========== 公告栏样式（重新设计） ========== */
+
+/* 公告栏容器 */
 .announcement-bar {
     display: flex;
     align-items: center;
-    background: linear-gradient(90deg, #fff7e6 0%, #ffe7ba 100%);
-    border-bottom: 1px solid #ffd591;
-    padding: 10px 20px;
-    margin-bottom: 0;
+    background: linear-gradient(135deg, #f0f5ff 0%, #e6f7ff 50%, #f6ffed 100%);
+    border-bottom: 1px solid #91d5ff;
+    padding: 12px 20px;
+    margin: -24px -24px 0 -24px;
+    min-height: 52px;
+    box-sizing: border-box;
+    position: relative;
+    overflow: hidden;
 }
 
+/* 装饰性背景元素 */
+.announcement-bar::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -10%;
+    width: 200px;
+    height: 200px;
+    background: radial-gradient(circle, rgba(24,144,255,0.08) 0%, transparent 70%);
+    border-radius: 50%;
+    pointer-events: none;
+}
+
+.announcement-bar::after {
+    content: '';
+    position: absolute;
+    bottom: -50%;
+    left: -5%;
+    width: 150px;
+    height: 150px;
+    background: radial-gradient(circle, rgba(82,196,26,0.06) 0%, transparent 70%);
+    border-radius: 50%;
+    pointer-events: none;
+}
+
+/* 公告图标 */
 .announcement-bar-icon {
-    font-size: 20px;
-    margin-right: 12px;
+    width: 36px;
+    height: 36px;
+    background: linear-gradient(135deg, #1890ff 0%, #36cfc9 100%);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    margin-right: 14px;
     flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(24,144,255,0.3);
+    animation: announcement-pulse 2s ease-in-out infinite;
+    z-index: 1;
 }
 
+@keyframes announcement-pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+}
+
+/* 公告内容区 */
 .announcement-bar-content {
     flex: 1;
     overflow: hidden;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
     position: relative;
+    mask-image: linear-gradient(to right, transparent, black 20px, black calc(100% - 20px), transparent);
+    -webkit-mask-image: linear-gradient(to right, transparent, black 20px, black calc(100% - 20px), transparent);
 }
 
+/* 滚动容器 */
 .announcement-scroller {
-    display: flex;
-    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    animation: scroll-announcement 25s linear infinite;
     will-change: transform;
 }
 
-.announcement-scroller.scrolling {
-    animation: scroll-announcement 40s linear infinite;
+/* 鼠标悬停暂停滚动 */
+.announcement-bar:hover .announcement-scroller {
+    animation-play-state: paused;
 }
 
-.announcement-item {
-    display: inline-block;
-    padding: 0 50px;
+/* 单个公告项 */
+.announcement-scroller .announcement-item {
+    display: inline-flex;
+    align-items: center;
+    margin-right: 60px;
+    color: #262626;
     font-size: 14px;
-    color: #d46b08;
+    line-height: 1.5;
+    cursor: pointer;
+    padding: 6px 12px;
+    border-radius: 6px;
+    transition: all 0.3s ease;
+    background: rgba(255,255,255,0.6);
+    border: 1px solid transparent;
+    white-space: nowrap;
+}
+
+.announcement-scroller .announcement-item:hover {
+    background: rgba(255,255,255,0.95);
+    border-color: #91d5ff;
+    box-shadow: 0 2px 8px rgba(24,144,255,0.15);
+    transform: translateY(-1px);
+}
+
+/* 公告标题 */
+.announcement-scroller .announcement-item .item-title {
+    font-weight: 600;
+    color: #1890ff;
+    margin-right: 8px;
+}
+
+/* 公告内容 */
+.announcement-scroller .announcement-item .item-content {
+    color: #595959;
+}
+
+/* 公告类型标签 */
+.announcement-scroller .announcement-item .item-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    margin-right: 10px;
+}
+
+.announcement-scroller .announcement-item .item-badge.important {
+    background: #fff1f0;
+    color: #ff4d4f;
+    border: 1px solid #ffa39e;
+}
+
+.announcement-scroller .announcement-item .item-badge.normal {
+    background: #e6f7ff;
+    color: #1890ff;
+    border: 1px solid #91d5ff;
+}
+
+/* 公告操作按钮 */
+.announcement-bar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 16px;
+    z-index: 1;
+}
+
+.announcement-bar-btn {
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: rgba(255,255,255,0.8);
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    transition: all 0.2s ease;
+    color: #8c8c8c;
+}
+
+.announcement-bar-btn:hover {
+    background: #fff;
+    color: #1890ff;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+/* 公告详情弹窗 */
+.announcement-detail-modal .pc-modal-content {
+    max-width: 560px;
+}
+
+.announcement-detail-modal .announcement-detail-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.announcement-detail-modal .announcement-detail-icon {
+    width: 48px;
+    height: 48px;
+    background: linear-gradient(135deg, #1890ff 0%, #36cfc9 100%);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
     flex-shrink: 0;
 }
 
+.announcement-detail-modal .announcement-detail-title {
+    flex: 1;
+}
+
+.announcement-detail-modal .announcement-detail-title h4 {
+    margin: 0 0 8px 0;
+    font-size: 18px;
+    color: #262626;
+    font-weight: 600;
+}
+
+.announcement-detail-modal .announcement-detail-meta {
+    display: flex;
+    gap: 16px;
+    font-size: 13px;
+    color: #8c8c8c;
+}
+
+.announcement-detail-modal .announcement-detail-content {
+    font-size: 15px;
+    line-height: 1.8;
+    color: #595959;
+    padding: 8px 0;
+}
+
+/* 特殊公告弹窗（重新设计） */
+#specialAnnouncementModal .pc-modal-header {
+    background: linear-gradient(135deg, #ff4d4f 0%, #ff7875 100%);
+    color: white;
+    border-radius: 12px 12px 0 0;
+}
+
+#specialAnnouncementModal .pc-modal-header h3 {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+#specialAnnouncementModal .pc-modal-header h3::before {
+    content: '🔔';
+    font-size: 20px;
+    animation: bell-ring 1s ease-in-out infinite;
+}
+
+@keyframes bell-ring {
+    0%, 100% { transform: rotate(0deg); }
+    10%, 30%, 50% { transform: rotate(-10deg); }
+    20%, 40% { transform: rotate(10deg); }
+}
+
+#specialAnnouncementModal #specialAnnouncementContent {
+    background: linear-gradient(135deg, #fff1f0 0%, #fff 100%);
+    border-radius: 8px;
+    padding: 20px;
+    border-left: 4px solid #ff4d4f;
+}
+
+#specialAnnouncementModal #specialAnnouncementContent h4 {
+    margin: 0 0 12px 0;
+    color: #cf1322;
+    font-size: 17px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#specialAnnouncementModal #specialAnnouncementContent h4::before {
+    content: '📌';
+}
+
+#specialAnnouncementModal #specialAnnouncementContent p {
+    margin: 0;
+    color: #595959;
+    line-height: 1.8;
+    font-size: 15px;
+}
+
+/* 公告列表样式（用于全部公告弹窗） */
+.announcement-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.announcement-list-item {
+    background: #fff;
+    border: 1px solid #f0f0f0;
+    border-radius: 12px;
+    padding: 16px 20px;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.announcement-list-item:hover {
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    border-color: #d9d9d9;
+    transform: translateY(-2px);
+}
+
+.announcement-list-item.special {
+    border-left: 4px solid #ff4d4f;
+    background: linear-gradient(135deg, #fff 0%, #fff1f0 100%);
+}
+
+.announcement-list-item.active {
+    border-left: 4px solid #52c41a;
+}
+
+.announcement-list-item .item-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.announcement-list-item .item-order {
+    width: 28px;
+    height: 28px;
+    background: #f5f5f5;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 600;
+    color: #8c8c8c;
+}
+
+.announcement-list-item .item-title-text {
+    flex: 1;
+    font-size: 15px;
+    font-weight: 600;
+    color: #262626;
+}
+
+.announcement-list-item .item-badges {
+    display: flex;
+    gap: 8px;
+}
+
+.announcement-list-item .item-content-text {
+    color: #595959;
+    font-size: 14px;
+    line-height: 1.6;
+    margin-bottom: 12px;
+    padding-left: 40px;
+}
+
+.announcement-list-item .item-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-left: 40px;
+}
+
+.announcement-list-item .item-meta {
+    font-size: 12px;
+    color: #8c8c8c;
+}
+
+.announcement-list-item .item-actions {
+    display: flex;
+    gap: 8px;
+}
+
+/* 滚动动画 */
 @keyframes scroll-announcement {
-    0% { transform: translateX(0); }
-    100% { transform: translateX(-100%); }
+    0% {
+        transform: translateX(0);
+    }
+    100% {
+        transform: translateX(-50%);
+    }
 }
 
 /* 弹窗样式 */

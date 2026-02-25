@@ -432,35 +432,76 @@ body {
     margin-bottom: 20px;
 }
 
-.type-stats {
-    display: flex;
-    gap: 24px;
+/* 设备类型卡片 */
+.type-cards {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
 }
 
-.type-stat-item {
-    display: flex;
-    align-items: center;
-}
-
-.type-stat-item .type-icon {
-    font-size: 28px;
-    margin-right: 12px;
-}
-
-.type-info {
+.type-card {
     display: flex;
     flex-direction: column;
+    align-items: center;
+    padding: 16px 8px;
+    border-radius: 12px;
+    text-decoration: none;
+    transition: all 0.3s ease;
+    background: #fff;
+    border: 2px solid transparent;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
 }
 
-.type-count {
-    font-size: 18px;
-    font-weight: 600;
+.type-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+}
+
+.type-card.phone {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.type-card.car {
+    background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    color: white;
+}
+
+.type-card.instrument {
+    background: linear-gradient(135deg, #fc4a1a 0%, #f7b733 100%);
+    color: white;
+}
+
+.type-card.simcard {
+    background: linear-gradient(135deg, #00b4db 0%, #0083b0 100%);
+    color: white;
+}
+
+.type-card.other {
+    background: linear-gradient(135deg, #8e9eab 0%, #eef2f3 100%);
     color: #333;
 }
 
-.type-label {
+.type-card-icon {
+    font-size: 32px;
+    margin-bottom: 8px;
+}
+
+.type-card-info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.type-card-count {
+    font-size: 24px;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.type-card-label {
     font-size: 13px;
-    color: #999;
+    opacity: 0.9;
 }
 
 .status-bars {
@@ -500,6 +541,14 @@ body {
     text-align: right;
     font-size: 14px;
     color: #999;
+}
+
+.status-count {
+    width: 50px;
+    text-align: right;
+    font-size: 14px;
+    font-weight: 600;
+    color: #333;
 }
 
 /* 内容行 */

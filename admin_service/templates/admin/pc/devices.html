@@ -401,7 +401,16 @@
         // 加载设备列表
         async function loadDevices() {
             try {
-                const response = await fetch('/api/devices');
+                const urlParams = new URLSearchParams(window.location.search);
+                const typeParam = urlParams.get('type');
+                
+                // 根据URL参数决定API端点
+                let apiUrl = '/api/devices';
+                if (typeParam) {
+                    apiUrl += `?type=${typeParam}`;
+                }
+                
+                const response = await fetch(apiUrl);
                 devices = await response.json();
                 updateTypeCounts();
                 updateStatusOptions();
@@ -1084,7 +1093,37 @@
         document.addEventListener('DOMContentLoaded', function() {
             loadDevices();
             initColumnResize();
+            // 根据URL参数自动切换类型标签
+            initTypeTabFromUrl();
         });
+
+        // 根据URL参数初始化类型标签
+        function initTypeTabFromUrl() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const typeParam = urlParams.get('type');
+            if (!typeParam) return;
+
+            // 映射URL参数到设备类型
+            const typeMap = {
+                'phone': '手机',
+                'car': '车机',
+                'instrument': '仪表',
+                'sim': '手机卡',
+                'simcard': '手机卡',
+                'other': '其它设备'
+            };
+
+            const targetType = typeMap[typeParam];
+            if (!targetType) return;
+
+            // 找到对应的标签并切换
+            const tabs = document.querySelectorAll('.type-tab');
+            tabs.forEach(tab => {
+                if (tab.dataset.type === targetType) {
+                    switchTypeTab(tab);
+                }
+            });
+        }
 
         // 列宽调整功能
         function initColumnResize() {

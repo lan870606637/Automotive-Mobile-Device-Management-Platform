@@ -31,7 +31,7 @@
         </div>
 
         <!-- 我的排行 -->
-        <h2 style="font-size: 16px; color: #666; margin: 24px 0 12px 0; font-weight: 500;">🏆 我的排行</h2>
+        <h2 style="font-size: 16px; color: #666; margin: 16px 0 10px 0; font-weight: 500;">🏆 我的排行</h2>
         <div style="display: flex; gap: 12px; flex-wrap: wrap;">
             <!-- 借用次数排行 -->
             <div style="flex: 1; min-width: 120px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 16px; border-radius: 12px; color: white;">
@@ -69,7 +69,7 @@
         {% endif %}
 
         <!-- 快捷操作 -->
-        <h2 style="font-size: 16px; color: #666; margin: 24px 0 12px 0; font-weight: 500;">⚡ 快捷操作</h2>
+        <h2 style="font-size: 16px; color: #666; margin: 16px 0 10px 0; font-weight: 500;">⚡ 快捷操作</h2>
         <div class="quick-actions-grid">
             <a href="{{ url_for('pc_device_list', type='car') }}" class="quick-action-card car">
                 <span class="quick-action-icon">🚗</span>
@@ -526,7 +526,7 @@ function handleDeviceSearchInput(keyword) {
                     e.stopPropagation();
                     const id = this.getAttribute('data-id');
                     const type = this.getAttribute('data-type');
-                    const name = this.getAttribute('data-name');
+                    const name = decodeURIComponent(this.getAttribute('data-name'));
                     document.getElementById('deviceSearchInput').value = name;
                     document.getElementById('searchSuggestions').style.display = 'none';
                     window.location.href = `/pc/device/${id}?device_type=${encodeURIComponent(type)}`;

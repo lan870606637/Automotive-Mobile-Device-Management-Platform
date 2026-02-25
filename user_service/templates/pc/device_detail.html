@@ -502,12 +502,12 @@
                                 <span class="status-tag status-no-cabinet" style="margin-left: 4px; font-size: 10px; padding: 1px 4px;">管</span>
                                 {% endif %}
                             </div>
-                            {% if record.reason and record.reason != 'nan' %}
+                            {% if record.reason and record.reason != 'nan' and record.reason != '' %}
                             <div style="margin-top: 4px; font-size: 13px; color: #595959;">
                                 原因：{{ record.reason }}
                             </div>
                             {% endif %}
-                            {% if record.remark and record.remark != 'nan' %}
+                            {% if record.remark and record.remark != 'nan' and record.remark != '' %}
                             <div style="margin-top: 4px; font-size: 13px; color: #595959;">
                                 备注：{{ record.remark }}
                             </div>

@@ -22,6 +22,7 @@ from dotenv import load_dotenv
 # 从 common 导入
 from common.models import DeviceStatus, DeviceType, OperationType, EntrySource, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, Admin, Announcement
 from common.api_client import api_client
+from common.db_store import DatabaseStore, init_database
 from common.utils import mask_phone, is_mobile_device
 from common.config import SECRET_KEY, SERVER_URL, ADMIN_SERVICE_PORT
 
@@ -29,6 +30,9 @@ load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
+
+# 初始化数据库（创建必要的表）
+init_database()
 
 
 def admin_required(f):
@@ -287,6 +291,14 @@ def admin_pc_dashboard():
     simcard_count = len([d for d in all_devices if d.device_type.value == '手机卡'])
     other_device_count = len([d for d in all_devices if d.device_type.value == '其它设备'])
     
+    # 详细状态统计
+    in_stock_count = len([d for d in all_devices if d.status == DeviceStatus.IN_STOCK])  # 在库
+    no_cabinet_count = len([d for d in all_devices if d.status == DeviceStatus.NO_CABINET])  # 无柜号
+    circulating_count = len([d for d in all_devices if d.status == DeviceStatus.CIRCULATING])  # 流通
+    scrapped_count = len([d for d in all_devices if d.status == DeviceStatus.SCRAPPED])  # 报废
+    shipped_count = len([d for d in all_devices if d.status == DeviceStatus.SHIPPED])  # 寄走
+    sealed_count = len([d for d in all_devices if d.status == DeviceStatus.SEALED])  # 封存
+    
     # 状态分布百分比
     if total_devices > 0:
         available_percent = round(available_devices / total_devices * 100)
@@ -322,6 +334,12 @@ def admin_pc_dashboard():
                          instrument_count=instrument_count,
                          simcard_count=simcard_count,
                          other_device_count=other_device_count,
+                         in_stock_count=in_stock_count,
+                         no_cabinet_count=no_cabinet_count,
+                         circulating_count=circulating_count,
+                         scrapped_count=scrapped_count,
+                         shipped_count=shipped_count,
+                         sealed_count=sealed_count,
                          available_percent=available_percent,
                          borrowed_percent=borrowed_percent,
                          other_percent=other_percent,
@@ -1214,7 +1232,17 @@ def api_user_remove_admin(user_id):
 def api_devices():
     """获取/创建设备API"""
     if request.method == 'GET':
-        device_type = request.args.get('type')
+        type_param = request.args.get('type')
+        # 映射URL参数到设备类型
+        type_map = {
+            'phone': '手机',
+            'car': '车机',
+            'instrument': '仪表',
+            'sim': '手机卡',
+            'simcard': '手机卡',
+            'other': '其它设备'
+        }
+        device_type = type_map.get(type_param, type_param)
         devices = api_client.get_all_devices(device_type)
         
         devices_data = []
@@ -1356,7 +1384,8 @@ def api_admin_borrow(device_id):
             borrower=borrower,
             days=int(days),
             remarks=remarks,
-            operator=session.get('admin_name', '管理员')
+            operator=session.get('admin_name', '管理员'),
+            entry_source=EntrySource.ADMIN.value
         )
         # 发送通知
         if success:
@@ -1446,11 +1475,11 @@ def api_admin_return(device_id):
         operator=session.get('admin_name', '管理员'),
         operation_time=datetime.now(),
         borrower=original_borrower,
-        reason='管理员强制归还'
+        reason='管理员强制归还',
+        entry_source=EntrySource.ADMIN.value
     )
-    api_client._records.append(record)
+    DatabaseStore.save_record(record)
     api_client.add_operation_log(f"强制归还: {original_borrower}", device.name)
-    api_client._save_data()
 
     # 发送通知
     # 1. 通知原借用人
@@ -1523,11 +1552,11 @@ def api_admin_transfer(device_id):
         operator=session.get('admin_name', '管理员'),
         operation_time=datetime.now(),
         borrower=f"{original_borrower} → {new_borrower}",
-        reason='管理员转借'
+        reason='管理员转借',
+        entry_source=EntrySource.ADMIN.value
     )
-    api_client._records.append(record)
+    DatabaseStore.save_record(record)
     api_client.add_operation_log(f"转借: {original_borrower} -> {new_borrower}", device.name)
-    api_client._save_data()
 
     # 发送通知
     api_client.notify_transfer(
@@ -1720,14 +1749,10 @@ def api_mark_inappropriate(remark_id):
 @admin_required
 def api_unmark_inappropriate(remark_id):
     """取消备注不当标记API"""
-    # 获取所有备注
-    remarks = api_client.get_remarks()
-    for remark in remarks:
-        if remark.id == remark_id:
-            remark.is_inappropriate = False
-            api_client._save_data()
-            api_client.add_operation_log(f"取消备注不当标记", f"备注ID: {remark_id}")
-            return jsonify({'success': True, 'message': '已取消不当标记'})
+    success = api_client.unmark_inappropriate(remark_id)
+    if success:
+        api_client.add_operation_log(f"取消备注不当标记", f"备注ID: {remark_id}")
+        return jsonify({'success': True, 'message': '已取消不当标记'})
     return jsonify({'success': False, 'message': '备注不存在'})
 
 
@@ -1908,7 +1933,7 @@ def api_import_devices():
                         screen_resolution=str(row.get('车机分辨率', '')).strip(),
                         entry_source='批量导入'
                     )
-                    api_client._car_machines.append(device)
+                    DatabaseStore.save_device(device)
 
                 elif device_type == 'instrument':
                     # 仪表导入
@@ -1930,7 +1955,7 @@ def api_import_devices():
                         screen_resolution=str(row.get('分辨率', '')).strip(),
                         entry_source='批量导入'
                     )
-                    api_client._instruments.append(device)
+                    DatabaseStore.save_device(device)
 
                 elif device_type == 'phone':
                     # 手机导入
@@ -1948,7 +1973,7 @@ def api_import_devices():
                         carrier=str(row.get('运营商', '')).strip(),
                         entry_source='批量导入'
                     )
-                    api_client._phones.append(device)
+                    DatabaseStore.save_device(device)
 
                 elif device_type == 'sim':
                     # 手机卡导入
@@ -1963,7 +1988,7 @@ def api_import_devices():
                         carrier=str(row.get('运营商', '')).strip(),
                         entry_source='批量导入'
                     )
-                    api_client._sim_cards.append(device)
+                    DatabaseStore.save_device(device)
 
                 elif device_type == 'other':
                     # 其它设备导入
@@ -1978,15 +2003,12 @@ def api_import_devices():
                         remark=str(row.get('备注', '')).strip(),
                         entry_source='批量导入'
                     )
-                    api_client._other_devices.append(device)
+                    DatabaseStore.save_device(device)
 
                 imported_count += 1
 
             except Exception as e:
                 errors.append(f'第{row_num}行: {str(e)}')
-
-        # 保存数据
-        api_client._save_data()
 
         # 记录操作日志
         api_client.add_operation_log(

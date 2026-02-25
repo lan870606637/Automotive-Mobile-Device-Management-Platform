@@ -24,6 +24,7 @@ from dotenv import load_dotenv
 # 从 common 导入
 from common.models import DeviceStatus, DeviceType, OperationType, EntrySource, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, ViewRecord
 from common.api_client import api_client
+from common.db_store import DatabaseStore, init_database
 from common.utils import mask_phone, is_mobile_device
 from common.config import SECRET_KEY, SERVER_URL, USER_SERVICE_PORT
 
@@ -40,6 +41,9 @@ load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
+
+# 初始化数据库（创建必要的表）
+init_database()
 
 
 def login_required(f):
@@ -100,6 +104,13 @@ def get_device_stats():
     available_devices = len([d for d in all_devices if d.status in [DeviceStatus.IN_STOCK, DeviceStatus.IN_CUSTODY, DeviceStatus.CIRCULATING, DeviceStatus.NO_CABINET]])
     borrowed_devices_count = len([d for d in all_devices if d.status == DeviceStatus.BORROWED])
 
+    # 详细状态统计
+    in_stock_count = len([d for d in all_devices if d.status == DeviceStatus.IN_STOCK])  # 在库
+    in_custody_count = len([d for d in all_devices if d.status == DeviceStatus.IN_CUSTODY])  # 保管中
+    no_cabinet_count = len([d for d in all_devices if d.status == DeviceStatus.NO_CABINET])  # 无柜号
+    circulating_count = len([d for d in all_devices if d.status == DeviceStatus.CIRCULATING])  # 流通
+    sealed_count = len([d for d in all_devices if d.status == DeviceStatus.SEALED])  # 封存
+
     # 获取车机/仪表筛选选项
     car_devices = [d for d in all_devices if d.device_type.value in ['车机', '仪表']]
     os_versions = sorted(set(d.os_version for d in car_devices if d.os_version))
@@ -107,10 +118,19 @@ def get_device_stats():
     product_names = sorted(set(d.product_name for d in car_devices if d.product_name))
     resolutions = sorted(set(d.screen_resolution for d in car_devices if d.screen_resolution))
 
+    # 计算无法使用的设备数量
+    unavailable_count = len([d for d in all_devices if d.status in [DeviceStatus.LOST, DeviceStatus.DAMAGED, DeviceStatus.SHIPPED, DeviceStatus.SCRAPPED, DeviceStatus.SEALED]])
+
     return {
         'total_devices': total_devices,
         'available_devices': available_devices,
         'borrowed_devices_count': borrowed_devices_count,
+        'in_stock_count': in_stock_count,
+        'in_custody_count': in_custody_count,
+        'no_cabinet_count': no_cabinet_count,
+        'circulating_count': circulating_count,
+        'sealed_count': sealed_count,
+        'unavailable_count': unavailable_count,
         'os_versions': os_versions,
         'os_platforms': os_platforms,
         'product_names': product_names,
@@ -488,7 +508,7 @@ def device_detail(device_id):
             user_borrowed_count += 1
     
     # 借用限制检查
-    borrow_limit = 10  # 最大借用数量（车机+手机）
+    borrow_limit = 10  # 最大借用数量（车机+手机卡）
     if user_borrowed_count >= borrow_limit:
         can_borrow = False
         borrow_limit_message = f'您已借用 {user_borrowed_count} 台设备，达到上限 ({borrow_limit}台)'
@@ -517,7 +537,7 @@ def device_detail(device_id):
 @app.route('/device/<device_id>/simple')
 @login_required
 def device_detail_simple(device_id):
-    """设备详情页面（简化版）- 用于借还确认"""
+    """设备详情页面（简化版） 用于借还确认"""
     user = get_current_user()
     device = api_client.get_device_by_id(device_id)
     
@@ -549,7 +569,7 @@ def borrow_device(device_id):
         return render_template('error.html', message='设备不存在'), 404
     
     if device.status not in [DeviceStatus.IN_STOCK, DeviceStatus.IN_CUSTODY]:
-        return render_template('error.html', message='设备不可用'), 400
+        return render_template('error.html', message='设备不可借'), 400
     
     user = get_current_user()
     
@@ -725,7 +745,7 @@ def my_records():
 @app.route('/pc')
 @login_required
 def pc_dashboard():
-    """PC端首页/仪表盘"""
+    """PC端首页仪表盘"""
     from datetime import datetime
     user = get_current_user()
 
@@ -738,11 +758,18 @@ def pc_dashboard():
     available_devices = len([d for d in all_devices if d.status in [DeviceStatus.IN_STOCK, DeviceStatus.IN_CUSTODY, DeviceStatus.CIRCULATING, DeviceStatus.NO_CABINET]])
     borrowed_devices_count = len([d for d in all_devices if d.status == DeviceStatus.BORROWED])
 
+    # 详细状态统计
+    in_stock_count = len([d for d in all_devices if d.status == DeviceStatus.IN_STOCK])  # 在库
+    in_custody_count = len([d for d in all_devices if d.status == DeviceStatus.IN_CUSTODY])  # 保管中
+    no_cabinet_count = len([d for d in all_devices if d.status == DeviceStatus.NO_CABINET])  # 无柜号
+    circulating_count = len([d for d in all_devices if d.status == DeviceStatus.CIRCULATING])  # 流通
+    unavailable_count = len([d for d in all_devices if d.status in [DeviceStatus.LOST, DeviceStatus.DAMAGED, DeviceStatus.SHIPPED, DeviceStatus.SCRAPPED, DeviceStatus.SEALED]])  # 无法使用
+
     # 获取我保管的设备
     my_custodian_devices = [d for d in all_devices if d.cabinet_number == user['borrower_name']]
     my_custodian_count = len(my_custodian_devices)
 
-    # 获取当前用户借用的设备，并计算剩余/逾期时间
+    # 获取当前用户借用的设备，并计算剩余逾期时间
     # 排除已寄出状态的设备
     raw_borrowed_devices = [d for d in all_devices if d.borrower == user['borrower_name'] and d.status != DeviceStatus.SHIPPED]
     my_borrowed_devices = []
@@ -963,6 +990,11 @@ def pc_dashboard():
                          total_devices=total_devices,
                          available_devices=available_devices,
                          borrowed_devices_count=borrowed_devices_count,
+                         in_stock_count=in_stock_count,
+                         in_custody_count=in_custody_count,
+                         no_cabinet_count=no_cabinet_count,
+                         circulating_count=circulating_count,
+                         unavailable_count=unavailable_count,
                          my_borrowed_devices=my_borrowed_devices,
                          my_borrowed_count=my_borrowed_count,
                          my_borrowed_type_counts=my_borrowed_type_counts,
@@ -1267,7 +1299,12 @@ def pc_device_list():
                          resolutions=resolutions,
                          total_devices=stats['total_devices'],
                          available_devices=stats['available_devices'],
-                         borrowed_devices_count=stats['borrowed_devices_count'])
+                         borrowed_devices_count=stats['borrowed_devices_count'],
+                         in_stock_count=stats['in_stock_count'],
+                         in_custody_count=stats['in_custody_count'],
+                         no_cabinet_count=stats['no_cabinet_count'],
+                         circulating_count=stats['circulating_count'],
+                         unavailable_count=stats['unavailable_count'])
 
 
 @app.route('/pc/device/<device_id>')
@@ -1281,7 +1318,7 @@ def pc_device_detail(device_id):
     # 获取设备类型参数，用于区分不同类型设备的相同ID
     device_type_param = request.args.get('device_type')
 
-    # 先尝试根据设备类型查找
+    # 先尝试根据设备类型查询
     device = None
     if device_type_param:
         devices = api_client.get_all_devices(device_type_param)
@@ -1351,8 +1388,8 @@ def pc_device_detail(device_id):
             'borrower': record.borrower,
             'operation_time': record.operation_time.strftime('%Y-%m-%d %H:%M:%S'),
             'entry_source': record.entry_source,
-            'reason': record.reason,
-            'remark': record.remark
+            'reason': record.reason or '',
+            'remark': record.remark or ''
         })
 
     # 获取查看记录
@@ -1440,14 +1477,14 @@ def pc_device_detail(device_id):
 @app.route('/pc/device/<device_id>/simple')
 @login_required
 def pc_device_detail_simple(device_id):
-    """PC端设备详情页面（简化版）- 用于借还确认"""
+    """PC端设备详情页面（简化版） 用于借还确认"""
     # 重新加载数据以获取最新Excel数据
     api_client.reload_data()
 
     # 获取设备类型参数，用于区分不同类型设备的相同ID
     device_type_param = request.args.get('device_type')
 
-    # 先尝试根据设备类型查找
+    # 先尝试根据设备类型查询
     device = None
     if device_type_param:
         devices = api_client.get_all_devices(device_type_param)
@@ -1526,7 +1563,7 @@ def pc_my_custodian_devices():
                     remaining_seconds = total_seconds % (24 * 3600)
                     hours = int(remaining_seconds // 3600)
                     minutes = int((remaining_seconds % 3600) // 60)
-                    # 如果有分钟，小时数+1（向上取整）
+                    # 如果有分钟，小时+1（向上取整）
                     if minutes > 0 and days == 0:
                         hours += 1
                     if days > 0:
@@ -1580,7 +1617,7 @@ def pc_records():
     for record in all_records:
         should_include = False
 
-        # 原有的条件：用户名在 borrower 中，或用户是操作者
+        # 原有的条件：用户名在 borrower 中，或用户是操作人
         if user['borrower_name'] in record.borrower or record.operator == user['borrower_name'] or record.borrower == user['borrower_name']:
             should_include = True
 
@@ -1589,7 +1626,7 @@ def pc_records():
             # 状态变更记录：如果借用人是当前用户
             if '状态变更' in record.operation_type.value and record.borrower == user['borrower_name']:
                 should_include = True
-            # 保管人变更记录：检查 reason 和 remark 中是否包含用户名
+            # 保管人变更记录：检查 reason 或 remark 中是否包含用户名
             elif '保管人变更' in record.operation_type.value:
                 if user['borrower_name'] in record.reason:
                     should_include = True
@@ -1612,46 +1649,14 @@ def pc_records():
     end = start + per_page
     paginated_records = my_records_list[start:end]
 
-    # 统计 - 借用次数包含借出和转借（只统计作为接收方的记录）
-    def is_borrow_record(record):
-        op_type = record.operation_type.value
-        borrower_str = record.borrower or ''
-        
-        if '借出' in op_type:
-            # 借出记录：检查当前用户是否是借用人
-            if '——>' in borrower_str:
-                parts = borrower_str.split('——>')
-                if len(parts) > 1:
-                    to_user = parts[1].strip()
-                    if to_user == user['borrower_name']:
-                        return True
-            elif borrower_str.strip() == user['borrower_name']:
-                return True
-                
-        elif op_type == '转借':
-            # 转借记录：只统计接收方（转入方）
-            if '——>' in borrower_str:
-                parts = borrower_str.split('——>')
-                if len(parts) > 1:
-                    to_user = parts[1].strip()
-                    if to_user == user['borrower_name']:
-                        return True
-        return False
-    
-    borrow_count = len([r for r in my_records_list if is_borrow_record(r)])
-    
-    # 归还次数统计（排除保管人代还且代还人不是当前用户的记录）
-    def is_return_record(record):
-        if record.operation_type.value not in ['归还', '强制归还']:
-            return False
-        borrower_str = record.borrower or ''
-        # 如果是保管人代还，只统计实际借用人是当前用户的记录
-        if borrower_str.startswith('保管人代还：'):
-            actual_user = borrower_str.replace('保管人代还：', '').strip()
-            return actual_user == user['borrower_name']
-        return True
-    
-    return_count = len([r for r in my_records_list if is_return_record(r)])
+    # 统计 - 使用用户表中的 borrow_count 和 return_count，与排行榜保持一致
+    borrow_count = 0
+    return_count = 0
+    for u in api_client._users:
+        if u.id == user['user_id']:
+            borrow_count = u.borrow_count
+            return_count = u.return_count
+            break
 
     stats = get_device_stats()
 
@@ -1741,7 +1746,7 @@ def api_borrow():
         return jsonify({'success': False, 'message': '设备不存在'})
     
     if device.status not in [DeviceStatus.IN_STOCK, DeviceStatus.IN_CUSTODY]:
-        return jsonify({'success': False, 'message': '设备不可用'})
+        return jsonify({'success': False, 'message': '设备不可借'})
     
     # 记录原借用人（如果设备当前被借用）
     original_borrower = device.borrower if device.status == DeviceStatus.BORROWED else None
@@ -1753,7 +1758,7 @@ def api_borrow():
         if d.borrower == user['borrower_name'] and d.status == DeviceStatus.BORROWED:
             user_borrowed_count += 1
 
-    borrow_limit = 10  # 最大借用数量（车机+手机）
+    borrow_limit = 10  # 最大借用数量（车机+手机卡）
     if user_borrowed_count >= borrow_limit:
         return jsonify({'success': False, 'message': '您已超出可借设备上限，请归还后再借'})
     
@@ -1783,6 +1788,11 @@ def api_borrow():
     
     api_client.update_device(device)
     
+    # 解析原因和备注（格式：原因 - 详细说明）
+    reason_parts = reason.split(' - ', 1)
+    reason_main = reason_parts[0] if reason_parts else reason
+    remark_text = reason_parts[1] if len(reason_parts) > 1 else ''
+    
     # 添加记录
     record = Record(
         id=str(uuid.uuid4()),
@@ -1794,19 +1804,21 @@ def api_borrow():
         operation_time=datetime.now(),
         borrower=user['borrower_name'],
         phone=user_phone,
-        reason=reason,
+        reason=reason_main,
+        remark=remark_text,
         entry_source=EntrySource.USER.value
     )
-    api_client._records.append(record)
+    DatabaseStore.save_record(record)
     
     # 更新用户借用次数
     for u in api_client._users:
         if u.id == user['user_id']:
             u.borrow_count += 1
+            DatabaseStore.save_user(u)
             break
-    
+
     api_client.add_operation_log(f"借出设备: {user['borrower_name']}", device.name)
-    api_client._save_data()
+    
     
     # 发送通知（用户自己借设备，不需要通知自己）
     # 1. 通知原借用人（如果设备之前被借用且原借用人不是自己）
@@ -1821,7 +1833,7 @@ def api_borrow():
                 user_id=original_user.id,
                 user_name=original_user.borrower_name,
                 title="设备被转借通知",
-                content=f"您借用的设备「{device.name}」已被 {user['borrower_name']} 借用。",
+                content=f"您借用的设备「{device.name}」已被 {user['borrower_name']} 借用",
                 device_name=device.name,
                 device_id=device.id,
                 notification_type="warning"
@@ -1838,7 +1850,7 @@ def api_borrow():
                 user_id=custodian_user.id,
                 user_name=custodian_user.borrower_name,
                 title="设备被借用通知",
-                content=f"您保管的设备「{device.name}」已被 {user['borrower_name']} 借用。",
+                content=f"您保管的设备「{device.name}」已被 {user['borrower_name']} 借用",
                 device_name=device.name,
                 device_id=device.id,
                 notification_type="info"
@@ -1858,7 +1870,7 @@ def api_return():
     api_client.reload_data()
     
     device_id = data.get('device_id')
-    return_location = data.get('return_location', '').strip() or '设备库'
+    return_location = data.get('return_location', '').strip() or '设备柜'
     return_reason = data.get('return_reason', '').strip() or data.get('reason', '').strip()
     
     # 验证输入
@@ -1894,6 +1906,11 @@ def api_return():
     
     api_client.update_device(device)
     
+    # 解析归还原因和备注（格式：原因 - 备注）
+    reason_parts = return_reason.split(' - ', 1)
+    reason_main = reason_parts[0] if reason_parts else return_reason
+    remark_text = reason_parts[1] if len(reason_parts) > 1 else ''
+    
     # 添加记录
     record = Record(
         id=str(uuid.uuid4()),
@@ -1905,13 +1922,14 @@ def api_return():
         operation_time=datetime.now(),
         borrower=original_borrower,
         phone=user['phone'],
-        reason=return_reason,
+        reason=reason_main,
+        remark=remark_text,
         entry_source=EntrySource.USER.value
     )
-    api_client._records.append(record)
+    DatabaseStore.save_record(record)
 
     api_client.add_operation_log(f"归还设备: {original_borrower}", device.name)
-    api_client._save_data()
+    
 
     # 归还通知逻辑：
     # - 借用人自己归还：通知保管人（设备回到保管人处）
@@ -1928,7 +1946,7 @@ def api_return():
                 user_id=custodian_user.id,
                 user_name=custodian_user.borrower_name,
                 title="设备归还通知",
-                content=f"您保管的设备「{device.name}」已被 {user['borrower_name']} 归还。",
+                content=f"您保管的设备「{device.name}」已被 {user['borrower_name']} 归还",
                 device_name=device.name,
                 device_id=device.id,
                 notification_type="success"
@@ -2021,16 +2039,17 @@ def api_transfer():
         remark=remark,
         entry_source=EntrySource.USER.value
     )
-    api_client._records.append(record)
+    DatabaseStore.save_record(record)
     
     # 给接收方增加借用次数
     for u in api_client._users:
         if u.borrower_name == transfer_to:
             u.borrow_count += 1
+            DatabaseStore.save_user(u)
             break
+
+    api_client.add_operation_log(f"转借设备 {original_borrower or '保管人'} -> {transfer_to}", device.name)
     
-    api_client.add_operation_log(f"转借设备: {original_borrower or '保管人'} -> {transfer_to}", device.name)
-    api_client._save_data()
     
     # 发送通知
     api_client.notify_transfer(
@@ -2052,7 +2071,7 @@ def api_transfer():
                 user_id=custodian_user.id,
                 user_name=custodian_user.borrower_name,
                 title="设备转借通知",
-                content=f"您保管的设备「{device.name}」已被 {user['borrower_name']} 从 {original_borrower or '保管人'} 转借给 {transfer_to}。",
+                content=f"您保管的设备「{device.name}」已被 {user['borrower_name']} 从 {original_borrower or '保管人'} 转借给 {transfer_to}",
                 device_name=device.name,
                 device_id=device.id,
                 notification_type="info"
@@ -2090,9 +2109,8 @@ def api_add_remark():
         creator=user['borrower_name'],
         create_time=datetime.now()
     )
-    api_client._remarks.append(remark)
-    api_client._save_data()
-    
+    DatabaseStore.save_remark(remark)
+
     return jsonify({'success': True, 'message': '添加成功'})
 
 
@@ -2123,7 +2141,7 @@ def api_transfer_to_me():
         if d.borrower == user['borrower_name'] and d.status == DeviceStatus.BORROWED:
             user_borrowed_count += 1
     
-    borrow_limit = 10  # 最大借用数量（车机+手机）
+    borrow_limit = 10  # 最大借用数量（车机+手机卡）
     if user_borrowed_count >= borrow_limit:
         return jsonify({'success': False, 'message': f'您已借用 {user_borrowed_count} 台设备，达到上限 ({borrow_limit}台)，无法接收设备'})
     
@@ -2155,16 +2173,17 @@ def api_transfer_to_me():
         reason='用户转借给自己',
         entry_source=EntrySource.USER.value
     )
-    api_client._records.append(record)
+    DatabaseStore.save_record(record)
     
     # 给自己增加借用次数
     for u in api_client._users:
         if u.borrower_name == user['borrower_name']:
             u.borrow_count += 1
+            DatabaseStore.save_user(u)
             break
-    
+
     api_client.add_operation_log(f"转给自己: {original_borrower} -> {user['borrower_name']}", device.name)
-    api_client._save_data()
+    
     
     # 通知原借用人（如果存在且不是当前用户）
     if original_borrower and original_borrower != user['borrower_name']:
@@ -2178,7 +2197,7 @@ def api_transfer_to_me():
                 user_id=original_user.id,
                 user_name=original_user.borrower_name,
                 title="设备被转借通知",
-                content=f"您借用的设备「{device.name}」已被 {user['borrower_name']} 转借走。",
+                content=f"您借用的设备「{device.name}」已被 {user['borrower_name']} 转借走",
                 device_name=device.name,
                 device_id=device.id,
                 notification_type="warning"
@@ -2196,7 +2215,7 @@ def api_transfer_to_me():
                 user_id=custodian_user.id,
                 user_name=custodian_user.borrower_name,
                 title="设备转借通知",
-                content=f"您保管的设备「{device.name}」已被 {user['borrower_name']} 从 {original_borrower} 处转借走。",
+                content=f"您保管的设备「{device.name}」已被 {user['borrower_name']} 从 {original_borrower} 处转借走",
                 device_name=device.name,
                 device_id=device.id,
                 notification_type="info"
@@ -2257,10 +2276,10 @@ def api_return_by_custodian():
         reason='保管人代还设备',
         entry_source=EntrySource.USER.value
     )
-    api_client._records.append(record)
+    DatabaseStore.save_record(record)
 
-    api_client.add_operation_log(f"保管人代还: {original_borrower}", device.name)
-    api_client._save_data()
+    api_client.add_operation_log(f"保管人代还 {original_borrower}", device.name)
+    
 
     # 通知原借用人
     if original_borrower:
@@ -2268,7 +2287,7 @@ def api_return_by_custodian():
             device_id=device_id,
             device_name=device.name,
             borrower=original_borrower,
-            operator=f"保管人 {user['borrower_name']}"
+            operator=f"保管人:{user['borrower_name']}"
         )
 
     return jsonify({'success': True, 'message': '代还成功'})
@@ -2300,10 +2319,10 @@ def api_edit_remark():
     # 检查是否是备注创建者
     if remark.creator != user['borrower_name']:
         return jsonify({'success': False, 'message': '您只能编辑自己的备注'})
-    
+
     remark.content = content
-    api_client._save_data()
-    
+    DatabaseStore.save_remark(remark)
+
     return jsonify({'success': True, 'message': '修改成功'})
 
 
@@ -2329,10 +2348,9 @@ def api_delete_remark():
     # 检查是否是备注创建者或管理员
     if remark.creator != user['borrower_name'] and not user.get('is_admin'):
         return jsonify({'success': False, 'message': '您只能删除自己的备注'})
-    
-    api_client._remarks.remove(remark)
-    api_client._save_data()
-    
+
+    DatabaseStore.delete_remark(remark_id)
+
     return jsonify({'success': True, 'message': '删除成功'})
 
 
@@ -2376,7 +2394,7 @@ def api_search():
         
         cabinet = device.cabinet_number or ''
         is_no_cabinet = not cabinet.strip() or cabinet.strip() == '无'
-        is_circulating = cabinet.strip() == '流通'
+        is_circulating = cabinet.strip() == '流转'
         is_sealed = device.status == DeviceStatus.SEALED
 
         results.append({
@@ -2466,10 +2484,10 @@ def api_report_lost():
         reason='用户报备丢失',
         entry_source=EntrySource.USER.value
     )
-    api_client._records.append(record)
+    DatabaseStore.save_record(record)
     
     api_client.add_operation_log(f"报备丢失: {user['borrower_name']}", device.name)
-    api_client._save_data()
+    
     
     # 通知保管人（如果存在且不是报备人自己）
     if device.cabinet_number and device.cabinet_number != user['borrower_name']:
@@ -2483,7 +2501,7 @@ def api_report_lost():
                 user_id=custodian_user.id,
                 user_name=custodian_user.borrower_name,
                 title="设备丢失报备通知",
-                content=f"您保管的设备「{device.name}」已被借用人 {user['borrower_name']} 报备丢失。",
+                content=f"您保管的设备「{device.name}」已被借用人 {user['borrower_name']} 报备丢失",
                 device_name=device.name,
                 device_id=device.id,
                 notification_type="error"
@@ -2572,8 +2590,8 @@ def api_report_damage():
         )
         api_client.add_operation_log(f"报备损坏: {user['borrower_name']}", device.name)
     
-    api_client._records.append(record)
-    api_client._save_data()
+    DatabaseStore.save_record(record)
+    
 
     # 通知保管人（如果存在且不是报备人自己）
     if device.cabinet_number and device.cabinet_number != user['borrower_name']:
@@ -2587,7 +2605,7 @@ def api_report_damage():
                 user_id=custodian_user.id,
                 user_name=custodian_user.borrower_name,
                 title="设备损坏报备通知",
-                content=f"您保管的设备「{device.name}」已被借用人 {user['borrower_name']} 报备损坏。",
+                content=f"您保管的设备「{device.name}」已被借用人 {user['borrower_name']} 报备损坏",
                 device_name=device.name,
                 device_id=device.id,
                 notification_type="warning"
@@ -2658,10 +2676,10 @@ def api_ship_device():
         remark=remark,
         entry_source=EntrySource.USER.value
     )
-    api_client._records.append(record)
+    DatabaseStore.save_record(record)
 
     api_client.add_operation_log(f"寄出设备: {user['borrower_name']}", device.name)
-    api_client._save_data()
+    
 
     return jsonify({'success': True, 'message': '寄出登记成功'})
 
@@ -2716,10 +2734,10 @@ def api_unship_device():
         reason='未寄出（还原）',
         entry_source=EntrySource.USER.value
     )
-    api_client._records.append(record)
+    DatabaseStore.save_record(record)
 
-    api_client.add_operation_log(f"未寄出还原: {user['borrower_name']}", device.name)
-    api_client._save_data()
+    api_client.add_operation_log(f"未寄出还原 {user['borrower_name']}", device.name)
+    
 
     return jsonify({'success': True, 'message': '已还原为借用状态'})
 
@@ -2732,7 +2750,7 @@ def api_found_device():
     data = request.json
     
     device_id = data.get('device_id')
-    action = data.get('action', 'return')  # return:保管人自用, transfer:转借他人
+    action = data.get('action', 'return')  # return:保管人自用 transfer:转借他人
     transfer_to = data.get('transfer_to', '').strip()
     
     device = api_client.get_device_by_id(device_id)
@@ -2794,8 +2812,8 @@ def api_found_device():
             reason='设备找回后转借',
             entry_source=EntrySource.USER.value
         )
-        api_client._records.append(record)
-        api_client.add_operation_log(f"设备找回转借: {transfer_to}", device.name)
+        DatabaseStore.save_record(record)
+        api_client.add_operation_log(f"设备找回转借 {transfer_to}", device.name)
     else:
         # 保管人自用 - 设备变为在库状态
         # 更新设备状态
@@ -2823,10 +2841,10 @@ def api_found_device():
             reason='设备已找回，保管人自用',
             entry_source=EntrySource.USER.value
         )
-        api_client._records.append(record)
+        DatabaseStore.save_record(record)
         api_client.add_operation_log(f"设备找回自用: {user['borrower_name']}", device.name)
     
-    api_client._save_data()
+    
     
     # 通知保管人（如果存在且不是当前用户）
     if device.cabinet_number and device.cabinet_number != user['borrower_name']:
@@ -2844,7 +2862,7 @@ def api_found_device():
                 user_id=custodian_user.id,
                 user_name=custodian_user.borrower_name,
                 title="设备找回通知",
-                content=f"您保管的设备「{device.name}」{action_desc}。",
+                content=f"您保管的设备「{device.name}」{action_desc}",
                 device_name=device.name,
                 device_id=device.id,
                 notification_type="success"
@@ -2861,7 +2879,7 @@ def api_repair_device():
     data = request.json
     
     device_id = data.get('device_id')
-    action = data.get('action', 'return')  # return:保管人自用, transfer:转借他人
+    action = data.get('action', 'return')  # return:保管人自用 transfer:转借他人
     transfer_to = data.get('transfer_to', '').strip()
     
     device = api_client.get_device_by_id(device_id)
@@ -2918,7 +2936,7 @@ def api_repair_device():
             reason='设备已修复并转借',
             entry_source=EntrySource.USER.value
         )
-        api_client.add_operation_log(f"修复转借: {transfer_to}", device.name)
+        api_client.add_operation_log(f"修复转借 {transfer_to}", device.name)
     else:
         # 保管人自用
         # 修复，设备变为在库状态（保管人自用）
@@ -2947,8 +2965,8 @@ def api_repair_device():
         )
         api_client.add_operation_log(f"修复自用: {user['borrower_name']}", device.name)
     
-    api_client._records.append(record)
-    api_client._save_data()
+    DatabaseStore.save_record(record)
+    
     
     # 通知保管人（如果存在且不是当前用户）
     if device.cabinet_number and device.cabinet_number != user['borrower_name']:
@@ -2966,7 +2984,7 @@ def api_repair_device():
                 user_id=custodian_user.id,
                 user_name=custodian_user.borrower_name,
                 title="设备修复通知",
-                content=f"您保管的设备「{device.name}」{action_desc}。",
+                content=f"您保管的设备「{device.name}」{action_desc}",
                 device_name=device.name,
                 device_id=device.id,
                 notification_type="success"
@@ -3025,8 +3043,8 @@ def api_not_found():
             reason='设备未找到，退回给上一个借用人',
             entry_source=EntrySource.USER.value
         )
-        api_client._records.append(record)
-        api_client.add_operation_log(f"未找到退回: {user['borrower_name']} -> {previous_borrower}", device.name)
+        DatabaseStore.save_record(record)
+        api_client.add_operation_log(f"未找到退回 {user['borrower_name']} -> {previous_borrower}", device.name)
     else:
         # 没有上一个借用人，转为丢失状态
         device.status = DeviceStatus.LOST
@@ -3049,10 +3067,10 @@ def api_not_found():
             reason='设备未找到，转为丢失状态',
             entry_source=EntrySource.USER.value
         )
-        api_client._records.append(record)
+        DatabaseStore.save_record(record)
         api_client.add_operation_log(f"未找到转丢失: {user['borrower_name']}", device.name)
     
-    api_client._save_data()
+    
     return jsonify({'success': True, 'message': '操作成功'})
 
 
@@ -3101,9 +3119,9 @@ def api_not_found_direct():
         reason='设备未找到，标记为丢失，不在任何人名下',
         entry_source=EntrySource.USER.value
     )
-    api_client._records.append(record)
-    api_client.add_operation_log(f"未找到标记丢失: {user['borrower_name']}", device.name)
-    api_client._save_data()
+    DatabaseStore.save_record(record)
+    api_client.add_operation_log(f"未找到标记丢失 {user['borrower_name']}", device.name)
+    
     
     return jsonify({'success': True, 'message': '已标记为丢失'})
 
@@ -3167,16 +3185,16 @@ def api_transfer_custodian():
         reason='设备转让保管人',
         entry_source=EntrySource.USER.value
     )
-    api_client._records.append(record)
-    api_client.add_operation_log(f"转让保管人: {original_custodian} -> {new_custodian}", device.name)
-    api_client._save_data()
+    DatabaseStore.save_record(record)
+    api_client.add_operation_log(f"转让保管人 {original_custodian} -> {new_custodian}", device.name)
+    
     
     # 发送通知给新保管人
     api_client.add_notification(
         user_id=target_user.id,
         user_name=target_user.borrower_name,
         title="设备保管人变更通知",
-        content=f"设备「{device.name}」的保管人已从 {original_custodian} 转让给您。",
+        content=f"设备「{device.name}」的保管人已从 {original_custodian} 转让给您",
         device_name=device.name,
         device_id=device.id,
         notification_type="info"
@@ -3251,9 +3269,9 @@ def api_renew():
         reason=f'续借 {days} 天',
         entry_source=EntrySource.USER.value
     )
-    api_client._records.append(record)
-    api_client.add_operation_log(f"续借设备: {user['borrower_name']}, {days}天", device.name)
-    api_client._save_data()
+    DatabaseStore.save_record(record)
+    api_client.add_operation_log(f"续借设备 {user['borrower_name']}, {days}天", device.name)
+    
     
     # 通知保管人（如果存在且不是借用人自己）
     if device.cabinet_number and device.cabinet_number != user['borrower_name']:
@@ -3267,7 +3285,7 @@ def api_renew():
                 user_id=custodian_user.id,
                 user_name=custodian_user.borrower_name,
                 title="设备借用续期通知",
-                content=f"您保管的设备「{device.name}」已被借用人 {user['borrower_name']} 续期，新的预计归还日期：{device.expected_return_date.strftime('%Y-%m-%d')}。",
+                content=f"您保管的设备「{device.name}」已被借用人 {user['borrower_name']} 续期，新的预计归还日期：{device.expected_return_date.strftime('%Y-%m-%d')}",
                 device_name=device.name,
                 device_id=device.id,
                 notification_type="info"
