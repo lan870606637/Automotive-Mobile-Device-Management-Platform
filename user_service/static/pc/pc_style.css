@@ -1349,7 +1349,7 @@ a { text-decoration: none; color: inherit; }
 .announcement-scroller {
     display: inline-flex;
     align-items: center;
-    animation: scroll-announcement 25s linear infinite;
+    animation: scroll-announcement 40s linear infinite;
     will-change: transform;
 }
 
