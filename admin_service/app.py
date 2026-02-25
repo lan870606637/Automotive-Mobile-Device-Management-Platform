@@ -606,6 +606,9 @@ def admin_pc_remarks():
     page = request.args.get('page', 1, type=int)
     per_page = 20
     
+    # 重新加载数据以获取最新备注（解决多服务数据同步问题）
+    api_client.reload_data()
+    
     # 获取所有备注
     all_remarks = api_client.get_remarks()
     
@@ -623,6 +626,18 @@ def admin_pc_remarks():
                 'device_id': remark.device_id,
                 'device_name': device.name,
                 'device_type': remark.device_type or device.device_type.value,
+                'content': remark.content,
+                'creator': remark.creator,
+                'create_time': remark.create_time.strftime('%Y-%m-%d %H:%M:%S'),
+                'is_inappropriate': remark.is_inappropriate
+            })
+        else:
+            # 设备已删除或不存在，仍然显示备注
+            processed_remarks.append({
+                'id': remark.id,
+                'device_id': remark.device_id,
+                'device_name': '[已删除设备]',
+                'device_type': remark.device_type or '未知',
                 'content': remark.content,
                 'creator': remark.creator,
                 'create_time': remark.create_time.strftime('%Y-%m-%d %H:%M:%S'),
@@ -745,6 +760,24 @@ def api_device_remind(device_id):
         operator=session.get('admin_name', '管理员')
     )
     
+    # 通知保管人（如果存在且不是借用人）
+    if device.cabinet_number and device.cabinet_number != device.borrower:
+        custodian_user = None
+        for u in api_client._users:
+            if u.borrower_name == device.cabinet_number:
+                custodian_user = u
+                break
+        if custodian_user:
+            api_client.add_notification(
+                user_id=custodian_user.id,
+                user_name=custodian_user.borrower_name,
+                title="设备逾期归还提醒",
+                content=f"您保管的设备「{device.name}」已被借用人 {device.borrower} 逾期，请协助催促归还。",
+                device_name=device.name,
+                device_id=device.id,
+                notification_type="warning"
+            )
+    
     api_client.add_operation_log(f"发送归还提醒给: {device.borrower}", device.name)
     
     return jsonify({'success': True, 'message': '提醒已发送'})
@@ -774,6 +807,23 @@ def api_overdue_remind_all():
                             borrower=device.borrower,
                             operator=session.get('admin_name', '管理员')
                         )
+                        # 通知保管人（如果存在且不是借用人）
+                        if device.cabinet_number and device.cabinet_number != device.borrower:
+                            custodian_user = None
+                            for u in api_client._users:
+                                if u.borrower_name == device.cabinet_number:
+                                    custodian_user = u
+                                    break
+                            if custodian_user:
+                                api_client.add_notification(
+                                    user_id=custodian_user.id,
+                                    user_name=custodian_user.borrower_name,
+                                    title="设备逾期归还提醒",
+                                    content=f"您保管的设备「{device.name}」已被借用人 {device.borrower} 逾期，请协助催促归还。",
+                                    device_name=device.name,
+                                    device_id=device.id,
+                                    notification_type="warning"
+                                )
                         remind_count += 1
                         reminded_borrowers.add(device.borrower)
                         api_client.add_operation_log(f"批量提醒: {device.borrower}", device.name)
@@ -1293,6 +1343,13 @@ def api_admin_borrow(device_id):
     if not borrower:
         return jsonify({'success': False, 'message': '请选择借用人'})
 
+    # 获取设备信息，记录原借用人
+    device = api_client.get_device(device_id)
+    if not device:
+        return jsonify({'success': False, 'message': '设备不存在'})
+    
+    original_borrower = device.borrower if device.status == DeviceStatus.BORROWED else None
+
     try:
         success = api_client.borrow_device(
             device_id=device_id,
@@ -1305,12 +1362,47 @@ def api_admin_borrow(device_id):
         if success:
             device = api_client.get_device(device_id)
             if device:
+                # 1. 通知新借用人
                 api_client.notify_borrow(
                     device_id=device_id,
                     device_name=device.name,
                     borrower=borrower,
                     operator=session.get('admin_name', '管理员')
                 )
+                # 2. 通知原借用人（如果设备之前被借用且原借用人不是新借用人）
+                if original_borrower and original_borrower != borrower:
+                    original_user = None
+                    for u in api_client._users:
+                        if u.borrower_name == original_borrower:
+                            original_user = u
+                            break
+                    if original_user:
+                        api_client.add_notification(
+                            user_id=original_user.id,
+                            user_name=original_user.borrower_name,
+                            title="设备被转借通知",
+                            content=f"您借用的设备「{device.name}」已被管理员借出给 {borrower}。",
+                            device_name=device.name,
+                            device_id=device.id,
+                            notification_type="warning"
+                        )
+                # 3. 通知保管人（如果保管人不是借用人自己）
+                if device.cabinet_number and device.cabinet_number != borrower:
+                    custodian_user = None
+                    for u in api_client._users:
+                        if u.borrower_name == device.cabinet_number:
+                            custodian_user = u
+                            break
+                    if custodian_user:
+                        api_client.add_notification(
+                            user_id=custodian_user.id,
+                            user_name=custodian_user.borrower_name,
+                            title="设备被借用通知",
+                            content=f"您保管的设备「{device.name}」已被管理员借出给 {borrower}。",
+                            device_name=device.name,
+                            device_id=device.id,
+                            notification_type="info"
+                        )
     except ValueError as e:
         return jsonify({'success': False, 'message': str(e)})
 
@@ -1328,9 +1420,12 @@ def api_admin_return(device_id):
     if not device:
         return jsonify({'success': False, 'message': '设备不存在'})
 
+    # 记录原借用人和保管人
+    original_borrower = device.borrower
+    original_custodian = device.cabinet_number
+
     # 清空借用信息
     device.status = DeviceStatus.IN_STOCK
-    original_borrower = device.borrower
     device.borrower = ''
     device.phone = ''
     device.borrow_time = None
@@ -1358,6 +1453,7 @@ def api_admin_return(device_id):
     api_client._save_data()
 
     # 发送通知
+    # 1. 通知原借用人
     if original_borrower:
         api_client.notify_return(
             device_id=device_id,
@@ -1365,6 +1461,23 @@ def api_admin_return(device_id):
             borrower=original_borrower,
             operator=session.get('admin_name', '管理员')
         )
+    # 2. 通知保管人（如果保管人不是原借用人）
+    if original_custodian and original_custodian != original_borrower:
+        custodian_user = None
+        for u in api_client._users:
+            if u.borrower_name == original_custodian:
+                custodian_user = u
+                break
+        if custodian_user:
+            api_client.add_notification(
+                user_id=custodian_user.id,
+                user_name=custodian_user.borrower_name,
+                title="设备强制归还通知",
+                content=f"您保管的设备「{device.name}」已被管理员从 {original_borrower or '无'} 处强制归还。",
+                device_name=device.name,
+                device_id=device.id,
+                notification_type="info"
+            )
 
     return jsonify({'success': True, 'message': '归还成功'})
 
@@ -1424,6 +1537,23 @@ def api_admin_transfer(device_id):
         new_borrower=new_borrower,
         operator=session.get('admin_name', '管理员')
     )
+    # 通知保管人（如果保管人不是转借双方）
+    if device.cabinet_number and device.cabinet_number != original_borrower and device.cabinet_number != new_borrower:
+        custodian_user = None
+        for u in api_client._users:
+            if u.borrower_name == device.cabinet_number:
+                custodian_user = u
+                break
+        if custodian_user:
+            api_client.add_notification(
+                user_id=custodian_user.id,
+                user_name=custodian_user.borrower_name,
+                title="设备转借通知",
+                content=f"您保管的设备「{device.name}」已被管理员从 {original_borrower} 转借给 {new_borrower}。",
+                device_name=device.name,
+                device_id=device.id,
+                notification_type="info"
+            )
 
     return jsonify({'success': True, 'message': '转借成功'})
 

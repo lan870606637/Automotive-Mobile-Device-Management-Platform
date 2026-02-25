@@ -905,6 +905,7 @@ class APIClient:
     
     def verify_admin_login(self, username: str, password: str) -> Optional[dict]:
         """验证管理员登录"""
+        # 1. 检查传统管理员表
         for admin in self._admins:
             if admin.username == username and admin.password == password:
                 return {
@@ -912,6 +913,18 @@ class APIClient:
                     'name': admin.username,
                     'username': admin.username
                 }
+        
+        # 2. 检查被指定为管理员的用户（通过借用人名称或手机号登录）
+        for user in self._users:
+            if user.is_admin and not user.is_frozen:
+                # 支持借用人名称或手机号作为账号
+                if (user.borrower_name == username or user.phone == username) and user.password == password:
+                    return {
+                        'id': user.id,
+                        'name': user.borrower_name,
+                        'username': user.borrower_name
+                    }
+        
         return None
     
     def get_users(self) -> List[User]:
@@ -1145,7 +1158,8 @@ class APIClient:
         else:
             if status_changed:
                 self.add_operation_log(f"状态变更: {original_status.value} -> {device.status.value}", device.name)
-                # 如果设备状态变更，且有借用人，发送通知
+                # 如果设备状态变更，通知相关人
+                # 1. 通知借用人（如果存在）
                 if original_borrower:
                     self.notify_status_change(
                         device_id=device.id,
@@ -1154,17 +1168,76 @@ class APIClient:
                         new_status=device.status.value,
                         operator=operator
                     )
-                # 如果是保管人变更，也通知保管人
-                elif device.cabinet_number and device.cabinet_number != original_custodian:
-                    self.notify_status_change(
-                        device_id=device.id,
-                        device_name=device.name,
-                        borrower=device.cabinet_number,
-                        new_status=device.status.value,
-                        operator=operator
-                    )
+                # 2. 通知保管人（如果存在且不是借用人）
+                if device.cabinet_number and device.cabinet_number != original_borrower:
+                    custodian_user = None
+                    for user in self._users:
+                        if user.borrower_name == device.cabinet_number:
+                            custodian_user = user
+                            break
+                    if custodian_user:
+                        self.add_notification(
+                            user_id=custodian_user.id,
+                            user_name=custodian_user.borrower_name,
+                            title=f"设备{device.status.value}通知",
+                            content=f"您保管的设备「{device.name}」已被管理员设置为「{device.status.value}」状态。",
+                            device_name=device.name,
+                            device_id=device.id,
+                            notification_type="warning"
+                        )
             elif custodian_changed:
                 self.add_operation_log(f"保管人变更: {original_custodian} -> {device.cabinet_number}", device.name)
+                # 通知原保管人（如果存在且不是新保管人）
+                if original_custodian and original_custodian != device.cabinet_number:
+                    original_custodian_user = None
+                    for user in self._users:
+                        if user.borrower_name == original_custodian:
+                            original_custodian_user = user
+                            break
+                    if original_custodian_user:
+                        self.add_notification(
+                            user_id=original_custodian_user.id,
+                            user_name=original_custodian_user.borrower_name,
+                            title="设备保管人变更通知",
+                            content=f"您保管的设备「{device.name}」的保管人已变更为 {device.cabinet_number or '无'}。",
+                            device_name=device.name,
+                            device_id=device.id,
+                            notification_type="warning"
+                        )
+                # 通知新保管人（如果存在且不是原保管人）
+                if device.cabinet_number and device.cabinet_number != original_custodian:
+                    new_custodian_user = None
+                    for user in self._users:
+                        if user.borrower_name == device.cabinet_number:
+                            new_custodian_user = user
+                            break
+                    if new_custodian_user:
+                        self.add_notification(
+                            user_id=new_custodian_user.id,
+                            user_name=new_custodian_user.borrower_name,
+                            title="设备保管人变更通知",
+                            content=f"您已成为设备「{device.name}」的保管人。",
+                            device_name=device.name,
+                            device_id=device.id,
+                            notification_type="success"
+                        )
+                # 通知借用人（如果存在）
+                if device.borrower:
+                    borrower_user = None
+                    for user in self._users:
+                        if user.borrower_name == device.borrower:
+                            borrower_user = user
+                            break
+                    if borrower_user:
+                        self.add_notification(
+                            user_id=borrower_user.id,
+                            user_name=borrower_user.borrower_name,
+                            title="设备保管人变更通知",
+                            content=f"您借用的设备「{device.name}」的保管人已变更为 {device.cabinet_number or '无'}。",
+                            device_name=device.name,
+                            device_id=device.id,
+                            notification_type="info"
+                        )
             else:
                 self.add_operation_log("编辑设备", device.name)
 
@@ -1327,13 +1400,27 @@ class APIClient:
 
     # ==================== 备注管理 ====================
     
-    def get_remarks(self, device_id: Optional[str] = None, device_type: str = None) -> List[UserRemark]:
-        """获取备注列表"""
+    def get_remarks(self, device_id: Optional[str] = None, device_type: str = None, 
+                    exclude_inappropriate: bool = False) -> List[UserRemark]:
+        """获取备注列表
+        
+        Args:
+            device_id: 设备ID，可选
+            device_type: 设备类型，可选
+            exclude_inappropriate: 是否排除不当备注（用户端应设为True）
+        """
+        remarks = self._remarks
+        
+        # 过滤不当备注
+        if exclude_inappropriate:
+            remarks = [r for r in remarks if not r.is_inappropriate]
+        
+        # 按设备ID和类型过滤
         if device_id:
             if device_type:
-                return [r for r in self._remarks if r.device_id == device_id and r.device_type == device_type]
-            return [r for r in self._remarks if r.device_id == device_id]
-        return self._remarks
+                return [r for r in remarks if r.device_id == device_id and r.device_type == device_type]
+            return [r for r in remarks if r.device_id == device_id]
+        return remarks
     
     def delete_remark(self, remark_id: str) -> bool:
         """删除备注"""
@@ -1536,24 +1623,25 @@ class APIClient:
 
     def notify_transfer(self, device_id: str, device_name: str, original_borrower: str, new_borrower: str, operator: str):
         """通知相关用户设备已转借"""
-        # 通知原借用人
-        original_user_id = None
-        for user in self._users:
-            if user.borrower_name == original_borrower:
-                original_user_id = user.id
-                break
+        # 通知原借用人（通知设备被转借出去了）
+        if original_borrower:
+            original_user_id = None
+            for user in self._users:
+                if user.borrower_name == original_borrower:
+                    original_user_id = user.id
+                    break
 
-        if original_user_id:
-            content = f"您借用的设备「{device_name}」已被 {operator} 转借给 {new_borrower}。"
-            self.add_notification(
-                user_id=original_user_id,
-                user_name=original_borrower,
-                title="设备转借通知",
-                content=content,
-                device_name=device_name,
-                device_id=device_id,
-                notification_type="warning"
-            )
+            if original_user_id:
+                content = f"您借用的设备「{device_name}」已被 {operator} 转借给 {new_borrower}。"
+                self.add_notification(
+                    user_id=original_user_id,
+                    user_name=original_borrower,
+                    title="设备转借通知",
+                    content=content,
+                    device_name=device_name,
+                    device_id=device_id,
+                    notification_type="warning"
+                )
 
         # 通知新借用人
         new_user_id = None

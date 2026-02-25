@@ -134,7 +134,7 @@
             <header class="content-header">
                 <h1>设备管理</h1>
                 <div class="header-actions">
-                    <button class="btn btn-secondary" onclick="showImportModal()">📥 批量导入</button>
+                    <button class="btn btn-import" onclick="showImportModal()">📥 批量导入</button>
                     <a href="/admin/pc/device/add" class="btn btn-primary">➕ 新增设备</a>
                 </div>
             </header>
@@ -1139,18 +1139,18 @@
         function showImportModal() {
             const modal = document.createElement('div');
             modal.id = 'importModal';
-            modal.className = 'modal';
+            modal.className = 'modal import-modal';
             modal.style.display = 'flex';
             modal.innerHTML = `
-                <div class="modal-dialog" style="max-width: 500px;">
-                    <div class="modal-header" style="padding: 20px 24px; border-bottom: 1px solid #e8e8e8;">
+                <div class="modal-dialog">
+                    <div class="modal-header">
                         <h3>📥 批量导入设备</h3>
                         <button class="modal-close" onclick="closeImportModal()">&times;</button>
                     </div>
-                    <div class="modal-body" style="padding: 24px;">
-                        <div class="form-group" style="margin-bottom: 20px;">
-                            <label style="display: block; margin-bottom: 8px; font-weight: 500;">选择设备类型</label>
-                            <select id="importDeviceType" class="form-control" style="width: 100%; padding: 8px; border: 1px solid #d9d9d9; border-radius: 4px;">
+                    <div class="modal-body">
+                        <div class="import-form-group">
+                            <label>选择设备类型</label>
+                            <select id="importDeviceType" class="import-type-select">
                                 <option value="">请选择设备类型</option>
                                 <option value="car">🚗 车机</option>
                                 <option value="instrument">📊 仪表</option>
@@ -1159,28 +1159,31 @@
                                 <option value="other">🔧 其它设备</option>
                             </select>
                         </div>
-                        <div class="form-group" style="margin-bottom: 20px;">
-                            <label style="display: block; margin-bottom: 8px; font-weight: 500;">下载模板</label>
-                            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                                <a href="/admin/template/car" class="btn btn-sm btn-secondary template-link" data-type="car">车机模板</a>
-                                <a href="/admin/template/instrument" class="btn btn-sm btn-secondary template-link" data-type="instrument">仪表模板</a>
-                                <a href="/admin/template/phone" class="btn btn-sm btn-secondary template-link" data-type="phone">手机模板</a>
-                                <a href="/admin/template/sim" class="btn btn-sm btn-secondary template-link" data-type="sim">手机卡模板</a>
-                                <a href="/admin/template/other" class="btn btn-sm btn-secondary template-link" data-type="other">其它设备模板</a>
+                        <div class="import-form-group">
+                            <div class="import-template-section">
+                                <label>下载模板</label>
+                                <div class="import-template-links">
+                                    <a href="/admin/template/car" class="template-btn" data-type="car">🚗 车机模板</a>
+                                    <a href="/admin/template/instrument" class="template-btn" data-type="instrument">📊 仪表模板</a>
+                                    <a href="/admin/template/phone" class="template-btn" data-type="phone">📱 手机模板</a>
+                                    <a href="/admin/template/sim" class="template-btn" data-type="sim">📲 手机卡模板</a>
+                                    <a href="/admin/template/other" class="template-btn" data-type="other">🔧 其它设备模板</a>
+                                </div>
+                                <p class="import-template-hint">请先下载对应类型的模板，填入数据后再上传</p>
                             </div>
-                            <p style="margin-top: 8px; font-size: 12px; color: #666;">请先下载对应类型的模板，填入数据后再上传</p>
                         </div>
-                        <div class="form-group">
-                            <label style="display: block; margin-bottom: 8px; font-weight: 500;">上传Excel文件</label>
+                        <div class="import-form-group">
+                            <label>上传Excel文件</label>
                             <input type="file" id="importFile" accept=".xlsx,.xls" style="display: none;">
-                            <button type="button" class="btn btn-secondary" onclick="document.getElementById('importFile').click()" style="width: 100%; padding: 20px; border: 2px dashed #d9d9d9; background: #fafafa;">
-                                <span style="font-size: 24px;">📁</span>
-                                <p style="margin: 8px 0 0; color: #666;">点击选择Excel文件</p>
-                                <p id="selectedFileName" style="margin: 4px 0 0; font-size: 12px; color: #1890ff;"></p>
-                            </button>
+                            <div class="import-upload-area" onclick="document.getElementById('importFile').click()">
+                                <span class="import-upload-icon">📁</span>
+                                <p class="import-upload-text">点击选择Excel文件</p>
+                                <p class="import-upload-hint">支持 .xlsx, .xls 格式</p>
+                            </div>
+                            <div id="selectedFileName" class="import-file-name" style="display: none;"></div>
                         </div>
                     </div>
-                    <div class="modal-footer" style="padding: 16px 24px; border-top: 1px solid #e8e8e8; background: #fafafa;">
+                    <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" onclick="closeImportModal()">取消</button>
                         <button type="button" class="btn btn-primary" onclick="importDevices()">开始导入</button>
                     </div>
@@ -1191,23 +1194,23 @@
             // 文件选择事件
             document.getElementById('importFile').addEventListener('change', function(e) {
                 const file = e.target.files[0];
+                const fileNameDiv = document.getElementById('selectedFileName');
                 if (file) {
-                    document.getElementById('selectedFileName').textContent = '已选择: ' + file.name;
+                    fileNameDiv.textContent = '已选择: ' + file.name;
+                    fileNameDiv.style.display = 'flex';
+                } else {
+                    fileNameDiv.style.display = 'none';
                 }
             });
 
             // 设备类型改变时高亮对应模板按钮
             document.getElementById('importDeviceType').addEventListener('change', function() {
                 const type = this.value;
-                document.querySelectorAll('.template-link').forEach(link => {
+                document.querySelectorAll('.template-btn').forEach(link => {
                     if (link.dataset.type === type) {
-                        link.style.background = '#1890ff';
-                        link.style.color = '#fff';
-                        link.style.borderColor = '#1890ff';
+                        link.classList.add('active');
                     } else {
-                        link.style.background = '';
-                        link.style.color = '';
-                        link.style.borderColor = '';
+                        link.classList.remove('active');
                     }
                 });
             });

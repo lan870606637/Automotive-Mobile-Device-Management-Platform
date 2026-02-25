@@ -428,9 +428,24 @@
                 let content = notification.content || '';
                 const title = notification.title || '通知';
                 
-                // 如果有标题，显示标题+内容
+                // 根据通知类型设置标题颜色
+                let titleColor = '#333'; // 默认黑色
+                const notificationType = notification.notification_type || '';
+                const titleLower = title.toLowerCase();
+                
+                if (notificationType === 'error' || titleLower.includes('丢失') || titleLower.includes('强制归还')) {
+                    titleColor = '#f56c6c'; // 红色 - 错误/丢失/强制归还
+                } else if (notificationType === 'warning' || titleLower.includes('逾期') || titleLower.includes('损坏') || titleLower.includes('转借')) {
+                    titleColor = '#e6a23c'; // 橙色 - 警告/逾期/损坏/转借
+                } else if (notificationType === 'success' || titleLower.includes('归还') || titleLower.includes('借出')) {
+                    titleColor = '#67c23a'; // 绿色 - 成功/归还/借出
+                } else if (titleLower.includes('续期') || titleLower.includes('变更')) {
+                    titleColor = '#409eff'; // 蓝色 - 续期/变更
+                }
+                
+                // 如果有标题，显示标题+内容（带颜色）
                 if (title && title !== '通知') {
-                    content = `<strong>${title}</strong>：${content}`;
+                    content = `<strong style="color: ${titleColor};">${title}</strong>：${content}`;
                 }
                 
                 // 如果有设备信息，添加到内容中
