@@ -19,8 +19,6 @@ def extract_user_from_borrower(borrower_str, op_type=''):
     - 直接用户名: "张三"
     - 转借格式: "张三——>李四"
     - 被转借格式: "被转借：张三——>李四"
-    
-    过滤掉:
     - 保管人代还: "保管人代还：xxx"
     - nan值
     """
@@ -29,10 +27,15 @@ def extract_user_from_borrower(borrower_str, op_type=''):
     
     borrower_str = str(borrower_str).strip()
     
-    # 过滤特殊格式
-    if borrower_str.startswith('保管人代还：'):
-        return None
+    # 过滤nan值
     if borrower_str.lower() == 'nan' or borrower_str == '':
+        return None
+    
+    # 处理保管人代还格式 - 返回实际借用人
+    if borrower_str.startswith('保管人代还：'):
+        user = borrower_str.replace('保管人代还：', '').strip()
+        if user and user.lower() != 'nan':
+            return user
         return None
     
     # 处理转借格式 - 对于转借操作，返回接收方

@@ -686,7 +686,19 @@ def my_records():
         return False
     
     borrow_count = len([r for r in my_records_list if is_borrow_record(r)])
-    return_count = len([r for r in my_records_list if '归还' in r.operation_type.value])
+    
+    # 归还次数统计（排除保管人代还且代还人不是当前用户的记录）
+    def is_return_record(record):
+        if record.operation_type.value not in ['归还', '强制归还']:
+            return False
+        borrower_str = record.borrower or ''
+        # 如果是保管人代还，只统计实际借用人是当前用户的记录
+        if borrower_str.startswith('保管人代还：'):
+            actual_user = borrower_str.replace('保管人代还：', '').strip()
+            return actual_user == user['borrower_name']
+        return True
+    
+    return_count = len([r for r in my_records_list if is_return_record(r)])
     
     # 分页
     page = request.args.get('page', 1, type=int)
@@ -1600,18 +1612,26 @@ def pc_records():
     end = start + per_page
     paginated_records = my_records_list[start:end]
 
-    # 统计 - 借用次数包含借出和转借（转给自己或别人转给我）
+    # 统计 - 借用次数包含借出和转借（只统计作为接收方的记录）
     def is_borrow_record(record):
         op_type = record.operation_type.value
+        borrower_str = record.borrower or ''
+        
         if '借出' in op_type:
-            return True
-        if op_type == '转借':
-            # 检查是否是转给我自己的记录（operator是我 或 borrower字段中包含我作为接收方）
-            if record.operator == user['borrower_name']:
+            # 借出记录：检查当前用户是否是借用人
+            if '——>' in borrower_str:
+                parts = borrower_str.split('——>')
+                if len(parts) > 1:
+                    to_user = parts[1].strip()
+                    if to_user == user['borrower_name']:
+                        return True
+            elif borrower_str.strip() == user['borrower_name']:
                 return True
-            # 解析borrower字段，检查我是否是接收方
-            if '——>' in record.borrower:
-                parts = record.borrower.split('——>')
+                
+        elif op_type == '转借':
+            # 转借记录：只统计接收方（转入方）
+            if '——>' in borrower_str:
+                parts = borrower_str.split('——>')
                 if len(parts) > 1:
                     to_user = parts[1].strip()
                     if to_user == user['borrower_name']:
@@ -1619,7 +1639,19 @@ def pc_records():
         return False
     
     borrow_count = len([r for r in my_records_list if is_borrow_record(r)])
-    return_count = len([r for r in my_records_list if '归还' in r.operation_type.value])
+    
+    # 归还次数统计（排除保管人代还且代还人不是当前用户的记录）
+    def is_return_record(record):
+        if record.operation_type.value not in ['归还', '强制归还']:
+            return False
+        borrower_str = record.borrower or ''
+        # 如果是保管人代还，只统计实际借用人是当前用户的记录
+        if borrower_str.startswith('保管人代还：'):
+            actual_user = borrower_str.replace('保管人代还：', '').strip()
+            return actual_user == user['borrower_name']
+        return True
+    
+    return_count = len([r for r in my_records_list if is_return_record(r)])
 
     stats = get_device_stats()
 
@@ -1644,9 +1676,9 @@ def pc_all_records():
     # 获取所有记录
     all_records_list = api_client.get_records()
     
-    # 统计借用和归还次数
-    borrow_count = len([r for r in all_records_list if '借出' in r.operation_type.value])
-    return_count = len([r for r in all_records_list if '归还' in r.operation_type.value])
+    # 统计借用和归还次数（借出+转借都算作借用，归还+强制归还都算作归还）
+    borrow_count = len([r for r in all_records_list if '借出' in r.operation_type.value or r.operation_type.value == '转借'])
+    return_count = len([r for r in all_records_list if r.operation_type.value in ['归还', '强制归还']])
     
     # 分页
     page = request.args.get('page', 1, type=int)

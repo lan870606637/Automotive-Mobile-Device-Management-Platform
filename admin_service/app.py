@@ -595,6 +595,87 @@ def admin_pc_announcements():
                          overdue_count=get_overdue_count())
 
 
+@app.route('/admin/pc/remarks')
+@admin_required
+def admin_pc_remarks():
+    """PC端备注管理页面"""
+    # 获取筛选参数
+    search = request.args.get('search', '').strip()
+    device_type_filter = request.args.get('device_type', '')
+    status_filter = request.args.get('status', '')
+    page = request.args.get('page', 1, type=int)
+    per_page = 20
+    
+    # 获取所有备注
+    all_remarks = api_client.get_remarks()
+    
+    # 获取设备信息用于显示设备名称
+    all_devices = api_client.get_all_devices()
+    device_map = {d.id: d for d in all_devices}
+    
+    # 处理备注数据
+    processed_remarks = []
+    for remark in all_remarks:
+        device = device_map.get(remark.device_id)
+        if device:
+            processed_remarks.append({
+                'id': remark.id,
+                'device_id': remark.device_id,
+                'device_name': device.name,
+                'device_type': remark.device_type or device.device_type.value,
+                'content': remark.content,
+                'creator': remark.creator,
+                'create_time': remark.create_time.strftime('%Y-%m-%d %H:%M:%S'),
+                'is_inappropriate': remark.is_inappropriate
+            })
+    
+    # 搜索过滤
+    if search:
+        processed_remarks = [r for r in processed_remarks 
+                            if search.lower() in r['device_name'].lower() 
+                            or search.lower() in r['content'].lower()
+                            or search.lower() in r['creator'].lower()]
+    
+    # 设备类型过滤
+    if device_type_filter:
+        processed_remarks = [r for r in processed_remarks if r['device_type'] == device_type_filter]
+    
+    # 状态过滤
+    if status_filter == 'normal':
+        processed_remarks = [r for r in processed_remarks if not r['is_inappropriate']]
+    elif status_filter == 'inappropriate':
+        processed_remarks = [r for r in processed_remarks if r['is_inappropriate']]
+    
+    # 统计
+    total_count = len(processed_remarks)
+    normal_count = len([r for r in processed_remarks if not r['is_inappropriate']])
+    inappropriate_count = len([r for r in processed_remarks if r['is_inappropriate']])
+    
+    # 今日新增统计
+    today = datetime.now().strftime('%Y-%m-%d')
+    today_count = len([r for r in processed_remarks if r['create_time'].startswith(today)])
+    
+    # 分页
+    total_pages = (total_count + per_page - 1) // per_page
+    start = (page - 1) * per_page
+    end = start + per_page
+    paginated_remarks = processed_remarks[start:end]
+    
+    return render_template('admin/pc/remarks.html',
+                         remarks=paginated_remarks,
+                         total_count=total_count,
+                         normal_count=normal_count,
+                         inappropriate_count=inappropriate_count,
+                         today_count=today_count,
+                         page=page,
+                         total_pages=total_pages,
+                         search=search,
+                         device_type_filter=device_type_filter,
+                         status_filter=status_filter,
+                         admin_name=session.get('admin_name', '管理员'),
+                         overdue_count=get_overdue_count())
+
+
 @app.route('/api/devices/overdue', methods=['GET'])
 @admin_required
 def api_devices_overdue():
@@ -1477,6 +1558,47 @@ def api_logs():
     limit = request.args.get('limit', 100, type=int)
     logs = api_client.get_admin_logs(limit=limit)
     return jsonify(logs)
+
+
+# ==================== 备注管理API ====================
+
+@app.route('/api/remarks/<remark_id>', methods=['DELETE'])
+@admin_required
+def api_delete_remark(remark_id):
+    """删除备注API"""
+    success = api_client.delete_remark(remark_id)
+    if success:
+        api_client.add_operation_log(f"删除备注", f"备注ID: {remark_id}")
+        return jsonify({'success': True, 'message': '备注已删除'})
+    else:
+        return jsonify({'success': False, 'message': '备注不存在或删除失败'})
+
+
+@app.route('/api/remarks/<remark_id>/mark-inappropriate', methods=['POST'])
+@admin_required
+def api_mark_inappropriate(remark_id):
+    """标记备注为不当内容API"""
+    success = api_client.mark_inappropriate(remark_id)
+    if success:
+        api_client.add_operation_log(f"标记备注为不当内容", f"备注ID: {remark_id}")
+        return jsonify({'success': True, 'message': '已标记为不当内容'})
+    else:
+        return jsonify({'success': False, 'message': '备注不存在'})
+
+
+@app.route('/api/remarks/<remark_id>/unmark-inappropriate', methods=['POST'])
+@admin_required
+def api_unmark_inappropriate(remark_id):
+    """取消备注不当标记API"""
+    # 获取所有备注
+    remarks = api_client.get_remarks()
+    for remark in remarks:
+        if remark.id == remark_id:
+            remark.is_inappropriate = False
+            api_client._save_data()
+            api_client.add_operation_log(f"取消备注不当标记", f"备注ID: {remark_id}")
+            return jsonify({'success': True, 'message': '已取消不当标记'})
+    return jsonify({'success': False, 'message': '备注不存在'})
 
 
 @app.route('/api/notifications', methods=['GET'])

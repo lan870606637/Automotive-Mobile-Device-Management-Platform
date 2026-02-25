@@ -1,0 +1,567 @@
+<!-- 
+  电脑端后台管理 - 备注管理页面
+  功能：管理设备详情页中的用户备注内容
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>备注管理 - 车载测试设备管理系统</title>
+    <link rel="stylesheet" href="/static/admin/admin_pc.css">
+    <style>
+        .remarks-container {
+            padding: 20px;
+        }
+        .remark-item {
+            background: #fff;
+            border: 1px solid #e8e8e8;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+            transition: all 0.3s ease;
+        }
+        .remark-item:hover {
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .remark-item.inappropriate {
+            border-left: 4px solid #ff4d4f;
+            background: #fff1f0;
+        }
+        .remark-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .remark-device-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .device-icon {
+            font-size: 24px;
+        }
+        .device-name {
+            font-weight: 600;
+            font-size: 15px;
+            color: #262626;
+        }
+        .device-type {
+            font-size: 12px;
+            color: #8c8c8c;
+            background: #f5f5f5;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+        .remark-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .status-tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .status-tag.normal {
+            background: #f6ffed;
+            color: #52c41a;
+            border: 1px solid #b7eb8f;
+        }
+        .status-tag.inappropriate {
+            background: #fff1f0;
+            color: #ff4d4f;
+            border: 1px solid #ffa39e;
+        }
+        .remark-content {
+            font-size: 14px;
+            line-height: 1.6;
+            color: #595959;
+            margin-bottom: 12px;
+            padding: 12px;
+            background: #fafafa;
+            border-radius: 4px;
+        }
+        .remark-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+            color: #8c8c8c;
+        }
+        .remark-meta {
+            display: flex;
+            gap: 16px;
+        }
+        .remark-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .filter-bar {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+            padding: 16px;
+            background: #fff;
+            border-radius: 8px;
+            border: 1px solid #e8e8e8;
+        }
+        .search-input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #d9d9d9;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .filter-select {
+            width: 150px;
+            padding: 8px 12px;
+            border: 1px solid #d9d9d9;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: #fff;
+            border-radius: 8px;
+            padding: 16px;
+            border: 1px solid #e8e8e8;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .stat-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+        }
+        .stat-icon.total {
+            background: #e6f7ff;
+        }
+        .stat-icon.normal {
+            background: #f6ffed;
+        }
+        .stat-icon.inappropriate {
+            background: #fff1f0;
+        }
+        .stat-icon.today {
+            background: #fff7e6;
+        }
+        .stat-info {
+            display: flex;
+            flex-direction: column;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: 600;
+            color: #262626;
+        }
+        .stat-label {
+            font-size: 13px;
+            color: #8c8c8c;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #8c8c8c;
+        }
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+        }
+        .btn-sm {
+            padding: 4px 12px;
+            font-size: 13px;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+        }
+        .modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-content {
+            background: white;
+            border-radius: 8px;
+            width: 500px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .modal-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .modal-header h3 {
+            margin: 0;
+            font-size: 16px;
+        }
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            color: #999;
+        }
+        .modal-body {
+            padding: 20px;
+        }
+        .modal-footer {
+            padding: 16px 20px;
+            border-top: 1px solid #f0f0f0;
+            text-align: right;
+        }
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            margin-top: 20px;
+            padding: 16px;
+        }
+        .pagination button {
+            padding: 6px 12px;
+            border: 1px solid #d9d9d9;
+            background: #fff;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .pagination button:hover:not(:disabled) {
+            border-color: #1890ff;
+            color: #1890ff;
+        }
+        .pagination button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .pagination .current-page {
+            padding: 6px 12px;
+            background: #1890ff;
+            color: #fff;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body class="pc-admin-body">
+    <div class="pc-admin-wrapper">
+        <!-- 侧边栏 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <span class="logo">🔧</span>
+                <span class="logo-text">后台管理</span>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="/admin/pc/dashboard" class="nav-item">
+                    <span class="nav-icon">📊</span>
+                    <span>仪表盘</span>
+                </a>
+                <a href="/admin/pc/devices" class="nav-item">
+                    <span class="nav-icon">📱</span>
+                    <span>设备管理</span>
+                </a>
+                <a href="/admin/pc/users" class="nav-item">
+                    <span class="nav-icon">👥</span>
+                    <span>用户管理</span>
+                </a>
+                <a href="/admin/pc/records" class="nav-item">
+                    <span class="nav-icon">📋</span>
+                    <span>记录查询</span>
+                </a>
+                <a href="/admin/pc/logs" class="nav-item">
+                    <span class="nav-icon">📜</span>
+                    <span>操作日志</span>
+                </a>
+                <a href="/admin/pc/overdue" class="nav-item">
+                    <span class="nav-icon">⚠️</span>
+                    <span>过期未还</span>
+                    {% if overdue_count > 0 %}
+                    <span class="nav-badge">{{ overdue_count }}</span>
+                    {% endif %}
+                </a>
+                <a href="/admin/pc/announcements" class="nav-item">
+                    <span class="nav-icon">📢</span>
+                    <span>公告管理</span>
+                </a>
+                <a href="/admin/pc/remarks" class="nav-item active">
+                    <span class="nav-icon">📝</span>
+                    <span>备注管理</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <span>👤 {{ admin_name }}</span>
+                <a href="/admin/logout" class="logout-btn">退出</a>
+            </div>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <header class="content-header">
+                <h1>📝 备注管理</h1>
+                <div class="header-actions">
+                    <span style="color: #8c8c8c; font-size: 13px;">管理设备详情页中的用户备注内容</span>
+                </div>
+            </header>
+
+            <!-- 统计卡片 -->
+            <div class="stats-row">
+                <div class="stat-card">
+                    <div class="stat-icon total">📝</div>
+                    <div class="stat-info">
+                        <span class="stat-value">{{ total_count }}</span>
+                        <span class="stat-label">备注总数</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon normal">✅</div>
+                    <div class="stat-info">
+                        <span class="stat-value">{{ normal_count }}</span>
+                        <span class="stat-label">正常备注</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon inappropriate">⚠️</div>
+                    <div class="stat-info">
+                        <span class="stat-value">{{ inappropriate_count }}</span>
+                        <span class="stat-label">不当备注</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon today">📅</div>
+                    <div class="stat-info">
+                        <span class="stat-value">{{ today_count }}</span>
+                        <span class="stat-label">今日新增</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 筛选栏 -->
+            <div class="filter-bar">
+                <input type="text" class="search-input" id="searchInput" placeholder="搜索设备名称、备注内容或创建人..." value="{{ search }}">
+                <select class="filter-select" id="filterType">
+                    <option value="">全部类型</option>
+                    <option value="车机" {{ 'selected' if device_type_filter == '车机' else '' }}>车机</option>
+                    <option value="仪表" {{ 'selected' if device_type_filter == '仪表' else '' }}>仪表</option>
+                    <option value="手机" {{ 'selected' if device_type_filter == '手机' else '' }}>手机</option>
+                    <option value="手机卡" {{ 'selected' if device_type_filter == '手机卡' else '' }}>手机卡</option>
+                    <option value="其它设备" {{ 'selected' if device_type_filter == '其它设备' else '' }}>其它设备</option>
+                </select>
+                <select class="filter-select" id="filterStatus">
+                    <option value="">全部状态</option>
+                    <option value="normal" {{ 'selected' if status_filter == 'normal' else '' }}>正常</option>
+                    <option value="inappropriate" {{ 'selected' if status_filter == 'inappropriate' else '' }}>不当</option>
+                </select>
+                <button class="btn btn-primary" onclick="applyFilters()">🔍 搜索</button>
+                <button class="btn btn-secondary" onclick="resetFilters()">重置</button>
+            </div>
+
+            <!-- 备注列表 -->
+            <div class="remarks-container">
+                {% if remarks %}
+                    {% for remark in remarks %}
+                    <div class="remark-item {{ 'inappropriate' if remark.is_inappropriate else '' }}" 
+                         data-device-type="{{ remark.device_type }}"
+                         data-status="{{ 'inappropriate' if remark.is_inappropriate else 'normal' }}">
+                        <div class="remark-header">
+                            <div class="remark-device-info">
+                                <span class="device-icon">
+                                    {% if remark.device_type == '车机' %}🚗
+                                    {% elif remark.device_type == '仪表' %}📊
+                                    {% elif remark.device_type == '手机' %}📱
+                                    {% elif remark.device_type == '手机卡' %}📲
+                                    {% else %}🔧{% endif %}
+                                </span>
+                                <div>
+                                    <div class="device-name">{{ remark.device_name }}</div>
+                                    <span class="device-type">{{ remark.device_type }}</span>
+                                </div>
+                            </div>
+                            <div class="remark-status">
+                                {% if remark.is_inappropriate %}
+                                <span class="status-tag inappropriate">不当内容</span>
+                                {% else %}
+                                <span class="status-tag normal">正常</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="remark-content">{{ remark.content }}</div>
+                        <div class="remark-footer">
+                            <div class="remark-meta">
+                                <span>👤 {{ remark.creator }}</span>
+                                <span>🕐 {{ remark.create_time }}</span>
+                            </div>
+                            <div class="remark-actions">
+                                <a href="/admin/pc/device/{{ remark.device_id }}" class="btn btn-sm btn-default">查看设备</a>
+                                {% if not remark.is_inappropriate %}
+                                <button class="btn btn-sm btn-warning" onclick="markInappropriate('{{ remark.id }}')">标记不当</button>
+                                {% else %}
+                                <button class="btn btn-sm btn-success" onclick="unmarkInappropriate('{{ remark.id }}')">取消标记</button>
+                                {% endif %}
+                                <button class="btn btn-sm btn-danger" onclick="deleteRemark('{{ remark.id }}')">删除</button>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+
+                    <!-- 分页 -->
+                    {% if total_pages > 1 %}
+                    <div class="pagination">
+                        <button onclick="goToPage({{ page - 1 }})" {{ 'disabled' if page <= 1 else '' }}>上一页</button>
+                        {% for p in range(1, total_pages + 1) %}
+                            {% if p == page %}
+                            <span class="current-page">{{ p }}</span>
+                            {% else %}
+                            <button onclick="goToPage({{ p }})">{{ p }}</button>
+                            {% endif %}
+                        {% endfor %}
+                        <button onclick="goToPage({{ page + 1 }})" {{ 'disabled' if page >= total_pages else '' }}>下一页</button>
+                    </div>
+                    {% endif %}
+                {% else %}
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📝</div>
+                        <p>暂无备注数据</p>
+                        <p style="font-size: 13px; color: #bfbfbf;">用户添加的备注将显示在这里</p>
+                    </div>
+                {% endif %}
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast提示 -->
+    <div id="toast" class="toast"></div>
+
+    <script>
+        // 应用筛选
+        function applyFilters() {
+            const search = document.getElementById('searchInput').value.trim();
+            const deviceType = document.getElementById('filterType').value;
+            const status = document.getElementById('filterStatus').value;
+            
+            let url = '/admin/pc/remarks?page=1';
+            if (search) url += '&search=' + encodeURIComponent(search);
+            if (deviceType) url += '&device_type=' + encodeURIComponent(deviceType);
+            if (status) url += '&status=' + encodeURIComponent(status);
+            
+            window.location.href = url;
+        }
+
+        // 重置筛选
+        function resetFilters() {
+            window.location.href = '/admin/pc/remarks';
+        }
+
+        // 跳转到指定页
+        function goToPage(page) {
+            const search = document.getElementById('searchInput').value.trim();
+            const deviceType = document.getElementById('filterType').value;
+            const status = document.getElementById('filterStatus').value;
+            
+            let url = '/admin/pc/remarks?page=' + page;
+            if (search) url += '&search=' + encodeURIComponent(search);
+            if (deviceType) url += '&device_type=' + encodeURIComponent(deviceType);
+            if (status) url += '&status=' + encodeURIComponent(status);
+            
+            window.location.href = url;
+        }
+
+        // 标记为不当内容
+        function markInappropriate(remarkId) {
+            if (!confirm('确定要将此备注标记为不当内容吗？')) return;
+            
+            fetch(`/api/remarks/${remarkId}/mark-inappropriate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(r => r.json())
+            .then(result => {
+                if (result.success) {
+                    showToast('已标记为不当内容', 'success');
+                    setTimeout(() => location.reload(), 500);
+                } else {
+                    showToast(result.message || '操作失败', 'error');
+                }
+            })
+            .catch(() => showToast('网络错误', 'error'));
+        }
+
+        // 取消不当标记
+        function unmarkInappropriate(remarkId) {
+            if (!confirm('确定要取消此备注的不当标记吗？')) return;
+            
+            fetch(`/api/remarks/${remarkId}/unmark-inappropriate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(r => r.json())
+            .then(result => {
+                if (result.success) {
+                    showToast('已取消不当标记', 'success');
+                    setTimeout(() => location.reload(), 500);
+                } else {
+                    showToast(result.message || '操作失败', 'error');
+                }
+            })
+            .catch(() => showToast('网络错误', 'error'));
+        }
+
+        // 删除备注
+        function deleteRemark(remarkId) {
+            if (!confirm('确定要删除此备注吗？此操作不可恢复。')) return;
+            
+            fetch(`/api/remarks/${remarkId}`, {
+                method: 'DELETE'
+            })
+            .then(r => r.json())
+            .then(result => {
+                if (result.success) {
+                    showToast('备注已删除', 'success');
+                    setTimeout(() => location.reload(), 500);
+                } else {
+                    showToast(result.message || '删除失败', 'error');
+                }
+            })
+            .catch(() => showToast('网络错误', 'error'));
+        }
+
+        // 显示Toast
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type} show`;
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        // 回车搜索
+        document.getElementById('searchInput')?.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                applyFilters();
+            }
+        });
+    </script>
+</body>
+</html>

@@ -906,6 +906,7 @@ class ExcelDataStore:
                     remark = UserRemark(
                         id=str(row['备注ID']),
                         device_id=str(row['设备ID']),
+                        device_type=str(row.get('设备类型', '')),
                         content=str(row['备注内容']),
                         creator=str(row['创建人']),
                         create_time=pd.to_datetime(row['创建时间']),
@@ -928,7 +929,7 @@ class ExcelDataStore:
             data.append({
                 '备注ID': remark.id,
                 '设备ID': remark.device_id,
-                '设备名': '',  # 可从设备表关联
+                '设备类型': remark.device_type,
                 '备注内容': remark.content,
                 '创建人': remark.creator,
                 '创建时间': remark.create_time.strftime('%Y-%m-%d %H:%M'),

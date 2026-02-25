@@ -439,6 +439,7 @@ class APIClient:
             UserRemark(
                 id=str(uuid.uuid4()),
                 device_id=self._car_machines[0].id,
+                device_type="车机",
                 content="屏幕有轻微划痕",
                 creator="张三",
                 create_time=datetime.now() - timedelta(days=5)
@@ -446,6 +447,7 @@ class APIClient:
             UserRemark(
                 id=str(uuid.uuid4()),
                 device_id=self._car_machines[1].id,
+                device_type="车机",
                 content="电池续航正常",
                 creator="李四",
                 create_time=datetime.now() - timedelta(days=3)
