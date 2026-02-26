@@ -33,7 +33,7 @@ ENV/
 *~
 
 # Database
-*.db
+# *.db    # 已注释掉以允许上传数据库文件
 *.sqlite
 *.sqlite3
 
