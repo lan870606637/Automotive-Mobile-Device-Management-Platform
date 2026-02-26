@@ -130,12 +130,17 @@
                         <h3 class="form-section-title">存放信息</h3>
                         <div class="form-row">
                             <div class="form-field">
-                                <label>柜号/保管人 <span class="required">*</span></label>
-                                <input type="text" id="deviceCabinet" value="{{ device.cabinet_number if device else '' }}" placeholder="如：A01 或 张三" required>
+                                <label id="cabinetLabel">柜号/保管人 <span class="required">*</span></label>
+                                <div class="autocomplete-wrapper" id="cabinetWrapper">
+                                    <input type="text" id="deviceCabinet" value="{{ device.cabinet_number if device else '' }}" placeholder="输入柜号如A01" required autocomplete="off">
+                                </div>
                             </div>
                             <div class="form-field">
                                 <label>当前借用人</label>
-                                <input type="text" id="deviceBorrower" value="{{ device.borrower if device else '' }}" placeholder="设备借出时自动填充">
+                                <div class="autocomplete-wrapper">
+                                    <input type="text" id="deviceBorrower" value="{{ device.borrower if device else '' }}" placeholder="选择借用人" autocomplete="off" style="padding-right: 70px;">
+                                    <button type="button" class="user-option-btn" onclick="showUserModal('deviceBorrower')">选择用户</button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -244,12 +249,253 @@
     <!-- Toast提示 -->
     <div id="toast" class="toast"></div>
 
+    <!-- 用户选择弹窗 -->
+    <div id="userSelectModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>选择用户</h3>
+                <button type="button" class="close-btn" onclick="closeUserModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="userSearchInput" placeholder="搜索用户姓名..." class="search-input">
+                <div class="user-list" id="userList"></div>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        /* 联想输入样式 */
+        .autocomplete-wrapper {
+            position: relative;
+        }
+        .autocomplete-list {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #ddd;
+            border-top: none;
+            border-radius: 0 0 4px 4px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .autocomplete-item {
+            padding: 10px 15px;
+            cursor: pointer;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .autocomplete-item:hover {
+            background: #f5f5f5;
+        }
+        .autocomplete-item:last-child {
+            border-bottom: none;
+        }
+        .user-option-btn {
+            position: absolute;
+            right: 5px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: #1890ff;
+            color: white;
+            border: none;
+            padding: 4px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .user-option-btn:hover {
+            background: #40a9ff;
+        }
+
+        /* 弹窗样式 */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 2000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-content {
+            background: white;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .modal-header {
+            padding: 15px 20px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .modal-header h3 {
+            margin: 0;
+        }
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #999;
+        }
+        .close-btn:hover {
+            color: #333;
+        }
+        .modal-body {
+            padding: 20px;
+            overflow-y: auto;
+        }
+        .search-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+        .user-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .user-item {
+            padding: 12px 15px;
+            border: 1px solid #eee;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .user-item:hover {
+            background: #f0f7ff;
+            border-color: #1890ff;
+        }
+        .user-name {
+            font-weight: 500;
+        }
+        .user-email {
+            font-size: 12px;
+            color: #666;
+        }
+        .select-btn {
+            background: #1890ff;
+            color: white;
+            border: none;
+            padding: 5px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .select-btn:hover {
+            background: #40a9ff;
+        }
+        .no-data {
+            text-align: center;
+            padding: 30px;
+            color: #999;
+        }
+    </style>
+
     <script>
+        // 用户列表数据
+        let allUsers = [];
+        let currentTargetField = null;
+
+        // 加载用户列表
+        async function loadUsers() {
+            try {
+                const response = await fetch('/api/admin/users');
+                allUsers = await response.json();
+            } catch (error) {
+                console.error('加载用户列表失败:', error);
+            }
+        }
+
+        // 显示用户选择弹窗
+        function showUserModal(targetField) {
+            currentTargetField = targetField;
+            const modal = document.getElementById('userSelectModal');
+            const userList = document.getElementById('userList');
+            const searchInput = document.getElementById('userSearchInput');
+            
+            modal.style.display = 'flex';
+            searchInput.value = '';
+            searchInput.focus();
+            
+            renderUserList(allUsers);
+            
+            // 搜索功能
+            searchInput.oninput = function() {
+                const keyword = this.value.toLowerCase();
+                const filtered = allUsers.filter(u => 
+                    u.name.toLowerCase().includes(keyword) || 
+                    u.email.toLowerCase().includes(keyword)
+                );
+                renderUserList(filtered);
+            };
+        }
+
+        // 渲染用户列表
+        function renderUserList(users) {
+            const userList = document.getElementById('userList');
+            
+            if (users.length === 0) {
+                userList.innerHTML = '<div class="no-data">暂无用户数据</div>';
+                return;
+            }
+            
+            userList.innerHTML = users.map(user => `
+                <div class="user-item" onclick="selectUser('${user.name}')">
+                    <div>
+                        <div class="user-name">${user.name}</div>
+                        <div class="user-email">${user.email}</div>
+                    </div>
+                    <button class="select-btn">选择</button>
+                </div>
+            `).join('');
+        }
+
+        // 选择用户
+        function selectUser(userName) {
+            if (currentTargetField) {
+                document.getElementById(currentTargetField).value = userName;
+            }
+            closeUserModal();
+        }
+
+        // 关闭弹窗
+        function closeUserModal() {
+            document.getElementById('userSelectModal').style.display = 'none';
+            currentTargetField = null;
+        }
+
+        // 点击弹窗外部关闭
+        document.getElementById('userSelectModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeUserModal();
+            }
+        });
+
         // 初始化：根据设备类型显示对应字段
         function initDeviceFields() {
             const deviceType = document.getElementById('deviceType').value;
             const phoneFields = document.getElementById('phoneFields');
             const carFields = document.getElementById('carFields');
+            const cabinetWrapper = document.getElementById('cabinetWrapper');
+            const deviceCabinet = document.getElementById('deviceCabinet');
+            const cabinetLabel = document.getElementById('cabinetLabel');
 
             if (deviceType === '手机') {
                 phoneFields.style.display = 'block';
@@ -263,10 +509,45 @@
                 phoneFields.style.display = 'none';
                 carFields.style.display = 'none';
             }
+
+            // 根据设备类型更新柜号/保管人输入框
+            updateCabinetInput(deviceType, cabinetWrapper, deviceCabinet, cabinetLabel);
+        }
+
+        // 更新柜号输入框（车机/仪表显示"柜号"，其他显示"保管人"）
+        function updateCabinetInput(deviceType, wrapper, input, label) {
+            const isCarOrInstrument = deviceType === '车机' || deviceType === '仪表';
+            const existingBtn = wrapper.querySelector('.user-option-btn');
+
+            if (isCarOrInstrument) {
+                // 车机/仪表：显示"柜号"，移除选择用户按钮
+                label.innerHTML = '柜号 <span class="required">*</span>';
+                if (existingBtn) {
+                    existingBtn.remove();
+                }
+                input.style.paddingRight = '12px';
+                input.placeholder = '输入柜号如A01、26-27';
+            } else {
+                // 手机/手机卡/其它设备：显示"保管人"，显示选择用户按钮
+                label.innerHTML = '保管人 <span class="required">*</span>';
+                input.style.paddingRight = '70px';
+                input.placeholder = '输入柜号如A01，或选择用户';
+                if (!existingBtn) {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'user-option-btn';
+                    btn.textContent = '选择用户';
+                    btn.onclick = function() { showUserModal('deviceCabinet'); };
+                    wrapper.appendChild(btn);
+                }
+            }
         }
 
         // 页面加载完成后初始化
-        document.addEventListener('DOMContentLoaded', initDeviceFields);
+        document.addEventListener('DOMContentLoaded', function() {
+            initDeviceFields();
+            loadUsers(); // 加载用户列表
+        });
 
         // 设备类型切换
         document.getElementById('deviceType').addEventListener('change', initDeviceFields);

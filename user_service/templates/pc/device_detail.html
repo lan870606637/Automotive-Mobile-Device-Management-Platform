@@ -7,6 +7,9 @@
 {% block content %}
 <!-- 页面头部 -->
 <div class="detail-header">
+    <div class="detail-actions">
+        <a href="javascript:history.back()" class="btn btn-default">← 返回</a>
+    </div>
     <div class="detail-icon">
         {% if device_type == '车机' %}🚗
         {% elif device_type == '手机' %}📱
@@ -175,7 +178,7 @@
                 <div class="action-btns">
                     <button class="btn btn-error btn-block" onclick="openReportLostModal()">⚠️ 丢失报备</button>
                     <button class="btn btn-warning btn-block" onclick="openReportDamageModal()">🔧 损坏报备</button>
-                    {% if device_type == '车机' %}
+                    {% if device_type in ['车机', '仪表'] %}
                     <button class="btn btn-primary btn-block" onclick="openShipModal()">📦 寄出</button>
                     {% endif %}
                     {% if device.previous_borrower %}
@@ -431,7 +434,7 @@
                         {% if is_overdue %}
                         <span style="margin-left: 8px;">⚠️ 已逾期 {% if overdue_hours < 24 %}{{ overdue_hours }} 小时{% else %}{{ overdue_days }} 天{% endif %}</span>
                         {% else %}
-                        <span style="margin-left: 8px; color: #52c41a;">⏰ 还剩{% if remaining_days > 0 %}{{ remaining_days }} 天{% else %}{{ remaining_hours }} 小时{% endif %}</span>
+                        <span style="margin-left: 8px; color: #52c41a;">⏰ 还剩{% if remaining_days > 0 %}{{ remaining_days }} 天{% elif remaining_hours > 0 %}{{ remaining_hours }} 小时{% else %}{{ remaining_minutes }} 分钟{% endif %}</span>
                         {% endif %}
                     </span>
                 </div>
@@ -446,7 +449,8 @@
         </div>
         {% endif %}
 
-        <!-- 借用记录 -->
+        <!-- 借用记录：在库/保管中状态且非保管人时不显示 -->
+        {% if not (device.status.value in ['在库', '保管中'] and not is_custodian) %}
         <div class="card">
             <div class="card-header">
                 <span class="card-title">📋 借用记录</span>
@@ -523,6 +527,7 @@
                 {% endif %}
             </div>
         </div>
+        {% endif %}
 
     </div>
 </div>
@@ -970,10 +975,10 @@ function loadUsersToSelect(select) {
             select.innerHTML = '<option value="">请选择</option>';
             data.users.forEach(u => {
                 // 排除当前借用人
-                if (u.borrower_name !== currentBorrower) {
+                if (u.name !== currentBorrower) {
                     const option = document.createElement('option');
-                    option.value = u.borrower_name;
-                    option.textContent = u.borrower_name;
+                    option.value = u.email;
+                    option.textContent = u.name + ' (' + u.email + ')';
                     select.appendChild(option);
                 }
             });

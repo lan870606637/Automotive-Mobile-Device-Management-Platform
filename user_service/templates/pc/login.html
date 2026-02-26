@@ -181,8 +181,8 @@
                 
                 <form method="POST" action="{{ url_for('pc_login') }}">
                     <div class="form-group">
-                        <label for="phone">手机号</label>
-                        <input type="tel" id="phone" name="phone" placeholder="请输入11位手机号" required pattern="[0-9]{11}">
+                        <label for="email">邮箱</label>
+                        <input type="email" id="email" name="email" placeholder="请输入邮箱" required>
                     </div>
                     
                     <div class="form-group">
@@ -198,7 +198,7 @@
                 </form>
                 
                 <p class="login-tips">
-                    测试账号: 13800138001 / 123456
+                    初始密码: 123456（首次登录需修改密码）
                 </p>
                 
                 <div class="login-actions">

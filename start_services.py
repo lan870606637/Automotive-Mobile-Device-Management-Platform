@@ -77,8 +77,8 @@ def main():
 ║                                                              ║
 ║     车机与手机设备管理系统 - 统一启动脚本                     ║
 ║                                                              ║
-║     用户服务: http://localhost:5000                          ║
-║     管理服务: http://localhost:5001                          ║
+║     用户服务: http://device.carbit.com.cn (端口: 5000)       ║
+║     管理服务: http://admin.device.carbit.com.cn (端口: 5001) ║
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝
     """)
@@ -99,6 +99,9 @@ def main():
     print("所有服务已启动!")
     print("=" * 50)
     print("\n访问地址:")
+    print("  用户端:   http://device.carbit.com.cn")
+    print("  管理后台: http://admin.device.carbit.com.cn")
+    print("\n本地访问:")
     print("  用户服务: http://localhost:5000")
     print("  管理服务: http://localhost:5001")
     print("\n按 Ctrl+C 停止所有服务")

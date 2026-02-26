@@ -112,6 +112,7 @@ def admin_mobile_login():
 
 def get_device_type_str(device):
     """获取设备类型字符串"""
+    # 方式1：通过实例类型判断
     if isinstance(device, CarMachine):
         return "车机"
     elif isinstance(device, Instrument):
@@ -122,6 +123,13 @@ def get_device_type_str(device):
         return "手机卡"
     elif isinstance(device, OtherDevice):
         return "其它设备"
+
+    # 方式2：通过 device_type 属性判断（当实例类型不匹配时）
+    if hasattr(device, 'device_type') and device.device_type:
+        if isinstance(device.device_type, DeviceType):
+            return device.device_type.value
+        return str(device.device_type)
+
     return "未知"
 
 
@@ -545,23 +553,17 @@ def admin_pc_overdue():
                         overdue_hours = int(time_diff.total_seconds() // 3600)
                         
                         # 获取设备类型
-                        if isinstance(device, Phone):
-                            device_type = '手机'
+                        device_type = get_device_type_str(device)
+                        if device_type == '手机':
                             phone_overdue += 1
-                        elif isinstance(device, CarMachine):
-                            device_type = '车机'
+                        elif device_type == '车机':
                             car_overdue += 1
-                        elif isinstance(device, Instrument):
-                            device_type = '仪表'
+                        elif device_type == '仪表':
                             instrument_overdue += 1
-                        elif isinstance(device, SimCard):
-                            device_type = '手机卡'
+                        elif device_type == '手机卡':
                             simcard_overdue += 1
-                        elif isinstance(device, OtherDevice):
-                            device_type = '其它设备'
+                        elif device_type == '其它设备':
                             other_overdue += 1
-                        else:
-                            device_type = '未知'
                         
                         overdue_devices.append({
                             'id': device.id,
@@ -728,18 +730,7 @@ def api_devices_overdue():
                         overdue_hours = int(time_diff.total_seconds() // 3600)
                         
                         # 获取设备类型
-                        if isinstance(device, Phone):
-                            device_type = '手机'
-                        elif isinstance(device, CarMachine):
-                            device_type = '车机'
-                        elif isinstance(device, Instrument):
-                            device_type = '仪表'
-                        elif isinstance(device, SimCard):
-                            device_type = '手机卡'
-                        elif isinstance(device, OtherDevice):
-                            device_type = '其它设备'
-                        else:
-                            device_type = '未知'
+                        device_type = get_device_type_str(device)
                         
                         overdue_devices.append({
                             'id': device.id,
@@ -870,18 +861,7 @@ def api_overdue_export():
                         overdue_hours = int(time_diff.total_seconds() // 3600)
                         
                         # 获取设备类型
-                        if isinstance(device, Phone):
-                            device_type = '手机'
-                        elif isinstance(device, CarMachine):
-                            device_type = '车机'
-                        elif isinstance(device, Instrument):
-                            device_type = '仪表'
-                        elif isinstance(device, SimCard):
-                            device_type = '手机卡'
-                        elif isinstance(device, OtherDevice):
-                            device_type = '其它设备'
-                        else:
-                            device_type = '未知'
+                        device_type = get_device_type_str(device)
                         
                         overdue_devices.append({
                             '设备名称': device.name,
@@ -1140,11 +1120,11 @@ def api_admin_users():
                 users_data.append({
                     'id': user.id,
                     'name': user.borrower_name,
-                    'weixin_name': user.wechat_name,
-                    'phone': user.phone,
+                    'email': user.email,
                     'borrow_count': user.borrow_count,
                     'is_admin': user.is_admin,
                     'is_frozen': user.is_frozen,
+                    'is_first_login': user.is_first_login,
                     'register_time': user.create_time.strftime('%Y-%m-%d') if hasattr(user, 'create_time') and user.create_time else '-'
                 })
         return jsonify(users_data)
@@ -1154,8 +1134,7 @@ def api_admin_users():
         try:
             user = api_client.create_user(
                 borrower_name=data.get('name'),
-                wechat_name=data.get('weixin_name', ''),
-                phone=data.get('phone', ''),
+                email=data.get('email', ''),
                 password=data.get('password'),
                 is_admin=data.get('is_admin', False)
             )
@@ -1177,8 +1156,8 @@ def api_user_detail(user_id):
             return jsonify({'success': False, 'message': str(e)})
     else:  # DELETE
         try:
-            api_client.delete_user(user_id)
-            return jsonify({'success': True})
+            success, message = api_client.delete_user(user_id)
+            return jsonify({'success': success, 'message': message})
         except Exception as e:
             return jsonify({'success': False, 'message': str(e)})
 
@@ -1227,6 +1206,103 @@ def api_user_remove_admin(user_id):
         return jsonify({'success': False, 'message': str(e)})
 
 
+@app.route('/api/admin/users/<user_id>/reset_password', methods=['POST'])
+@admin_required
+def api_user_reset_password(user_id):
+    """重置用户密码API"""
+    try:
+        api_client.reset_user_password(user_id)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/admin/users/import', methods=['POST'])
+@admin_required
+def api_users_import():
+    """批量导入用户API"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'message': '请选择文件'})
+        
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'success': False, 'message': '请选择文件'})
+        
+        # 读取Excel文件
+        import pandas as pd
+        
+        if file.filename.endswith('.csv'):
+            df = pd.read_csv(file)
+        else:
+            df = pd.read_excel(file)
+        
+        # 检查必要的列
+        required_columns = ['姓名', '邮箱']
+        column_mapping = {}
+        
+        # 查找列名（支持中英文）
+        for col in df.columns:
+            col_str = str(col).strip()
+            if col_str in ['姓名', 'name', '用户名', '借用人']:
+                column_mapping['name'] = col
+            elif col_str in ['邮箱', 'email', '邮件', '电子邮箱']:
+                column_mapping['email'] = col
+        
+        if 'name' not in column_mapping or 'email' not in column_mapping:
+            return jsonify({'success': False, 'message': '文件格式错误，需要包含「姓名」和「邮箱」列'})
+        
+        success_count = 0
+        failed_count = 0
+        failed_reasons = []
+        
+        for index, row in df.iterrows():
+            try:
+                name = str(row[column_mapping['name']]).strip()
+                email = str(row[column_mapping['email']]).strip()
+                
+                if not name or not email:
+                    continue
+                
+                # 检查邮箱是否已存在
+                existing_user = api_client.get_user_by_email(email)
+                if existing_user:
+                    failed_count += 1
+                    failed_reasons.append(f"第{index+2}行：邮箱 {email} 已存在")
+                    continue
+                
+                # 检查用户名是否已存在
+                all_users = api_client.get_all_users()
+                name_exists = any(u.borrower_name == name for u in all_users)
+                if name_exists:
+                    failed_count += 1
+                    failed_reasons.append(f"第{index+2}行：用户名 {name} 已存在")
+                    continue
+                
+                # 创建用户
+                api_client.create_user(
+                    borrower_name=name,
+                    email=email,
+                    password='123456',
+                    is_admin=False
+                )
+                success_count += 1
+                
+            except Exception as e:
+                failed_count += 1
+                failed_reasons.append(f"第{index+2}行：{str(e)}")
+        
+        return jsonify({
+            'success': True,
+            'success_count': success_count,
+            'failed_count': failed_count,
+            'failed_reasons': failed_reasons
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'导入失败：{str(e)}'})
+
+
 @app.route('/api/devices', methods=['GET', 'POST'])
 @admin_required
 def api_devices():
@@ -1248,18 +1324,7 @@ def api_devices():
         devices_data = []
         for device in devices:
             # 获取设备类型字符串
-            if isinstance(device, Phone):
-                device_type_str = '手机'
-            elif isinstance(device, CarMachine):
-                device_type_str = '车机'
-            elif isinstance(device, Instrument):
-                device_type_str = '仪表'
-            elif isinstance(device, SimCard):
-                device_type_str = '手机卡'
-            elif isinstance(device, OtherDevice):
-                device_type_str = '其它设备'
-            else:
-                device_type_str = '未知'
+            device_type_str = get_device_type_str(device)
             
             device_data = {
                 'id': device.id,
@@ -1278,14 +1343,14 @@ def api_devices():
             }
             
             # 手机特有字段
-            if isinstance(device, Phone):
+            if device_type_str == '手机':
                 device_data['system_version'] = device.system_version
                 device_data['imei'] = device.imei
                 device_data['sn'] = device.sn
                 device_data['carrier'] = device.carrier
             
             # 车机和仪表特有字段（JIRA地址后）
-            if isinstance(device, (CarMachine, Instrument)):
+            if device_type_str in ('车机', '仪表'):
                 device_data['project_attribute'] = device.project_attribute
                 device_data['connection_method'] = device.connection_method
                 device_data['os_version'] = device.os_version
@@ -1330,10 +1395,13 @@ def api_device_detail(device_id):
         if not device:
             return jsonify({'success': False, 'message': '设备不存在'})
         
+        # 根据 device_type 枚举获取设备类型字符串
+        device_type_str = device.device_type.value if device.device_type else '车机'
+        
         return jsonify({
             'id': device.id,
             'name': device.name,
-            'device_type': '手机' if isinstance(device, Phone) else '车机',
+            'device_type': device_type_str,
             'model': device.model,
             'cabinet': device.cabinet_number,
             'status': device.status.value,
@@ -1371,6 +1439,14 @@ def api_admin_borrow(device_id):
     if not borrower:
         return jsonify({'success': False, 'message': '请选择借用人'})
 
+    # 检查是否是邮箱，如果是则通过邮箱查找用户获取borrower_name
+    actual_borrower = borrower
+    if '@' in borrower:
+        user = api_client.get_user_by_email(borrower)
+        if not user:
+            return jsonify({'success': False, 'message': f'未找到邮箱为 {borrower} 的用户'})
+        actual_borrower = user.borrower_name
+
     # 获取设备信息，记录原借用人
     device = api_client.get_device(device_id)
     if not device:
@@ -1381,7 +1457,7 @@ def api_admin_borrow(device_id):
     try:
         success = api_client.borrow_device(
             device_id=device_id,
-            borrower=borrower,
+            borrower=actual_borrower,
             days=int(days),
             remarks=remarks,
             operator=session.get('admin_name', '管理员'),
@@ -1395,11 +1471,11 @@ def api_admin_borrow(device_id):
                 api_client.notify_borrow(
                     device_id=device_id,
                     device_name=device.name,
-                    borrower=borrower,
+                    borrower=actual_borrower,
                     operator=session.get('admin_name', '管理员')
                 )
                 # 2. 通知原借用人（如果设备之前被借用且原借用人不是新借用人）
-                if original_borrower and original_borrower != borrower:
+                if original_borrower and original_borrower != actual_borrower:
                     original_user = None
                     for u in api_client._users:
                         if u.borrower_name == original_borrower:
@@ -1410,13 +1486,13 @@ def api_admin_borrow(device_id):
                             user_id=original_user.id,
                             user_name=original_user.borrower_name,
                             title="设备被转借通知",
-                            content=f"您借用的设备「{device.name}」已被管理员借出给 {borrower}。",
+                            content=f"您借用的设备「{device.name}」已被管理员借出给 {actual_borrower}。",
                             device_name=device.name,
                             device_id=device.id,
                             notification_type="warning"
                         )
                 # 3. 通知保管人（如果保管人不是借用人自己）
-                if device.cabinet_number and device.cabinet_number != borrower:
+                if device.cabinet_number and device.cabinet_number != actual_borrower:
                     custodian_user = None
                     for u in api_client._users:
                         if u.borrower_name == device.cabinet_number:
@@ -1427,7 +1503,7 @@ def api_admin_borrow(device_id):
                             user_id=custodian_user.id,
                             user_name=custodian_user.borrower_name,
                             title="设备被借用通知",
-                            content=f"您保管的设备「{device.name}」已被管理员借出给 {borrower}。",
+                            content=f"您保管的设备「{device.name}」已被管理员借出给 {actual_borrower}。",
                             device_name=device.name,
                             device_id=device.id,
                             notification_type="info"
@@ -1453,10 +1529,14 @@ def api_admin_return(device_id):
     original_borrower = device.borrower
     original_custodian = device.cabinet_number
 
-    # 清空借用信息
-    device.status = DeviceStatus.IN_STOCK
+    # 根据设备类型设置归还后的状态
+    # 手机、手机卡、其它设备 -> 保管中；车机、仪表 -> 在库
+    if device.device_type in [DeviceType.PHONE, DeviceType.SIM_CARD, DeviceType.OTHER_DEVICE]:
+        device.status = DeviceStatus.IN_CUSTODY
+    else:
+        device.status = DeviceStatus.IN_STOCK
+
     device.borrower = ''
-    device.phone = ''
     device.borrow_time = None
     device.location = ''
     device.reason = ''
@@ -1478,7 +1558,7 @@ def api_admin_return(device_id):
         reason='管理员强制归还',
         entry_source=EntrySource.ADMIN.value
     )
-    DatabaseStore.save_record(record)
+    api_client._db.save_record(record)
     api_client.add_operation_log(f"强制归还: {original_borrower}", device.name)
 
     # 发送通知
@@ -1521,6 +1601,14 @@ def api_admin_transfer(device_id):
     if not new_borrower:
         return jsonify({'success': False, 'message': '请选择新借用人'})
 
+    # 检查是否是邮箱，如果是则通过邮箱查找用户获取borrower_name
+    actual_new_borrower = new_borrower
+    if '@' in new_borrower:
+        user = api_client.get_user_by_email(new_borrower)
+        if not user:
+            return jsonify({'success': False, 'message': f'未找到邮箱为 {new_borrower} 的用户'})
+        actual_new_borrower = user.borrower_name
+
     device = api_client.get_device(device_id)
     if not device:
         return jsonify({'success': False, 'message': '设备不存在'})
@@ -1530,16 +1618,8 @@ def api_admin_transfer(device_id):
 
     original_borrower = device.borrower
 
-    # 获取新借用人的手机号
-    new_phone = ''
-    for user in api_client._users:
-        if user.borrower_name == new_borrower:
-            new_phone = user.phone
-            break
-
     # 更新设备
-    device.borrower = new_borrower
-    device.phone = new_phone
+    device.borrower = actual_new_borrower
     api_client.update_device(device)
 
     # 添加记录
@@ -1551,23 +1631,23 @@ def api_admin_transfer(device_id):
         operation_type=OperationType.TRANSFER,
         operator=session.get('admin_name', '管理员'),
         operation_time=datetime.now(),
-        borrower=f"{original_borrower} → {new_borrower}",
+        borrower=f"{original_borrower} → {actual_new_borrower}",
         reason='管理员转借',
         entry_source=EntrySource.ADMIN.value
     )
-    DatabaseStore.save_record(record)
-    api_client.add_operation_log(f"转借: {original_borrower} -> {new_borrower}", device.name)
+    api_client._db.save_record(record)
+    api_client.add_operation_log(f"转借: {original_borrower} -> {actual_new_borrower}", device.name)
 
     # 发送通知
     api_client.notify_transfer(
         device_id=device_id,
         device_name=device.name,
         original_borrower=original_borrower,
-        new_borrower=new_borrower,
+        new_borrower=actual_new_borrower,
         operator=session.get('admin_name', '管理员')
     )
     # 通知保管人（如果保管人不是转借双方）
-    if device.cabinet_number and device.cabinet_number != original_borrower and device.cabinet_number != new_borrower:
+    if device.cabinet_number and device.cabinet_number != original_borrower and device.cabinet_number != actual_new_borrower:
         custodian_user = None
         for u in api_client._users:
             if u.borrower_name == device.cabinet_number:
@@ -1578,7 +1658,7 @@ def api_admin_transfer(device_id):
                 user_id=custodian_user.id,
                 user_name=custodian_user.borrower_name,
                 title="设备转借通知",
-                content=f"您保管的设备「{device.name}」已被管理员从 {original_borrower} 转借给 {new_borrower}。",
+                content=f"您保管的设备「{device.name}」已被管理员从 {original_borrower} 转借给 {actual_new_borrower}。",
                 device_name=device.name,
                 device_id=device.id,
                 notification_type="info"
@@ -1641,11 +1721,11 @@ def api_users():
             users_data.append({
                 'id': user.id,
                 'name': user.borrower_name,
-                'weixin_name': user.wechat_name,
-                'phone': user.phone,
+                'email': user.email,
                 'borrow_count': user.borrow_count,
                 'is_admin': user.is_admin,
                 'is_frozen': user.is_frozen,
+                'is_first_login': user.is_first_login,
                 'register_time': user.create_time.strftime('%Y-%m-%d') if hasattr(user, 'create_time') and user.create_time else '-'
             })
         return jsonify(users_data)
@@ -1655,8 +1735,7 @@ def api_users():
         try:
             user = api_client.create_user(
                 borrower_name=data.get('name'),
-                wechat_name=data.get('weixin_name', ''),
-                phone=data.get('phone', ''),
+                email=data.get('email', ''),
                 password=data.get('password'),
                 is_admin=data.get('is_admin', False)
             )
@@ -1933,7 +2012,7 @@ def api_import_devices():
                         screen_resolution=str(row.get('车机分辨率', '')).strip(),
                         entry_source='批量导入'
                     )
-                    DatabaseStore.save_device(device)
+                    api_client._db.save_device(device)
 
                 elif device_type == 'instrument':
                     # 仪表导入
@@ -1955,7 +2034,7 @@ def api_import_devices():
                         screen_resolution=str(row.get('分辨率', '')).strip(),
                         entry_source='批量导入'
                     )
-                    DatabaseStore.save_device(device)
+                    api_client._db.save_device(device)
 
                 elif device_type == 'phone':
                     # 手机导入
@@ -1973,7 +2052,7 @@ def api_import_devices():
                         carrier=str(row.get('运营商', '')).strip(),
                         entry_source='批量导入'
                     )
-                    DatabaseStore.save_device(device)
+                    api_client._db.save_device(device)
 
                 elif device_type == 'sim':
                     # 手机卡导入
@@ -1988,7 +2067,7 @@ def api_import_devices():
                         carrier=str(row.get('运营商', '')).strip(),
                         entry_source='批量导入'
                     )
-                    DatabaseStore.save_device(device)
+                    api_client._db.save_device(device)
 
                 elif device_type == 'other':
                     # 其它设备导入
@@ -2003,7 +2082,7 @@ def api_import_devices():
                         remark=str(row.get('备注', '')).strip(),
                         entry_source='批量导入'
                     )
-                    DatabaseStore.save_device(device)
+                    api_client._db.save_device(device)
 
                 imported_count += 1
 

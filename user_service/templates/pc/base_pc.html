@@ -28,7 +28,7 @@
                 <div class="stat-item-mini"><span class="stat-label">❌ 无法使用</span><span class="stat-value stat-red">{{ unavailable_count }}</span></div>
             </div>
             {% endif %}
-            
+
             <nav class="sidebar-nav">
                 <a href="{{ url_for('pc_dashboard') }}" class="nav-item {% if active_nav == 'dashboard' %}active{% endif %}">
                     <span class="nav-icon">📊</span>
@@ -120,12 +120,12 @@
 
     <!-- 全部公告弹窗 -->
     <div id="allAnnouncementsModal" class="pc-modal">
-        <div class="pc-modal-content" style="max-width: 640px;">
+        <div class="pc-modal-content" style="max-width: 640px; max-height: 80vh; display: flex; flex-direction: column;">
             <div class="pc-modal-header">
                 <h3>📋 全部公告</h3>
                 <button class="pc-modal-close" onclick="closeAllAnnouncements()">&times;</button>
             </div>
-            <div class="pc-modal-body">
+            <div class="pc-modal-body" style="overflow-y: auto; max-height: calc(80vh - 120px);">
                 <div id="allAnnouncementsList" class="announcement-list"></div>
             </div>
             <div class="pc-modal-footer">

@@ -693,8 +693,8 @@ function showTransferSelect(action) {
                 select.innerHTML = '<option value="">请选择</option>';
                 data.users.forEach(u => {
                     const option = document.createElement('option');
-                    option.value = u.borrower_name;
-                    option.textContent = u.borrower_name + ' (' + u.phone.substring(0, 3) + '****' + u.phone.substring(7) + ')';
+                    option.value = u.name;
+                    option.textContent = u.name;
                     select.appendChild(option);
                 });
             }
@@ -819,8 +819,8 @@ function showTransferCustodian(deviceId) {
                 select.innerHTML = '<option value="">请选择新保管人</option>';
                 data.users.forEach(u => {
                     const option = document.createElement('option');
-                    option.value = u.borrower_name;
-                    option.textContent = u.borrower_name;
+                    option.value = u.name;
+                    option.textContent = u.name;
                     select.appendChild(option);
                 });
             }

@@ -85,7 +85,7 @@
                         <span class="status-tag status-shipped">已寄出</span>
                         {% elif device.status == '借出' or device.borrower != '未借用' %}
                         <span class="status-tag status-borrowed">借出</span>
-                        {% elif device.type == '手机' %}
+                        {% elif device.type in ['手机', '手机卡', '其它设备'] %}
                         <span class="status-tag status-available">保管中</span>
                         {% else %}
                         <span class="status-tag status-available">在库</span>
@@ -127,6 +127,7 @@
                             <button class="btn btn-primary btn-sm" onclick="transferCustodian('{{ device.id }}', '{{ device.name }}')">转让保管人</button>
                             <a href="{{ url_for('pc_device_detail', device_id=device.id) }}" class="btn btn-primary btn-sm">详情</a>
                             {% else %}
+                            <button class="btn btn-warning btn-sm" onclick="transferDevice('{{ device.id }}', '{{ device.name }}', '')">转借</button>
                             <button class="btn btn-primary btn-sm" onclick="transferCustodian('{{ device.id }}', '{{ device.name }}')">转让保管人</button>
                             <a href="{{ url_for('pc_device_detail', device_id=device.id) }}" class="btn btn-primary btn-sm">详情</a>
                             {% endif %}

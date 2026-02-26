@@ -970,14 +970,14 @@ class ExcelDataStore:
 
                     user = User(
                         id=str(row['用户ID']),
-                        wechat_name=str(row['微信名']),
-                        phone=phone,
+                        email=str(row.get('邮箱', '')),
                         password=str(row.get('密码', '123456')),
                         borrower_name=str(row.get('借用人', '')),
                         borrow_count=int(row.get('借用次数', 0)),
                         return_count=int(row.get('归还次数', 0)),
                         is_frozen=str(row.get('状态', '正常')) == '已冻结',
                         is_admin=str(row.get('是否管理员', '否')) == '是',
+                        is_first_login=str(row.get('首次登录', '是')) == '是',
                         create_time=create_time,
                     )
                     users.append(user)
@@ -996,14 +996,14 @@ class ExcelDataStore:
         for user in users:
             data.append({
                 '用户ID': user.id,
-                '微信名': user.wechat_name,
-                '手机号': user.phone,
+                '邮箱': user.email,
                 '密码': user.password,
                 '借用人': user.borrower_name,
                 '借用次数': user.borrow_count,
                 '归还次数': user.return_count,
                 '状态': '已冻结' if user.is_frozen else '正常',
                 '是否管理员': '是' if user.is_admin else '否',
+                '首次登录': '是' if user.is_first_login else '否',
                 '注册时间': user.create_time.strftime('%Y-%m-%d') if user.create_time else '',
             })
         

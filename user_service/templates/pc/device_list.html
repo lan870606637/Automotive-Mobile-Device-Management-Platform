@@ -6,9 +6,7 @@
 
 {% block content %}
 <h1 class="page-title">
-    {% if no_cabinet %}
-    📦 无柜号设备
-    {% elif device_type == 'car' %}
+    {% if device_type == 'car' %}
     🚗 车机设备
     {% elif device_type == 'phone' %}
     📱 手机设备
@@ -19,7 +17,7 @@
     {% elif device_type == 'other' %}
     🔧 其它设备
     {% else %}
-    📦 全部设备
+    � 车机设备
     {% endif %}
 </h1>
 
@@ -110,13 +108,11 @@
 {% endif %}
 
 <div class="filter-tabs">
-    <a href="{{ url_for('pc_device_list') }}" class="filter-tab {% if (not device_type or device_type == 'all') and not no_cabinet %}active{% endif %}">全部</a>
     <a href="{{ url_for('pc_device_list', type='car') }}" class="filter-tab {% if device_type == 'car' %}active{% endif %}">车机</a>
     <a href="{{ url_for('pc_device_list', type='phone') }}" class="filter-tab {% if device_type == 'phone' %}active{% endif %}">手机</a>
     <a href="{{ url_for('pc_device_list', type='instrument') }}" class="filter-tab {% if device_type == 'instrument' %}active{% endif %}">仪表</a>
     <a href="{{ url_for('pc_device_list', type='simcard') }}" class="filter-tab {% if device_type == 'simcard' %}active{% endif %}">手机卡</a>
     <a href="{{ url_for('pc_device_list', type='other') }}" class="filter-tab {% if device_type == 'other' %}active{% endif %}">其它</a>
-    <a href="{{ url_for('pc_device_list', no_cabinet='1') }}" class="filter-tab {% if no_cabinet %}active{% endif %}">无柜号</a>
 </div>
 
 <!-- 设备列表 -->

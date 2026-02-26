@@ -76,6 +76,57 @@
             font-size: 12px;
             white-space: nowrap;
         }
+
+        /* 紧凑模式样式 */
+        .data-table {
+            font-size: 13px;
+        }
+        .data-table th {
+            padding: 8px 6px;
+            font-size: 12px;
+        }
+        .data-table td {
+            padding: 6px;
+        }
+        .status-tag {
+            padding: 2px 6px;
+            font-size: 11px;
+            border-radius: 4px;
+            display: inline-block;
+        }
+        .status-tag.status-在库 { background: #f6ffed; color: #52c41a; }
+        .status-tag.status-借出 { background: #fffbe6; color: #faad14; }
+        .status-tag.status-保管中 { background: #e6fffb; color: #13c2c2; }
+        .status-tag.status-已寄出 { background: #e6f7ff; color: #1890ff; }
+        .status-tag.status-维修中 { background: #f9f0ff; color: #722ed1; }
+        .status-tag.status-已损坏 { background: #fff1f0; color: #ff4d4f; }
+        .status-tag.status-报废 { background: #f5f5f5; color: #999; }
+        .status-tag.status-流通 { background: #f6ffed; color: #52c41a; }
+        .status-tag.status-封存 { background: #fff0f6; color: #eb2f96; }
+        .status-tag.status-无柜号 { background: #e6f7ff; color: #1890ff; }
+        .status-tag.status-丢失 { background: #fff1f0; color: #ff4d4f; }
+        .table-actions .btn {
+            padding: 2px 6px;
+            font-size: 11px;
+        }
+        .device-type-tabs {
+            padding: 8px 12px;
+        }
+        .type-tab {
+            padding: 8px 12px;
+            font-size: 13px;
+        }
+        .filter-bar {
+            padding: 10px 12px;
+        }
+        .filter-group label {
+            font-size: 12px;
+        }
+        .filter-group input,
+        .filter-group select {
+            padding: 5px 8px;
+            font-size: 13px;
+        }
     </style>
 </head>
 <body class="pc-admin-body">
@@ -176,7 +227,7 @@
             <!-- 筛选栏 -->
             <div class="filter-bar">
                 <div class="filter-group">
-                    <input type="text" id="searchInput" class="search-input" placeholder="搜索设备名 / 型号 / 借用人 / 柜号 / JIRA / IMEI / 系统版本 / 项目属性 / 产品名称..." style="min-width: 400px;">
+                    <input type="text" id="searchInput" class="search-input" placeholder="搜索设备名 / 型号 / 借用人 / 柜号 / JIRA / IMEI / 系统版本 / 项目属性 / 产品名称..." style="min-width: 300px;">
                 </div>
                 <div class="filter-group">
                     <label>状态</label>
@@ -192,6 +243,12 @@
                         <option value="流通">流通</option>
                         <option value="封存">封存</option>
                         <option value="无柜号">无柜号</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>借用人</label>
+                    <select id="filterBorrower" style="min-width: 120px; padding: 6px 10px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 14px;">
+                        <option value="">全部</option>
                     </select>
                 </div>
                 <div class="filter-group">
@@ -309,7 +366,7 @@
                     <input type="text" id="borrowUser" list="borrowUserList" placeholder="搜索或输入借用人姓名..." autocomplete="off">
                     <datalist id="borrowUserList">
                         {% for user in users %}
-                        <option value="{{ user.borrower_name }}">{{ user.borrower_name }} {{ '(' + user.weixin_name + ')' if user.weixin_name else '' }}</option>
+                        <option value="{{ user.email }}">{{ user.borrower_name }} ({{ user.email }})</option>
                         {% endfor %}
                     </datalist>
                 </div>
@@ -360,7 +417,7 @@
                     <input type="text" id="transferUser" list="transferUserList" placeholder="搜索或输入借用人姓名..." autocomplete="off">
                     <datalist id="transferUserList">
                         {% for user in users %}
-                        <option value="{{ user.borrower_name }}">{{ user.borrower_name }} {{ '(' + user.weixin_name + ')' if user.weixin_name else '' }}</option>
+                        <option value="{{ user.email }}">{{ user.borrower_name }} ({{ user.email }})</option>
                         {% endfor %}
                     </datalist>
                 </div>
@@ -416,12 +473,47 @@
                 updateStatusOptions();
                 updateLocationHeader();
                 updateCabinetPrefixOptions();
+                updateBorrowerOptions(); // 更新借用人下拉框
                 // 初始化筛选数据并分页显示
                 filteredDevices = devices;
                 currentPage = 1;
                 renderCurrentPage();
             } catch (error) {
                 showToast('加载设备列表失败', 'error');
+            }
+        }
+
+        // 更新借用人筛选下拉框
+        function updateBorrowerOptions() {
+            const borrowerSelect = document.getElementById('filterBorrower');
+            if (!borrowerSelect) return;
+
+            // 提取所有借用人（去重，排除空值）
+            const borrowerSet = new Set();
+            devices.forEach(d => {
+                if (d.borrower && d.borrower.trim()) {
+                    borrowerSet.add(d.borrower.trim());
+                }
+            });
+
+            // 排序
+            const sortedBorrowers = Array.from(borrowerSet).sort();
+
+            // 保存当前选中的值
+            const currentValue = borrowerSelect.value;
+
+            // 重新填充下拉框
+            borrowerSelect.innerHTML = '<option value="">全部</option>';
+            sortedBorrowers.forEach(borrower => {
+                const option = document.createElement('option');
+                option.value = borrower;
+                option.textContent = borrower;
+                borrowerSelect.appendChild(option);
+            });
+
+            // 恢复之前选中的值（如果还存在）
+            if (currentValue && sortedBorrowers.includes(currentValue)) {
+                borrowerSelect.value = currentValue;
             }
         }
 
@@ -809,6 +901,7 @@
         // 筛选功能
         document.getElementById('searchInput')?.addEventListener('input', filterDevices);
         document.getElementById('filterStatus')?.addEventListener('change', filterDevices);
+        document.getElementById('filterBorrower')?.addEventListener('change', filterDevices);
         document.getElementById('filterCabinet')?.addEventListener('input', filterDevices);
         document.getElementById('filterCabinetPrefix')?.addEventListener('change', filterDevices);
 
@@ -817,6 +910,7 @@
         function filterDevices() {
             const keyword = document.getElementById('searchInput')?.value?.toLowerCase() || '';
             const status = document.getElementById('filterStatus')?.value || '';
+            const borrower = document.getElementById('filterBorrower')?.value || '';
             const cabinet = document.getElementById('filterCabinet')?.value?.toLowerCase() || '';
             const cabinetPrefix = document.getElementById('filterCabinetPrefix')?.value || '';
 
@@ -856,6 +950,7 @@
             // 基础筛选
             if (currentTypeFilter) filtered = filtered.filter(d => d.device_type === currentTypeFilter);
             if (status) filtered = filtered.filter(d => d.status === status);
+            if (borrower) filtered = filtered.filter(d => d.borrower === borrower);
             if (cabinet) filtered = filtered.filter(d => d.cabinet && d.cabinet.toLowerCase().includes(cabinet));
 
             // 柜号前缀筛选（匹配xx-xx或xx - xx格式，支持空格，支持字母或数字开头）
@@ -930,6 +1025,7 @@
             // 重置基础筛选
             document.getElementById('searchInput').value = '';
             document.getElementById('filterStatus').value = '';
+            document.getElementById('filterBorrower').value = '';
             document.getElementById('filterCabinet').value = '';
             document.getElementById('filterCabinetPrefix').value = '';
 
@@ -946,6 +1042,8 @@
             updateStatusOptions();
             // 更新柜号前缀选项
             updateCabinetPrefixOptions();
+            // 更新借用人选项
+            updateBorrowerOptions();
 
             // 重置分页
             filteredDevices = devices;

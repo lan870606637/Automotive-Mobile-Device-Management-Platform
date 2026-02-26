@@ -771,14 +771,14 @@ body {
 .data-table {
     background: white;
     border-radius: 16px;
-    overflow: hidden;
+    overflow-x: auto;
     box-shadow: 0 2px 8px rgba(0,0,0,0.04);
 }
 
 .data-table table {
     width: 100%;
     border-collapse: collapse;
-    table-layout: fixed;
+    min-width: 1000px;
 }
 
 .data-table th,
@@ -809,16 +809,17 @@ body {
 /* 操作按钮样式优化 */
 .table-actions {
     display: flex;
-    gap: 6px;
-    flex-wrap: nowrap;
+    gap: 4px;
+    flex-wrap: wrap;
     align-items: center;
 }
 
 .table-actions .btn {
-    padding: 5px 10px;
-    font-size: 12px;
+    padding: 4px 8px;
+    font-size: 11px;
     white-space: nowrap;
     flex-shrink: 0;
+    line-height: 1.4;
 }
 
 .data-table tr:hover {

@@ -72,7 +72,8 @@ class Device:
     create_time: Optional[datetime] = None  # 创建时间
     
     # 借用信息
-    borrower: str = ""
+    borrower: str = ""  # 借用人名称（显示用）
+    borrower_id: str = ""  # 借用人ID（关联用户表）
     phone: str = ""
     borrow_time: Optional[datetime] = None
     location: str = ""
@@ -80,6 +81,9 @@ class Device:
     entry_source: str = ""
     expected_return_date: Optional[datetime] = None
     admin_operator: str = ""  # 管理员录入/转借时的操作人
+
+    # 保管信息
+    custodian_id: str = ""  # 保管人ID（关联用户表）
 
     # 寄出信息
     ship_time: Optional[datetime] = None
@@ -123,14 +127,115 @@ class Device:
         if self.create_time is None:
             self.create_time = datetime.now()
     
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Device':
+        """从字典创建设备对象"""
+        from datetime import datetime
+        
+        def parse_datetime(val):
+            if val is None or val == '':
+                return None
+            if isinstance(val, datetime):
+                return val
+            if isinstance(val, str):
+                for fmt in ['%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d']:
+                    try:
+                        return datetime.strptime(val, fmt)
+                    except:
+                        continue
+            return None
+        
+        # 确定设备类型
+        device_type_str = data.get('device_type', '')
+        if isinstance(device_type_str, DeviceType):
+            device_type = device_type_str
+        else:
+            device_type = None
+            # 首先尝试通过枚举名称匹配（如 CAR_MACHINE）
+            try:
+                device_type = DeviceType(device_type_str)
+            except (ValueError, KeyError):
+                pass
+            
+            # 如果失败，尝试通过枚举值匹配（如 车机）
+            if device_type is None:
+                for dt in DeviceType:
+                    if dt.value == device_type_str:
+                        device_type = dt
+                        break
+            
+            # 如果仍然失败，默认使用车机
+            if device_type is None:
+                device_type = DeviceType.CAR_MACHINE
+        
+        # 确定状态
+        status_str = data.get('status', '在库')
+        if isinstance(status_str, DeviceStatus):
+            status = status_str
+        else:
+            try:
+                status = DeviceStatus(status_str)
+            except:
+                status = DeviceStatus.IN_STOCK
+        
+        # 创建基础设备对象
+        device = cls(
+            id=data.get('id', ''),
+            name=data.get('name', ''),
+            device_type=device_type,
+            model=data.get('model', ''),
+            cabinet_number=data.get('cabinet_number', ''),
+            status=status,
+            remark=data.get('remark', ''),
+            jira_address=data.get('jira_address', ''),
+            is_deleted=bool(data.get('is_deleted', 0)),
+            create_time=parse_datetime(data.get('create_time')),
+            borrower=data.get('borrower', ''),
+            borrower_id=data.get('borrower_id', ''),
+            phone=data.get('phone', ''),
+            borrow_time=parse_datetime(data.get('borrow_time')),
+            location=data.get('location', ''),
+            reason=data.get('reason', ''),
+            entry_source=data.get('entry_source', ''),
+            expected_return_date=parse_datetime(data.get('expected_return_date')),
+            admin_operator=data.get('admin_operator', ''),
+            custodian_id=data.get('custodian_id', ''),
+            ship_time=parse_datetime(data.get('ship_time')),
+            ship_remark=data.get('ship_remark', ''),
+            ship_by=data.get('ship_by', ''),
+            pre_ship_borrower=data.get('pre_ship_borrower', ''),
+            pre_ship_phone=data.get('pre_ship_phone', ''),
+            pre_ship_borrow_time=parse_datetime(data.get('pre_ship_borrow_time')),
+            pre_ship_expected_return_date=parse_datetime(data.get('pre_ship_expected_return_date')),
+            pre_ship_reason=data.get('pre_ship_reason', ''),
+            lost_time=parse_datetime(data.get('lost_time')),
+            damage_reason=data.get('damage_reason', ''),
+            damage_time=parse_datetime(data.get('damage_time')),
+            previous_borrower=data.get('previous_borrower', ''),
+            sn=data.get('sn', ''),
+            system_version=data.get('system_version', ''),
+            imei=data.get('imei', ''),
+            carrier=data.get('carrier', ''),
+            software_version=data.get('software_version', ''),
+            hardware_version=data.get('hardware_version', ''),
+            project_attribute=data.get('project_attribute', ''),
+            connection_method=data.get('connection_method', ''),
+            os_version=data.get('os_version', ''),
+            os_platform=data.get('os_platform', ''),
+            product_name=data.get('product_name', ''),
+            screen_orientation=data.get('screen_orientation', ''),
+            screen_resolution=data.get('screen_resolution', '')
+        )
+        return device
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,
             "name": self.name,
-            "device_type": self.device_type.value,
+            "device_type": self.device_type.value if isinstance(self.device_type, DeviceType) else str(self.device_type),
             "model": self.model,
             "cabinet_number": self.cabinet_number,
-            "status": self.status.value,
+            "status": self.status.value if isinstance(self.status, DeviceStatus) else str(self.status),
             "remark": self.remark,
             "borrower": self.borrower,
             "phone": self.phone,
@@ -199,15 +304,58 @@ class Record:
     entry_source: str = ""
     remark: str = ""
 
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Record':
+        """从字典创建记录对象"""
+        from datetime import datetime
+        
+        def parse_datetime(val):
+            if val is None or val == '':
+                return datetime.now()
+            if isinstance(val, datetime):
+                return val
+            if isinstance(val, str):
+                for fmt in ['%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d']:
+                    try:
+                        return datetime.strptime(val, fmt)
+                    except:
+                        continue
+            return datetime.now()
+        
+        # 确定操作类型
+        op_type_str = data.get('operation_type', '借出')
+        if isinstance(op_type_str, OperationType):
+            op_type = op_type_str
+        else:
+            try:
+                op_type = OperationType(op_type_str)
+            except:
+                op_type = OperationType.BORROW
+        
+        return cls(
+            id=data.get('id', ''),
+            device_id=data.get('device_id', ''),
+            device_name=data.get('device_name', ''),
+            device_type=data.get('device_type', ''),
+            operation_type=op_type,
+            operator=data.get('operator', ''),
+            operation_time=parse_datetime(data.get('operation_time')),
+            borrower=data.get('borrower', ''),
+            phone=data.get('phone', ''),
+            reason=data.get('reason', ''),
+            entry_source=data.get('entry_source', ''),
+            remark=data.get('remark', '')
+        )
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,
             "device_id": self.device_id,
             "device_name": self.device_name,
             "device_type": self.device_type,
-            "operation_type": self.operation_type.value,
+            "operation_type": self.operation_type.value if isinstance(self.operation_type, OperationType) else str(self.operation_type),
             "operator": self.operator,
-            "operation_time": self.operation_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "operation_time": self.operation_time.strftime("%Y-%m-%d %H:%M:%S") if self.operation_time else "",
             "borrower": self.borrower,
             "phone": self.phone,
             "reason": self.reason,
@@ -227,6 +375,34 @@ class UserRemark:
     create_time: datetime
     is_inappropriate: bool = False
     
+    @classmethod
+    def from_dict(cls, data: dict) -> 'UserRemark':
+        """从字典创建备注对象"""
+        from datetime import datetime
+        
+        def parse_datetime(val):
+            if val is None or val == '':
+                return datetime.now()
+            if isinstance(val, datetime):
+                return val
+            if isinstance(val, str):
+                for fmt in ['%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d']:
+                    try:
+                        return datetime.strptime(val, fmt)
+                    except:
+                        continue
+            return datetime.now()
+        
+        return cls(
+            id=data.get('id', ''),
+            device_id=data.get('device_id', ''),
+            device_type=data.get('device_type', ''),
+            content=data.get('content', ''),
+            creator=data.get('creator', ''),
+            create_time=parse_datetime(data.get('create_time')),
+            is_inappropriate=bool(data.get('is_inappropriate', 0))
+        )
+    
     def to_dict(self) -> dict:
         return {
             "id": self.id,
@@ -234,7 +410,7 @@ class UserRemark:
             "device_type": self.device_type,
             "content": self.content,
             "creator": self.creator,
-            "create_time": self.create_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "create_time": self.create_time.strftime("%Y-%m-%d %H:%M:%S") if self.create_time else "",
             "is_inappropriate": "是" if self.is_inappropriate else "否",
         }
 
@@ -243,28 +419,60 @@ class UserRemark:
 class User:
     """用户信息"""
     id: str
-    wechat_name: str
-    phone: str
+    email: str                # 邮箱（用于登录，唯一）
     password: str = "123456"  # 默认密码
     borrower_name: str = ""   # 借用人名称（必填，唯一）
     borrow_count: int = 0     # 借用次数
     return_count: int = 0     # 归还次数
-    is_frozen: bool = False
+    is_frozen: bool = False   # 是否冻结
     is_admin: bool = False    # 是否为管理员
     is_deleted: bool = False  # 是否已删除
+    is_first_login: bool = True  # 是否首次登录（需要修改密码）
     create_time: Optional[datetime] = None
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'User':
+        """从字典创建用户对象"""
+        from datetime import datetime
+        
+        def parse_datetime(val):
+            if val is None or val == '':
+                return None
+            if isinstance(val, datetime):
+                return val
+            if isinstance(val, str):
+                for fmt in ['%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d']:
+                    try:
+                        return datetime.strptime(val, fmt)
+                    except:
+                        continue
+            return None
+        
+        return cls(
+            id=data.get('id', ''),
+            email=data.get('email', ''),
+            password=data.get('password', '123456'),
+            borrower_name=data.get('borrower_name', ''),
+            borrow_count=int(data.get('borrow_count', 0)),
+            return_count=int(data.get('return_count', 0)),
+            is_frozen=bool(data.get('is_frozen', 0)),
+            is_admin=bool(data.get('is_admin', 0)),
+            is_deleted=bool(data.get('is_deleted', 0)),
+            is_first_login=bool(data.get('is_first_login', 1)),
+            create_time=parse_datetime(data.get('create_time'))
+        )
     
     def to_dict(self) -> dict:
         return {
             "id": self.id,
-            "wechat_name": self.wechat_name,
-            "phone": self.phone,
+            "email": self.email,
             "password": self.password,
             "borrower_name": self.borrower_name,
             "borrow_count": self.borrow_count,
             "return_count": self.return_count,
             "is_frozen": "已冻结" if self.is_frozen else "正常",
             "is_admin": "是" if self.is_admin else "否",
+            "is_first_login": self.is_first_login,
             "create_time": self.create_time.strftime("%Y-%m-%d %H:%M:%S") if self.create_time else "",
         }
 
@@ -277,14 +485,40 @@ class UserLike:
     to_user_id: str         # 被点赞用户ID
     create_date: str        # 点赞日期（YYYY-MM-DD）
     create_time: datetime   # 点赞时间
-    
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'UserLike':
+        """从字典创建用户点赞对象"""
+        from datetime import datetime
+
+        def parse_datetime(val):
+            if val is None or val == '':
+                return datetime.now()
+            if isinstance(val, datetime):
+                return val
+            if isinstance(val, str):
+                for fmt in ['%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d']:
+                    try:
+                        return datetime.strptime(val, fmt)
+                    except:
+                        continue
+            return datetime.now()
+
+        return cls(
+            id=data.get('id', ''),
+            from_user_id=data.get('from_user_id', ''),
+            to_user_id=data.get('to_user_id', ''),
+            create_date=data.get('create_date', ''),
+            create_time=parse_datetime(data.get('create_time'))
+        )
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,
             "from_user_id": self.from_user_id,
             "to_user_id": self.to_user_id,
             "create_date": self.create_date,
-            "create_time": self.create_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "create_time": self.create_time.strftime("%Y-%m-%d %H:%M:%S") if self.create_time else "",
         }
 
 
@@ -296,11 +530,37 @@ class OperationLog:
     operator: str
     operation_content: str
     device_info: str
-    
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'OperationLog':
+        """从字典创建操作日志对象"""
+        from datetime import datetime
+
+        def parse_datetime(val):
+            if val is None or val == '':
+                return datetime.now()
+            if isinstance(val, datetime):
+                return val
+            if isinstance(val, str):
+                for fmt in ['%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d']:
+                    try:
+                        return datetime.strptime(val, fmt)
+                    except:
+                        continue
+            return datetime.now()
+
+        return cls(
+            id=data.get('id', ''),
+            operation_time=parse_datetime(data.get('operation_time')),
+            operator=data.get('operator', ''),
+            operation_content=data.get('operation_content', ''),
+            device_info=data.get('device_info', '')
+        )
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,
-            "operation_time": self.operation_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "operation_time": self.operation_time.strftime("%Y-%m-%d %H:%M:%S") if self.operation_time else "",
             "operator": self.operator,
             "operation_content": self.operation_content,
             "device_info": self.device_info,
@@ -314,6 +574,31 @@ class Admin:
     username: str
     password: str
     create_time: Optional[datetime] = None
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Admin':
+        """从字典创建管理员对象"""
+        from datetime import datetime
+        
+        def parse_datetime(val):
+            if val is None or val == '':
+                return None
+            if isinstance(val, datetime):
+                return val
+            if isinstance(val, str):
+                for fmt in ['%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d']:
+                    try:
+                        return datetime.strptime(val, fmt)
+                    except:
+                        continue
+            return None
+        
+        return cls(
+            id=data.get('id', ''),
+            username=data.get('username', ''),
+            password=data.get('password', ''),
+            create_time=parse_datetime(data.get('create_time'))
+        )
     
     def to_dict(self) -> dict:
         return {
@@ -333,13 +618,39 @@ class ViewRecord:
     viewer: str
     view_time: datetime
 
+    @classmethod
+    def from_dict(cls, data: dict) -> 'ViewRecord':
+        """从字典创建查看记录对象"""
+        from datetime import datetime
+
+        def parse_datetime(val):
+            if val is None or val == '':
+                return datetime.now()
+            if isinstance(val, datetime):
+                return val
+            if isinstance(val, str):
+                for fmt in ['%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d']:
+                    try:
+                        return datetime.strptime(val, fmt)
+                    except:
+                        continue
+            return datetime.now()
+
+        return cls(
+            id=data.get('id', ''),
+            device_id=data.get('device_id', ''),
+            device_type=data.get('device_type', ''),
+            viewer=data.get('viewer', ''),
+            view_time=parse_datetime(data.get('view_time'))
+        )
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,
             "device_id": self.device_id,
             "device_type": self.device_type,
             "viewer": self.viewer,
-            "view_time": self.view_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "view_time": self.view_time.strftime("%Y-%m-%d %H:%M:%S") if self.view_time else "",
         }
 
 
@@ -361,6 +672,37 @@ class Notification:
         if self.create_time is None:
             self.create_time = datetime.now()
 
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Notification':
+        """从字典创建通知对象"""
+        from datetime import datetime
+        
+        def parse_datetime(val):
+            if val is None or val == '':
+                return datetime.now()
+            if isinstance(val, datetime):
+                return val
+            if isinstance(val, str):
+                for fmt in ['%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d']:
+                    try:
+                        return datetime.strptime(val, fmt)
+                    except:
+                        continue
+            return datetime.now()
+        
+        return cls(
+            id=data.get('id', ''),
+            user_id=data.get('user_id', ''),
+            user_name=data.get('user_name', ''),
+            title=data.get('title', ''),
+            content=data.get('content', ''),
+            device_name=data.get('device_name', ''),
+            device_id=data.get('device_id', ''),
+            is_read=bool(data.get('is_read', 0)),
+            create_time=parse_datetime(data.get('create_time')),
+            notification_type=data.get('notification_type', 'info')
+        )
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,
@@ -371,7 +713,7 @@ class Notification:
             "device_name": self.device_name,
             "device_id": self.device_id,
             "is_read": self.is_read,
-            "create_time": self.create_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "create_time": self.create_time.strftime("%Y-%m-%d %H:%M:%S") if self.create_time else "",
             "notification_type": self.notification_type,
         }
 
@@ -393,6 +735,37 @@ class Announcement:
     def __post_init__(self):
         if self.create_time is None:
             self.create_time = datetime.now()
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Announcement':
+        """从字典创建公告对象"""
+        from datetime import datetime
+        
+        def parse_datetime(val):
+            if val is None or val == '':
+                return None
+            if isinstance(val, datetime):
+                return val
+            if isinstance(val, str):
+                for fmt in ['%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d']:
+                    try:
+                        return datetime.strptime(val, fmt)
+                    except:
+                        continue
+            return None
+        
+        return cls(
+            id=data.get('id', ''),
+            title=data.get('title', ''),
+            content=data.get('content', ''),
+            announcement_type=data.get('announcement_type', 'normal'),
+            is_active=bool(data.get('is_active', 1)),
+            sort_order=int(data.get('sort_order', 0)),
+            creator=data.get('creator', ''),
+            create_time=parse_datetime(data.get('create_time')),
+            update_time=parse_datetime(data.get('update_time')),
+            force_show_version=int(data.get('force_show_version', 0))
+        )
 
     def to_dict(self) -> dict:
         return {

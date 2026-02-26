@@ -10,31 +10,103 @@ from typing import List, Optional, Dict, Any
 
 from .models import Device, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, OperationLog, ViewRecord, Notification, Announcement, UserLike
 from .models import DeviceStatus, DeviceType, OperationType, EntrySource, Admin
-from .db_store import DatabaseStore
+from .db_store import DatabaseStore, get_db_transaction
+
+# 创建全局 DatabaseStore 实例
+_db_store = DatabaseStore()
 
 
 class APIClient:
     """API 客户端单例类"""
     _instance = None
     _initialized = False
-    
+
     # 类属性 - 始终存在
     _current_admin: str = "管理员"
-    
+
+    # 排行榜缓存
+    _rankings_cache: Dict[str, Any] = {
+        'borrow': None,
+        'return': None,
+        'last_update': None
+    }
+
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
-    
+
     def __init__(self):
         if not APIClient._initialized:
             self._current_admin = "管理员"
+            self._db = _db_store
             APIClient._initialized = True
+
+    def _should_update_rankings_cache(self) -> bool:
+        """检查是否需要更新排行榜缓存（每天12点后更新）"""
+        if self._rankings_cache['last_update'] is None:
+            return True
+
+        now = datetime.now()
+        last_update = self._rankings_cache['last_update']
+
+        # 如果上次更新是昨天或更早，且现在过了12点，需要更新
+        if now.date() > last_update.date():
+            return True
+
+        # 如果上次更新在今天12点之前，且现在过了12点，需要更新
+        noon_today = now.replace(hour=12, minute=0, second=0, microsecond=0)
+        if now >= noon_today and last_update < noon_today:
+            return True
+
+        return False
+
+    def _update_rankings_cache(self):
+        """更新排行榜缓存"""
+        self._rankings_cache['borrow'] = self._calculate_rankings('borrow')
+        self._rankings_cache['return'] = self._calculate_rankings('return')
+        self._rankings_cache['last_update'] = datetime.now()
+
+    def _calculate_rankings(self, ranking_type: str = 'borrow') -> List[dict]:
+        """计算排行榜数据（内部方法）"""
+        valid_users = [u for u in self._db.get_all_users() if not u.is_frozen and not u.is_deleted]
+
+        if ranking_type == 'borrow':
+            sorted_users = sorted(valid_users, key=lambda x: x.borrow_count, reverse=True)
+            titles = self.BORROW_TITLES
+        else:
+            sorted_users = sorted(valid_users, key=lambda x: x.return_count, reverse=True)
+            titles = self.RETURN_TITLES
+
+        rankings = []
+        for i, user in enumerate(sorted_users):
+            rank = i + 1
+            count = user.borrow_count if ranking_type == 'borrow' else user.return_count
+
+            if rank <= 10:
+                title = titles[i] if i < len(titles) else titles[-1]
+            else:
+                title = None
+
+            star_level = self.get_star_level(count)
+            like_count = self.get_user_like_count(user.id)
+
+            rankings.append({
+                'rank': rank,
+                'user_id': user.id,
+                'user_name': user.borrower_name,
+                'count': count,
+                'title': title,
+                'star_level': star_level,
+                'like_count': like_count
+            })
+
+        return rankings
 
     @property
     def _users(self):
         """兼容属性：返回所有用户列表"""
-        return DatabaseStore.get_all_users()
+        return self._db.get_all_users()
 
     @_users.setter
     def _users(self, value):
@@ -44,67 +116,67 @@ class APIClient:
     @property
     def _car_machines(self):
         """兼容属性：返回所有车机设备"""
-        return DatabaseStore.get_all_devices(device_type='车机')
+        return self._db.get_all_devices(device_type='车机')
 
     @property
     def _instruments(self):
         """兼容属性：返回所有仪表设备"""
-        return DatabaseStore.get_all_devices(device_type='仪表')
+        return self._db.get_all_devices(device_type='仪表')
 
     @property
     def _phones(self):
         """兼容属性：返回所有手机设备"""
-        return DatabaseStore.get_all_devices(device_type='手机')
+        return self._db.get_all_devices(device_type='手机')
 
     @property
     def _sim_cards(self):
         """兼容属性：返回所有手机卡设备"""
-        return DatabaseStore.get_all_devices(device_type='手机卡')
+        return self._db.get_all_devices(device_type='手机卡')
 
     @property
     def _other_devices(self):
         """兼容属性：返回所有其它设备"""
-        return DatabaseStore.get_all_devices(device_type='其它设备')
+        return self._db.get_all_devices(device_type='其它设备')
 
     @property
     def _records(self):
         """兼容属性：返回所有记录"""
-        return DatabaseStore.get_all_records()
+        return self._db.get_all_records()
 
     @property
     def _remarks(self):
         """兼容属性：返回所有备注"""
-        return DatabaseStore.get_all_remarks()
+        return self._db.get_remarks()
 
     @property
     def _operation_logs(self):
         """兼容属性：返回所有操作日志"""
-        return DatabaseStore.get_all_operation_logs()
+        return []
 
     @property
     def _view_records(self):
         """兼容属性：返回所有查看记录"""
-        return DatabaseStore.get_all_view_records()
+        return []
 
     @property
     def _admins(self):
         """兼容属性：返回所有管理员"""
-        return DatabaseStore.get_all_admins()
+        return []
 
     @property
     def _notifications(self):
         """兼容属性：返回所有通知"""
-        return DatabaseStore.get_all_notifications()
+        return self._db.get_notifications_by_user('')
 
     @property
     def _announcements(self):
         """兼容属性：返回所有公告"""
-        return DatabaseStore.get_all_announcements(active_only=False)
+        return self._db.get_all_announcements()
 
     @property
     def _user_likes(self):
         """兼容属性：返回所有用户点赞"""
-        return DatabaseStore.get_all_user_likes()
+        return []
 
     def _safe_print(self, message):
         """安全打印，处理Windows控制台编码问题"""
@@ -142,17 +214,17 @@ class APIClient:
     def verify_admin(self, username: str, password: str) -> bool:
         """验证管理员账号密码"""
         # 1. 检查传统管理员表
-        admin = DatabaseStore.get_admin_by_username(username)
+        admin = self._db.get_admin_by_username(username)
         if admin and admin.password == password:
             return True
         
-        # 2. 检查被指定为管理员的用户（通过借用人名称或手机号登录）
-        user = DatabaseStore.get_user_by_phone(username)
+        # 2. 检查被指定为管理员的用户（通过借用人名称或邮箱登录）
+        user = self._db.get_user_by_email(username)
         if user and user.is_admin and not user.is_frozen and user.password == password:
             return True
         
         # 3. 尝试用借用人名称查找
-        for user in DatabaseStore.get_all_users():
+        for user in self._db.get_all_users():
             if user.borrower_name == username and user.is_admin and not user.is_frozen and user.password == password:
                 return True
         
@@ -160,7 +232,7 @@ class APIClient:
     
     def is_user_admin(self, borrower_name: str) -> bool:
         """检查指定用户是否为管理员"""
-        for user in DatabaseStore.get_all_users():
+        for user in self._db.get_all_users():
             if user.borrower_name == borrower_name and user.is_admin:
                 return True
         return False
@@ -173,83 +245,83 @@ class APIClient:
         """获取当前管理员"""
         return self._current_admin
     
-    def verify_user_login(self, phone: str, password: str) -> Optional[User]:
+    def verify_user_login(self, email: str, password: str) -> Optional[User]:
         """验证用户登录"""
-        user = DatabaseStore.get_user_by_phone(phone)
+        user = self._db.get_user_by_email(email)
         if user and user.password == password:
             if user.is_frozen:
                 return None  # 账号已冻结
             return user
         return None
     
-    def get_user_by_phone(self, phone: str) -> Optional[User]:
-        """根据手机号获取用户"""
-        return DatabaseStore.get_user_by_phone(phone)
+    def get_user_by_email(self, email: str) -> Optional[User]:
+        """根据邮箱获取用户"""
+        return self._db.get_user_by_email(email)
 
     def get_user_by_id(self, user_id: str) -> Optional[User]:
         """根据ID获取用户"""
-        return DatabaseStore.get_user_by_id(user_id)
+        return self._db.get_user_by_id(user_id)
 
     def update_user_borrower_name(self, user_id: str, borrower_name: str) -> bool:
         """更新用户借用人名称"""
         # 检查借用人名称是否已存在
-        for user in DatabaseStore.get_all_users():
+        for user in self._db.get_all_users():
             if user.borrower_name == borrower_name and user.id != user_id:
                 return False  # 名称已存在
         
-        user = DatabaseStore.get_user_by_id(user_id)
+        user = self._db.get_user_by_id(user_id)
         if user:
             user.borrower_name = borrower_name
-            DatabaseStore.save_user(user)
+            self._db.save_user(user)
             return True
         return False
     
-    def register_user(self, phone: str, password: str, borrower_name: str) -> tuple[bool, str]:
+    def register_user(self, email: str, password: str, borrower_name: str) -> tuple[bool, str]:
         """注册用户
         
         Returns:
             (成功, 错误信息) 或 (成功, 用户)
         """
-        # 检查手机号是否已存在
-        existing_user = DatabaseStore.get_user_by_phone(phone)
+        # 检查邮箱是否已存在
+        existing_user = self._db.get_user_by_email(email)
         if existing_user:
-            return False, "手机号已被注册"
+            return False, "邮箱已被注册"
         
         # 检查用户名是否已存在
-        for user in DatabaseStore.get_all_users():
+        for user in self._db.get_all_users():
             if user.borrower_name == borrower_name:
                 return False, "用户名已被使用"
         
         # 创建新用户
         new_user = User(
             id=str(uuid.uuid4()),
-            wechat_name=borrower_name,
-            phone=phone,
+            email=email,
             password=password,
             borrower_name=borrower_name,
             borrow_count=0,
             is_frozen=False,
+            is_first_login=True,
             create_time=datetime.now()
         )
         
-        DatabaseStore.save_user(new_user)
+        self._db.save_user(new_user)
         return True, "注册成功"
     
     # ==================== 设备管理 ====================
     
     def get_all_devices(self, device_type: Optional[str] = None) -> List[Device]:
         """获取所有设备，按创建时间倒序排列（最新的在前面）"""
-        devices = DatabaseStore.get_all_devices(device_type=device_type)
+        devices = self._db.get_all_devices(device_type=device_type)
         # 按创建时间倒序排列，最新的设备排在最前面
         return sorted(devices, key=lambda d: d.create_time if d.create_time else datetime.min, reverse=True)
     
     def get_device_by_id(self, device_id: str) -> Optional[Device]:
         """根据ID获取设备"""
-        return DatabaseStore.get_device_by_id(device_id)
+        return self._db.get_device_by_id(device_id)
     
     def get_device_by_name(self, device_name: str) -> Optional[Device]:
         """根据名称获取设备"""
-        all_devices = DatabaseStore.get_all_devices()
+        all_devices = self._db.get_all_devices()
         for device in all_devices:
             if device.name == device_name:
                 return device
@@ -258,12 +330,12 @@ class APIClient:
     def add_device(self, device: Device) -> bool:
         """新增设备"""
         # 检查设备名是否唯一
-        all_devices = DatabaseStore.get_all_devices()
+        all_devices = self._db.get_all_devices()
         for d in all_devices:
             if d.name == device.name:
                 return False
         
-        DatabaseStore.save_device(device)
+        self._db.save_device(device)
         
         # 添加操作日志
         self.add_operation_log(f"新增设备", device.name)
@@ -271,35 +343,43 @@ class APIClient:
     
     def update_device(self, device: Device) -> bool:
         """更新设备信息"""
-        existing = DatabaseStore.get_device_by_id(device.id)
+        existing = self._db.get_device_by_id(device.id)
         if existing:
-            DatabaseStore.save_device(device)
+            self._db.save_device(device)
             self.add_operation_log(f"更新设备信息", device.name)
             return True
         return False
     
     def delete_device(self, device_id: str) -> bool:
         """软删除设备"""
-        device = DatabaseStore.get_device_by_id(device_id)
+        device = self._db.get_device_by_id(device_id)
         if device:
             device.is_deleted = True
-            DatabaseStore.save_device(device)
+            self._db.save_device(device)
             self.add_operation_log(f"删除设备", device.name)
             return True
         return False
     
     # ==================== 录入登记/强制归还 ====================
     
-    def force_borrow(self, device_id: str, borrower: str, phone: str, 
+    def force_borrow(self, device_id: str, borrower: str, phone: str,
                      location: str, reason: str, expected_return_date: datetime,
                      remark: str = "") -> bool:
         """强制借出（管理员录入）"""
         device = self.get_device_by_id(device_id)
         if not device or not self._is_available_for_borrow(device):
             return False
-        
+
+        # 查找用户ID
+        borrower_id = ""
+        for user in self._db.get_all_users():
+            if user.borrower_name == borrower:
+                borrower_id = user.id
+                break
+
         device.status = DeviceStatus.BORROWED
         device.borrower = borrower
+        device.borrower_id = borrower_id
         device.phone = phone
         device.borrow_time = datetime.now()
         device.location = location
@@ -307,9 +387,9 @@ class APIClient:
         device.entry_source = EntrySource.ADMIN.value
         device.expected_return_date = expected_return_date
         device.admin_operator = self._current_admin
-        
+
         # 保存设备
-        DatabaseStore.save_device(device)
+        self._db.save_device(device)
         
         # 添加记录
         record = Record(
@@ -326,13 +406,13 @@ class APIClient:
             entry_source=EntrySource.ADMIN.value,
             remark=remark
         )
-        DatabaseStore.save_record(record)
+        self._db.save_record(record)
         
         # 更新用户借用次数
-        for user in DatabaseStore.get_all_users():
+        for user in self._db.get_all_users():
             if user.borrower_name == borrower:
                 user.borrow_count += 1
-                DatabaseStore.save_user(user)
+                self._db.save_user(user)
                 break
 
         # 添加操作日志
@@ -347,10 +427,11 @@ class APIClient:
             return False
         
         borrower = device.borrower
-        
+
         # 清空借用信息，根据设备类型设置默认状态
         device.status = self._get_default_status_for_device(device)
         device.borrower = ""
+        device.borrower_id = ""
         device.phone = ""
         device.borrow_time = None
         device.location = ""
@@ -359,7 +440,7 @@ class APIClient:
         device.expected_return_date = None
         
         # 保存设备
-        DatabaseStore.save_device(device)
+        self._db.save_device(device)
         
         # 添加记录
         record = Record(
@@ -375,14 +456,14 @@ class APIClient:
             entry_source=EntrySource.ADMIN.value,
             remark=remark
         )
-        DatabaseStore.save_record(record)
+        self._db.save_record(record)
         
         # 更新原借用人的归还次数
         if borrower:
-            for user in DatabaseStore.get_all_users():
+            for user in self._db.get_all_users():
                 if user.borrower_name == borrower:
                     user.return_count += 1
-                    DatabaseStore.save_user(user)
+                    self._db.save_user(user)
                     break
         
         # 添加操作日志
@@ -398,23 +479,25 @@ class APIClient:
             return False
         
         original_borrower = device.borrower
-        
-        # 获取转借人的手机号
-        transfer_phone = ""
-        for user in DatabaseStore.get_all_users():
+
+        # 获取转借人的信息
+        transfer_email = ""
+        transfer_user_id = ""
+        for user in self._db.get_all_users():
             if user.borrower_name == transfer_to:
-                transfer_phone = user.phone
+                transfer_email = user.email
+                transfer_user_id = user.id
                 break
-        
+
         # 更新设备信息
         device.borrower = transfer_to
-        device.phone = transfer_phone
+        device.borrower_id = transfer_user_id
         device.location = location
         device.reason = reason
         device.expected_return_date = expected_return_date
         
         # 保存设备
-        DatabaseStore.save_device(device)
+        self._db.save_device(device)
         
         # 添加记录
         record = Record(
@@ -426,26 +509,25 @@ class APIClient:
             operator=self._current_admin,
             operation_time=datetime.now(),
             borrower=f"转借：{original_borrower}——>{transfer_to}",
-            phone=transfer_phone,
             reason=reason,
             entry_source=EntrySource.ADMIN.value,
             remark=remark
         )
-        DatabaseStore.save_record(record)
+        self._db.save_record(record)
 
         # 更新新借用人的借用次数
-        for user in DatabaseStore.get_all_users():
+        for user in self._db.get_all_users():
             if user.borrower_name == transfer_to:
                 user.borrow_count += 1
-                DatabaseStore.save_user(user)
+                self._db.save_user(user)
                 break
 
         # 更新原借用人的归还次数（转借视为原借用人归还）
         if original_borrower:
-            for user in DatabaseStore.get_all_users():
+            for user in self._db.get_all_users():
                 if user.borrower_name == original_borrower:
                     user.return_count += 1
-                    DatabaseStore.save_user(user)
+                    self._db.save_user(user)
                     break
 
         # 添加操作日志
@@ -458,10 +540,11 @@ class APIClient:
                     device_name: Optional[str] = None,
                     operation_type: Optional[str] = None,
                     start_time: Optional[datetime] = None,
-                    end_time: Optional[datetime] = None) -> List[Record]:
+                    end_time: Optional[datetime] = None,
+                    limit: int = None) -> List[Record]:
         """查询记录"""
-        records = DatabaseStore.get_all_records()
-        
+        records = self._db.get_all_records(limit=limit)
+
         if device_type:
             records = [r for r in records if r.device_type == device_type]
         if device_name:
@@ -489,56 +572,56 @@ class APIClient:
     
     def get_all_users(self) -> List[User]:
         """获取所有用户"""
-        return DatabaseStore.get_all_users()
+        return self._db.get_all_users()
     
     def freeze_user(self, user_id: str) -> bool:
         """冻结用户"""
-        user = DatabaseStore.get_user_by_id(user_id)
+        user = self._db.get_user_by_id(user_id)
         if user:
             user.is_frozen = True
-            DatabaseStore.save_user(user)
-            self.add_operation_log(f"冻结用户", user.wechat_name)
+            self._db.save_user(user)
+            self.add_operation_log(f"冻结用户", user.borrower_name)
             return True
         return False
     
     def unfreeze_user(self, user_id: str) -> bool:
         """解冻用户"""
-        user = DatabaseStore.get_user_by_id(user_id)
+        user = self._db.get_user_by_id(user_id)
         if user:
             user.is_frozen = False
-            DatabaseStore.save_user(user)
-            self.add_operation_log(f"解冻用户", user.wechat_name)
+            self._db.save_user(user)
+            self.add_operation_log(f"解冻用户", user.borrower_name)
             return True
         return False
 
     def set_user_admin(self, user_id: str) -> bool:
         """设置用户为管理员"""
-        user = DatabaseStore.get_user_by_id(user_id)
+        user = self._db.get_user_by_id(user_id)
         if user:
             user.is_admin = True
-            DatabaseStore.save_user(user)
-            self.add_operation_log(f"设置管理员", user.wechat_name)
+            self._db.save_user(user)
+            self.add_operation_log(f"设置管理员", user.borrower_name)
             return True
         return False
 
     def cancel_user_admin(self, user_id: str) -> bool:
         """取消用户管理员权限"""
-        user = DatabaseStore.get_user_by_id(user_id)
+        user = self._db.get_user_by_id(user_id)
         if user:
             user.is_admin = False
-            DatabaseStore.save_user(user)
-            self.add_operation_log(f"取消管理员", user.wechat_name)
+            self._db.save_user(user)
+            self.add_operation_log(f"取消管理员", user.borrower_name)
             return True
         return False
 
     def set_user_admin_flag(self, user_id: str, is_admin: bool) -> bool:
         """设置用户管理员标志"""
-        user = DatabaseStore.get_user_by_id(user_id)
+        user = self._db.get_user_by_id(user_id)
         if user:
             user.is_admin = is_admin
-            DatabaseStore.save_user(user)
+            self._db.save_user(user)
             action = "设置管理员" if is_admin else "取消管理员"
-            self.add_operation_log(action, user.wechat_name)
+            self.add_operation_log(action, user.borrower_name)
             return True
         return False
 
@@ -547,7 +630,7 @@ class APIClient:
     def verify_admin_login(self, username: str, password: str) -> Optional[dict]:
         """验证管理员登录"""
         # 1. 检查传统管理员表
-        admin = DatabaseStore.get_admin_by_username(username)
+        admin = self._db.get_admin_by_username(username)
         if admin and admin.password == password:
             return {
                 'id': admin.id,
@@ -555,10 +638,10 @@ class APIClient:
                 'username': admin.username
             }
         
-        # 2. 检查被指定为管理员的用户（通过借用人名称或手机号登录）
-        for user in DatabaseStore.get_all_users():
+        # 2. 检查被指定为管理员的用户（通过借用人名称或邮箱登录）
+        for user in self._db.get_all_users():
             if user.is_admin and not user.is_frozen:
-                if (user.borrower_name == username or user.phone == username) and user.password == password:
+                if (user.borrower_name == username or user.email == username) and user.password == password:
                     return {
                         'id': user.id,
                         'name': user.borrower_name,
@@ -569,15 +652,15 @@ class APIClient:
     
     def get_users(self) -> List[User]:
         """获取所有用户列表"""
-        return DatabaseStore.get_all_users()
+        return self._db.get_all_users()
     
     def get_device(self, device_id: str) -> Optional[Device]:
         """根据ID获取设备"""
-        return DatabaseStore.get_device_by_id(device_id)
+        return self._db.get_device_by_id(device_id)
     
     def get_device_records(self, device_id: str, device_type: str = None, limit: int = 10) -> List[Record]:
         """获取设备的操作记录"""
-        records = DatabaseStore.get_records_by_device(device_id)
+        records = self._db.get_records_by_device(device_id)
         if device_type:
             records = [r for r in records if r.device_type == device_type]
         return sorted(records, key=lambda x: x.operation_time, reverse=True)[:limit]
@@ -640,7 +723,7 @@ class APIClient:
                 create_time=create_time
             )
         
-        DatabaseStore.save_device(device)
+        self._db.save_device(device)
         self.add_operation_log("创建设备", device_name)
         return device
     
@@ -665,6 +748,43 @@ class APIClient:
 
         if 'device_name' in data:
             device.name = data['device_name']
+        if 'device_type' in data:
+            # 更新设备类型
+            device_type_str = data['device_type']
+            if isinstance(device_type_str, str):
+                # 根据中文值获取枚举类型
+                new_device_type = None
+                for dt in DeviceType:
+                    if dt.value == device_type_str:
+                        new_device_type = dt
+                        break
+                if new_device_type and new_device_type != device.device_type:
+                    # 设备类型发生变化，根据新类型和借用人状态自动调整状态
+                    device.device_type = new_device_type
+                    # 判断是否为车机/仪表类型
+                    is_car_or_instrument = new_device_type in [DeviceType.CAR_MACHINE, DeviceType.INSTRUMENT]
+                    # 判断是否有借出人
+                    has_borrower = device.borrower and device.borrower.strip()
+                    if has_borrower:
+                        # 有借出人，状态设为借出
+                        if device.status != DeviceStatus.BORROWED:
+                            original_status = device.status
+                            device.status = DeviceStatus.BORROWED
+                            status_changed = True
+                    else:
+                        # 无借出人，根据设备类型设置默认状态
+                        if is_car_or_instrument:
+                            # 车机/仪表：在库
+                            if device.status != DeviceStatus.IN_STOCK:
+                                original_status = device.status
+                                device.status = DeviceStatus.IN_STOCK
+                                status_changed = True
+                        else:
+                            # 手机/手机卡/其它设备：保管中
+                            if device.status != DeviceStatus.IN_CUSTODY:
+                                original_status = device.status
+                                device.status = DeviceStatus.IN_CUSTODY
+                                status_changed = True
         if 'model' in data:
             device.model = data['model']
         if 'cabinet' in data:
@@ -730,7 +850,7 @@ class APIClient:
                 reason=f'管理员将状态从{original_status.value}改成了{device.status.value}',
                 remark=''
             )
-            DatabaseStore.save_record(record)
+            self._db.save_record(record)
 
         # 添加保管人变更记录
         if custodian_changed:
@@ -746,7 +866,7 @@ class APIClient:
                 reason=f'管理员将保管人更改成{device.cabinet_number}',
                 remark=f'原保管人: {original_custodian}'
             )
-            DatabaseStore.save_record(record)
+            self._db.save_record(record)
 
         # 如果设备被报废且之前是借出状态，清空借用人信息并添加报废记录
         if is_scrapped and was_borrowed and original_borrower:
@@ -768,7 +888,7 @@ class APIClient:
                 borrower=original_borrower,
                 reason='设备被管理员报废'
             )
-            DatabaseStore.save_record(record)
+            self._db.save_record(record)
             self.add_operation_log(f"报废设备(原借用人: {original_borrower})", device.name)
             self.notify_status_change(
                 device_id=device.id,
@@ -790,7 +910,7 @@ class APIClient:
                     )
                 if device.cabinet_number and device.cabinet_number != original_borrower:
                     custodian_user = None
-                    for user in DatabaseStore.get_all_users():
+                    for user in self._db.get_all_users():
                         if user.borrower_name == device.cabinet_number:
                             custodian_user = user
                             break
@@ -807,7 +927,7 @@ class APIClient:
             elif custodian_changed:
                 self.add_operation_log(f"保管人变更: {original_custodian} -> {device.cabinet_number}", device.name)
                 if original_custodian and original_custodian != device.cabinet_number:
-                    for user in DatabaseStore.get_all_users():
+                    for user in self._db.get_all_users():
                         if user.borrower_name == original_custodian:
                             self.add_notification(
                                 user_id=user.id,
@@ -820,7 +940,7 @@ class APIClient:
                             )
                             break
                 if device.cabinet_number and device.cabinet_number != original_custodian:
-                    for user in DatabaseStore.get_all_users():
+                    for user in self._db.get_all_users():
                         if user.borrower_name == device.cabinet_number:
                             self.add_notification(
                                 user_id=user.id,
@@ -833,7 +953,7 @@ class APIClient:
                             )
                             break
                 if device.borrower:
-                    for user in DatabaseStore.get_all_users():
+                    for user in self._db.get_all_users():
                         if user.borrower_name == device.borrower:
                             self.add_notification(
                                 user_id=user.id,
@@ -848,53 +968,175 @@ class APIClient:
             else:
                 self.add_operation_log("编辑设备", device.name)
 
-        DatabaseStore.save_device(device)
+        self._db.save_device(device)
         return True
     
-    def create_user(self, borrower_name: str, wechat_name: str = '', 
-                   phone: str = '', password: str = '', is_admin: bool = False) -> User:
+    def create_user(self, borrower_name: str, 
+                   email: str = '', password: str = '', is_admin: bool = False) -> User:
         """创建新用户"""
+        # 检查邮箱是否已存在（如果提供了邮箱）
+        if email:
+            existing_user = self._db.get_user_by_email(email)
+            if existing_user:
+                raise ValueError("邮箱已被注册")
+        
         user_id = str(uuid.uuid4())
         user = User(
             id=user_id,
+            email=email,
+            password=password or '123456',
             borrower_name=borrower_name,
-            wechat_name=wechat_name,
-            phone=phone,
-            password=password,
             is_admin=is_admin,
+            is_first_login=True,
             create_time=datetime.now()
         )
-        DatabaseStore.save_user(user)
+        self._db.save_user(user)
         self.add_operation_log("创建用户", borrower_name)
         return user
     
     def update_user(self, user_id: str, data: dict) -> bool:
         """更新用户信息"""
-        user = DatabaseStore.get_user_by_id(user_id)
+        user = self._db.get_user_by_id(user_id)
         if user:
+            old_borrower_name = user.borrower_name
+            
             if 'name' in data:
                 user.borrower_name = data['name']
-            if 'weixin_name' in data:
-                user.wechat_name = data['weixin_name']
-            if 'phone' in data:
-                user.phone = data['phone']
+            if 'email' in data:
+                user.email = data['email']
             if 'password' in data and data['password']:
                 user.password = data['password']
             if 'is_admin' in data:
                 user.is_admin = data['is_admin']
+            if 'is_first_login' in data:
+                user.is_first_login = data['is_first_login']
             
-            DatabaseStore.save_user(user)
+            self._db.save_user(user)
+            
+            # 如果借用人名称发生变化，同步更新设备表中的借用人和保管人
+            if 'name' in data and old_borrower_name and old_borrower_name != data['name']:
+                self._sync_device_borrower_name(old_borrower_name, data['name'])
+            
             self.add_operation_log("编辑用户", user.borrower_name)
             return True
         return False
     
-    def delete_user(self, user_id: str) -> bool:
-        """删除用户（逻辑删除）"""
-        user = DatabaseStore.get_user_by_id(user_id)
+    def _sync_device_borrower_name(self, old_name: str, new_name: str):
+        """同步更新设备表中的借用人和保管人名称"""
+        all_devices = self.get_all_devices()
+        for device in all_devices:
+            need_save = False
+            # 更新借用人
+            if device.borrower == old_name:
+                device.borrower = new_name
+                need_save = True
+            # 更新保管人
+            if device.cabinet_number == old_name:
+                device.cabinet_number = new_name
+                need_save = True
+            # 更新上一个借用人
+            if device.previous_borrower == old_name:
+                device.previous_borrower = new_name
+                need_save = True
+            
+            if need_save:
+                self._db.save_device(device)
+    
+    def get_user_borrowed_devices(self, borrower_name: str) -> list:
+        """获取用户当前借用的所有设备（通过名称）"""
+        borrowed_devices = []
+        all_devices = self.get_all_devices()
+        for device in all_devices:
+            if device.borrower == borrower_name and device.status == DeviceStatus.BORROWED:
+                borrowed_devices.append(device)
+        return borrowed_devices
+
+    def get_user_borrowed_devices_by_id(self, borrower_id: str) -> list:
+        """获取用户当前借用的所有设备（通过用户ID）"""
+        borrowed_devices = []
+        all_devices = self.get_all_devices()
+
+        # 获取用户信息以获取borrower_name
+        user = self._db.get_user_by_id(borrower_id)
+        user_name = user.borrower_name if user else ""
+
+        for device in all_devices:
+            if device.status == DeviceStatus.BORROWED:
+                # 检查borrower_id匹配，或者通过borrower名称匹配用户
+                if device.borrower_id == borrower_id:
+                    borrowed_devices.append(device)
+                elif user_name and device.borrower == user_name:
+                    borrowed_devices.append(device)
+        return borrowed_devices
+
+    def get_user_custodian_devices_by_id(self, custodian_id: str) -> list:
+        """获取用户保管的所有设备（通过用户ID）"""
+        custodian_devices = []
+        all_devices = self.get_all_devices()
+
+        # 获取用户信息以获取borrower_name
+        user = self._db.get_user_by_id(custodian_id)
+        user_name = user.borrower_name if user else ""
+
+        for device in all_devices:
+            # 检查custodian_id匹配，或者通过cabinet_number匹配用户名称
+            if device.custodian_id == custodian_id:
+                custodian_devices.append(device)
+            elif user_name and device.cabinet_number == user_name:
+                custodian_devices.append(device)
+        return custodian_devices
+
+    def delete_user(self, user_id: str) -> tuple[bool, str]:
+        """删除用户（逻辑删除）
+
+        Returns:
+            (成功, 消息)
+        """
+        user = self._db.get_user_by_id(user_id)
+        if not user:
+            return False, "用户不存在"
+
+        # 检查用户是否有借用的设备
+        borrowed_devices = self.get_user_borrowed_devices_by_id(user_id)
+        if borrowed_devices:
+            device_names = [d.name for d in borrowed_devices[:5]]  # 最多显示5个设备名
+            device_list = ", ".join(device_names)
+            if len(borrowed_devices) > 5:
+                device_list += f" 等共{len(borrowed_devices)}个设备"
+            return False, f"该用户还有未归还的借用设备：{device_list}，请归还后再删除用户"
+
+        # 检查用户是否有保管的设备
+        custodian_devices = self.get_user_custodian_devices_by_id(user_id)
+        if custodian_devices:
+            device_names = [d.name for d in custodian_devices[:5]]  # 最多显示5个设备名
+            device_list = ", ".join(device_names)
+            if len(custodian_devices) > 5:
+                device_list += f" 等共{len(custodian_devices)}个设备"
+            return False, f"该用户还有保管中的设备：{device_list}，请移交后再删除用户"
+
+        user.is_deleted = True
+        self._db.save_user(user)
+        self.add_operation_log("删除用户", user.borrower_name)
+        return True, "删除成功"
+    
+    def reset_user_password(self, user_id: str) -> bool:
+        """重置用户密码为初始密码123456，并设置为首次登录状态"""
+        user = self._db.get_user_by_id(user_id)
         if user:
-            user.is_deleted = True
-            DatabaseStore.save_user(user)
-            self.add_operation_log("删除用户", user.borrower_name)
+            user.password = '123456'
+            user.is_first_login = True
+            self._db.save_user(user)
+            self.add_operation_log("重置密码", user.borrower_name)
+            return True
+        return False
+    
+    def change_user_password(self, user_id: str, new_password: str) -> bool:
+        """用户修改密码"""
+        user = self._db.get_user_by_id(user_id)
+        if user:
+            user.password = new_password
+            user.is_first_login = False  # 修改密码后不再是首次登录
+            self._db.save_user(user)
             return True
         return False
     
@@ -909,28 +1151,45 @@ class APIClient:
         if device.status == DeviceStatus.SEALED:
             raise ValueError('封存状态的设备无法借用')
 
+        # 检查是否是邮箱，如果是则通过邮箱查找用户获取borrower_name
+        actual_borrower = borrower
+        borrower_id = ""
+        if '@' in borrower:
+            user = self.get_user_by_email(borrower)
+            if not user:
+                raise ValueError(f'未找到邮箱为 {borrower} 的用户')
+            actual_borrower = user.borrower_name
+            borrower_id = user.id
+        else:
+            # 通过名称查找用户ID
+            for user in self._db.get_all_users():
+                if user.borrower_name == borrower:
+                    borrower_id = user.id
+                    break
+
         # 检查用户借用数量限制（管理员借出也要检查）
         user_borrowed_count = 0
         all_devices = self.get_all_devices()
         for d in all_devices:
-            if d.borrower == borrower and d.status == DeviceStatus.BORROWED:
+            if d.borrower == actual_borrower and d.status == DeviceStatus.BORROWED:
                 user_borrowed_count += 1
 
         borrow_limit = 10  # 最大借用数量
         if user_borrowed_count >= borrow_limit:
-            raise ValueError(f'{borrower}已超出可借设备上限，请归还后再借')
+            raise ValueError(f'{actual_borrower}已超出可借设备上限，请归还后再借')
 
         # 计算预计归还时间：当前时间 + 天数
         now = datetime.now()
         expected_return = now + timedelta(days=days)
 
-        device.borrower = borrower
+        device.borrower = actual_borrower
+        device.borrower_id = borrower_id
         device.status = DeviceStatus.BORROWED
         device.borrow_time = now
         device.expected_return_date = expected_return
 
         # 保存设备
-        DatabaseStore.save_device(device)
+        self._db.save_device(device)
 
         # 确定录入来源
         if entry_source is None:
@@ -945,18 +1204,18 @@ class APIClient:
             operation_type=OperationType.BORROW,
             operator=operator,
             operation_time=datetime.now(),
-            borrower=borrower,
+            borrower=actual_borrower,
             reason=remarks,
             entry_source=entry_source,
             remark=remarks
         )
-        DatabaseStore.save_record(record)
+        self._db.save_record(record)
 
         # 更新用户借用次数
-        for user in DatabaseStore.get_all_users():
+        for user in self._db.get_all_users():
             if user.borrower_name == borrower:
                 user.borrow_count += 1
-                DatabaseStore.save_user(user)
+                self._db.save_user(user)
                 break
 
         self.add_operation_log("录入登记", device.name)
@@ -970,13 +1229,14 @@ class APIClient:
 
         borrower = device.borrower
         device.borrower = ''
+        device.borrower_id = ''
         device.cabinet_number = 'A01'  # 默认柜号
         device.status = self._get_default_status_for_device(device)
         device.borrow_time = None
         device.expected_return_date = None
 
         # 保存设备
-        DatabaseStore.save_device(device)
+        self._db.save_device(device)
 
         # 确定录入来源
         if entry_source is None:
@@ -994,14 +1254,14 @@ class APIClient:
             borrower=borrower,
             entry_source=entry_source
         )
-        DatabaseStore.save_record(record)
+        self._db.save_record(record)
 
         # 更新用户归还次数
         if borrower:
-            for user in DatabaseStore.get_all_users():
+            for user in self._db.get_all_users():
                 if user.borrower_name == borrower:
                     user.return_count += 1
-                    DatabaseStore.save_user(user)
+                    self._db.save_user(user)
                     break
 
         self.add_operation_log("强制归还", device.name)
@@ -1023,10 +1283,10 @@ class APIClient:
                     exclude_inappropriate: bool = False) -> List[UserRemark]:
         """获取备注列表"""
         if device_id:
-            remarks = DatabaseStore.get_remarks_by_device(device_id)
+            remarks = self._db.get_remarks_by_device(device_id)
         else:
             # 获取所有备注
-            remarks = DatabaseStore.get_all_remarks()
+            remarks = self._db.get_all_remarks()
 
         if device_type:
             remarks = [r for r in remarks if r.device_type == device_type]
@@ -1036,22 +1296,22 @@ class APIClient:
     
     def delete_remark(self, remark_id: str) -> bool:
         """删除备注"""
-        DatabaseStore.delete_remark(remark_id)
+        self._db.delete_remark(remark_id)
         return True
 
     def mark_inappropriate(self, remark_id: str) -> bool:
         """标记不当备注"""
-        return DatabaseStore.mark_remark_inappropriate(remark_id, True)
+        return self._db.mark_remark_inappropriate(remark_id, True)
 
     def unmark_inappropriate(self, remark_id: str) -> bool:
         """取消不当备注标记"""
-        return DatabaseStore.mark_remark_inappropriate(remark_id, False)
+        return self._db.mark_remark_inappropriate(remark_id, False)
     
     # ==================== 操作日志 ====================
     
     def get_operation_logs(self, limit: int = 50) -> List[OperationLog]:
         """获取操作日志"""
-        logs = DatabaseStore.get_all_operation_logs()
+        logs = self._db.get_all_operation_logs()
         return sorted(logs, key=lambda x: x.operation_time, reverse=True)[:limit]
     
     def add_operation_log(self, operation_content: str, device_info: str):
@@ -1063,7 +1323,7 @@ class APIClient:
             operation_content=operation_content,
             device_info=device_info
         )
-        DatabaseStore.save_operation_log(log)
+        self._db.save_operation_log(log)
     
     def get_admin_logs(self, limit: int = 100) -> List[dict]:
         """获取管理员操作日志（用于后台管理）"""
@@ -1106,7 +1366,7 @@ class APIClient:
     def get_notifications(self, user_id: str = None, user_name: str = None, unread_only: bool = False) -> List[Notification]:
         """获取通知列表"""
         if user_id:
-            notifications = DatabaseStore.get_notifications_by_user(user_id)
+            notifications = self._db.get_notifications_by_user(user_id)
         else:
             # 获取所有通知需要额外实现
             notifications = []
@@ -1119,7 +1379,7 @@ class APIClient:
     def get_unread_count(self, user_id: str = None, user_name: str = None) -> int:
         """获取未读通知数量"""
         if user_id:
-            notifications = DatabaseStore.get_notifications_by_user(user_id)
+            notifications = self._db.get_notifications_by_user(user_id)
             return len([n for n in notifications if not n.is_read])
         return 0
 
@@ -1138,22 +1398,22 @@ class APIClient:
             is_read=False,
             notification_type=notification_type
         )
-        DatabaseStore.save_notification(notification)
+        self._db.save_notification(notification)
         return notification
 
     def mark_notification_read(self, notification_id: str) -> bool:
         """标记通知为已读"""
-        DatabaseStore.mark_notification_as_read(notification_id)
+        self._db.mark_notification_as_read(notification_id)
         return True
 
     def mark_all_read(self, user_id: str = None, user_name: str = None) -> int:
         """标记用户所有通知为已读，返回标记数量"""
         if user_id:
-            notifications = DatabaseStore.get_notifications_by_user(user_id)
+            notifications = self._db.get_notifications_by_user(user_id)
             count = 0
             for notification in notifications:
                 if not notification.is_read:
-                    DatabaseStore.mark_notification_as_read(notification.id)
+                    self._db.mark_notification_as_read(notification.id)
                     count += 1
             return count
         return 0
@@ -1165,7 +1425,7 @@ class APIClient:
 
     def notify_borrow(self, device_id: str, device_name: str, borrower: str, operator: str):
         """通知用户设备已借出"""
-        for user in DatabaseStore.get_all_users():
+        for user in self._db.get_all_users():
             if user.borrower_name == borrower:
                 content = f"操作员 {operator} 已将设备「{device_name}」借出给您，请注意按时归还。"
                 self.add_notification(
@@ -1181,7 +1441,7 @@ class APIClient:
 
     def notify_return(self, device_id: str, device_name: str, borrower: str, operator: str):
         """通知用户设备已归还（强制归还）"""
-        for user in DatabaseStore.get_all_users():
+        for user in self._db.get_all_users():
             if user.borrower_name == borrower:
                 content = f"操作员 {operator} 已将您借用的设备「{device_name}」强制归还。"
                 self.add_notification(
@@ -1197,9 +1457,9 @@ class APIClient:
 
     def notify_transfer(self, device_id: str, device_name: str, original_borrower: str, new_borrower: str, operator: str):
         """通知相关用户设备已转借"""
-        # 通知原借用人
-        if original_borrower:
-            for user in DatabaseStore.get_all_users():
+        # 通知原借用人（排除操作人自己）
+        if original_borrower and original_borrower != operator:
+            for user in self._db.get_all_users():
                 if user.borrower_name == original_borrower:
                     content = f"您借用的设备「{device_name}」已被 {operator} 转借给 {new_borrower}。"
                     self.add_notification(
@@ -1214,7 +1474,7 @@ class APIClient:
                     break
 
         # 通知新借用人
-        for user in DatabaseStore.get_all_users():
+        for user in self._db.get_all_users():
             if user.borrower_name == new_borrower:
                 content = f"{operator} 已将设备「{device_name}」转借给您。"
                 self.add_notification(
@@ -1230,7 +1490,7 @@ class APIClient:
 
     def notify_status_change(self, device_id: str, device_name: str, borrower: str, new_status: str, operator: str):
         """通知用户设备状态变更"""
-        for user in DatabaseStore.get_all_users():
+        for user in self._db.get_all_users():
             if user.borrower_name == borrower:
                 status_desc = {
                     "已损坏": "损坏",
@@ -1256,7 +1516,7 @@ class APIClient:
 
     def notify_overdue_reminder(self, device_id: str, device_name: str, borrower: str, operator: str):
         """通知用户设备逾期归还提醒"""
-        for user in DatabaseStore.get_all_users():
+        for user in self._db.get_all_users():
             if user.borrower_name == borrower:
                 content = f"您借用的设备「{device_name}」已逾期，请及时归还。如有问题请联系管理员。"
                 self.add_notification(
@@ -1278,11 +1538,11 @@ class APIClient:
     
     def add_view_record(self, device_id: str, viewer: str, device_type: str = ""):
         """添加查看记录"""
-        DatabaseStore.save_view_record(device_id, device_type, viewer)
+        self._db.save_view_record(device_id, device_type, viewer)
 
     def get_view_records(self, device_id: str, device_type: str = None, limit: int = 20) -> List[ViewRecord]:
         """获取设备的查看记录"""
-        records = DatabaseStore.get_view_records_by_device(device_id)
+        records = self._db.get_view_records_by_device(device_id)
         if device_type:
             records = [r for r in records if r.get('device_type') == device_type]
         
@@ -1315,7 +1575,7 @@ class APIClient:
 
     def get_announcements(self, announcement_type: str = None, active_only: bool = False) -> List[Announcement]:
         """获取公告列表"""
-        announcements = DatabaseStore.get_all_announcements(active_only=False)
+        announcements = self._db.get_all_announcements(active_only=False)
         
         if active_only:
             announcements = [a for a in announcements if a.is_active]
@@ -1327,20 +1587,20 @@ class APIClient:
 
     def get_active_normal_announcements(self) -> List[Announcement]:
         """获取上架的普通公告列表（按排序显示）"""
-        announcements = DatabaseStore.get_all_announcements(active_only=True)
+        announcements = self._db.get_all_announcements(active_only=True)
         announcements = [a for a in announcements if a.announcement_type == 'normal']
         return sorted(announcements, key=lambda x: (x.sort_order, -x.create_time.timestamp() if x.create_time else 0))
 
     def get_active_special_announcements(self) -> List[Announcement]:
         """获取上架的特殊公告列表（最多3条）"""
-        announcements = DatabaseStore.get_all_announcements(active_only=True)
+        announcements = self._db.get_all_announcements(active_only=True)
         announcements = [a for a in announcements if a.announcement_type == 'special']
         announcements = sorted(announcements, key=lambda x: (x.sort_order, -x.create_time.timestamp() if x.create_time else 0))
         return announcements[:3]
 
     def get_announcement_by_id(self, announcement_id: str) -> Optional[Announcement]:
         """根据ID获取公告"""
-        for announcement in DatabaseStore.get_all_announcements(active_only=False):
+        for announcement in self._db.get_all_announcements(active_only=False):
             if announcement.id == announcement_id:
                 return announcement
         return None
@@ -1348,7 +1608,7 @@ class APIClient:
     def create_announcement(self, title: str, content: str, announcement_type: str = 'normal', 
                            sort_order: int = None, creator: str = '') -> Announcement:
         """创建公告"""
-        all_announcements = DatabaseStore.get_all_announcements(active_only=False)
+        all_announcements = self._db.get_all_announcements(active_only=False)
         
         if sort_order is None:
             if all_announcements:
@@ -1367,18 +1627,18 @@ class APIClient:
             create_time=datetime.now(),
             update_time=datetime.now()
         )
-        DatabaseStore.save_announcement(announcement)
+        self._db.save_announcement(announcement)
         
         # 如果是特殊公告，检查是否超过3条
         if announcement_type == 'special':
-            active_special = [a for a in DatabaseStore.get_all_announcements(active_only=True) 
+            active_special = [a for a in self._db.get_all_announcements(active_only=True) 
                             if a.announcement_type == 'special']
             if len(active_special) > 3:
                 active_special_sorted = sorted(active_special, key=lambda x: x.create_time or datetime.min)
                 for old_announcement in active_special_sorted[:-3]:
                     old_announcement.is_active = False
                     old_announcement.update_time = datetime.now()
-                    DatabaseStore.save_announcement(old_announcement)
+                    self._db.save_announcement(old_announcement)
         
         return announcement
 
@@ -1401,7 +1661,7 @@ class APIClient:
         
         # 如果更新为特殊公告，检查是否超过3条
         if announcement.announcement_type == 'special' and announcement.is_active:
-            active_special = [a for a in DatabaseStore.get_all_announcements(active_only=True) 
+            active_special = [a for a in self._db.get_all_announcements(active_only=True) 
                             if a.announcement_type == 'special']
             if len(active_special) > 3:
                 active_special_sorted = sorted(active_special, key=lambda x: x.create_time or datetime.min)
@@ -1409,9 +1669,9 @@ class APIClient:
                     if old_announcement.id != announcement_id:
                         old_announcement.is_active = False
                         old_announcement.update_time = datetime.now()
-                        DatabaseStore.save_announcement(old_announcement)
+                        self._db.save_announcement(old_announcement)
         
-        DatabaseStore.save_announcement(announcement)
+        self._db.save_announcement(announcement)
         return announcement
 
     def toggle_announcement_status(self, announcement_id: str) -> Optional[Announcement]:
@@ -1422,7 +1682,7 @@ class APIClient:
         
         announcement.is_active = not announcement.is_active
         announcement.update_time = datetime.now()
-        DatabaseStore.save_announcement(announcement)
+        self._db.save_announcement(announcement)
         return announcement
 
     def delete_announcement(self, announcement_id: str) -> bool:
@@ -1438,7 +1698,7 @@ class APIClient:
         
         announcement.force_show_version += 1
         announcement.update_time = datetime.now()
-        DatabaseStore.save_announcement(announcement)
+        self._db.save_announcement(announcement)
         return announcement
 
     def move_announcement(self, announcement_id: str, direction: str) -> Optional[dict]:
@@ -1447,7 +1707,7 @@ class APIClient:
         if not announcement:
             return None
         
-        all_announcements = DatabaseStore.get_all_announcements(active_only=False)
+        all_announcements = self._db.get_all_announcements(active_only=False)
         sorted_announcements = sorted(
             all_announcements, 
             key=lambda x: (x.sort_order, -x.create_time.timestamp() if x.create_time else 0)
@@ -1480,21 +1740,21 @@ class APIClient:
         announcement.update_time = datetime.now()
         target_announcement.update_time = datetime.now()
         
-        DatabaseStore.save_announcement(announcement)
-        DatabaseStore.save_announcement(target_announcement)
+        self._db.save_announcement(announcement)
+        self._db.save_announcement(target_announcement)
         
         return {'announcement_title': announcement.title}
 
     # ==================== 用户排名和点赞功能 ====================
 
     BORROW_TITLES = [
-        "借物之神", "借物大师", "借物高手", "借物达人", "借物能手",
-        "借物先锋", "借物积极分子", "借物爱好者", "借物新手", "初出茅庐"
+        "⚔️ 借物至尊", "🔥 借物霸主", "⚡ 借物狂魔", "💀 借物死神", "🌟 借物王者",
+        "🗡️ 借物战将", "🛡️ 借物勇士", "🏹 借物猎手", "🎯 借物先锋", "🔥 借物新星"
     ]
 
     RETURN_TITLES = [
-        "归还真神", "归还大师", "归还高手", "归还达人", "归还能手",
-        "归还先锋", "归还积极分子", "归还爱好者", "归还新手", "守信之星"
+        "👑 归还真神", "🔱 归还至尊", "⚜️ 归还圣者", "🛡️ 归还战神", "⚔️ 归还统领",
+        "🏆 归还大师", "🌟 归还精英", "💎 归还卫士", "🎯 归还能手", "⭐ 守信先锋"
     ]
 
     def get_star_level(self, count: int) -> int:
@@ -1515,50 +1775,24 @@ class APIClient:
             return 1
 
     def get_user_rankings(self, ranking_type: str = 'borrow') -> List[dict]:
-        """获取用户排名列表"""
-        valid_users = [u for u in DatabaseStore.get_all_users() if not u.is_frozen and not u.is_deleted]
-        
-        if ranking_type == 'borrow':
-            sorted_users = sorted(valid_users, key=lambda x: x.borrow_count, reverse=True)
-            titles = self.BORROW_TITLES
-        else:
-            sorted_users = sorted(valid_users, key=lambda x: x.return_count, reverse=True)
-            titles = self.RETURN_TITLES
-        
-        rankings = []
-        for i, user in enumerate(sorted_users):
-            rank = i + 1
-            count = user.borrow_count if ranking_type == 'borrow' else user.return_count
-            
-            if rank <= 10:
-                title = titles[i] if i < len(titles) else titles[-1]
-            else:
-                title = None
-            
-            star_level = self.get_star_level(count)
-            like_count = self.get_user_like_count(user.id)
-            
-            rankings.append({
-                'rank': rank,
-                'user_id': user.id,
-                'user_name': user.borrower_name or user.wechat_name,
-                'count': count,
-                'title': title,
-                'star_level': star_level,
-                'like_count': like_count
-            })
-        
-        return rankings
+        """获取用户排名列表（使用缓存，每天12点后自动更新）"""
+        # 检查是否需要更新缓存
+        if self._should_update_rankings_cache():
+            self._update_rankings_cache()
+
+        # 返回缓存数据
+        cache_key = 'borrow' if ranking_type == 'borrow' else 'return'
+        return self._rankings_cache.get(cache_key, []) or []
 
     def get_user_like_count(self, user_id: str) -> int:
         """获取用户的被点赞数"""
-        likes = DatabaseStore.get_user_likes_to_user(user_id)
+        likes = self._db.get_user_likes_to_user(user_id)
         return len(likes)
 
     def get_user_today_likes(self, from_user_id: str) -> int:
         """获取用户今天已点赞的次数"""
         today = datetime.now().strftime("%Y-%m-%d")
-        likes = DatabaseStore.get_user_likes_by_user(from_user_id)
+        likes = self._db.get_user_likes_by_user(from_user_id)
         return len([like for like in likes 
                    if like.from_user_id == from_user_id and like.create_date == today])
 
@@ -1568,7 +1802,7 @@ class APIClient:
             return False, "不能给自己点赞"
         
         today = datetime.now().strftime("%Y-%m-%d")
-        likes = DatabaseStore.get_user_likes_by_user(from_user_id)
+        likes = self._db.get_user_likes_by_user(from_user_id)
         existing_like = [like for like in likes 
                         if like.from_user_id == from_user_id 
                         and like.to_user_id == to_user_id 
@@ -1587,7 +1821,7 @@ class APIClient:
             create_date=today,
             create_time=datetime.now()
         )
-        DatabaseStore.save_user_like(like)
+        self._db.save_user_like(like)
         
         return True, "点赞成功"
 

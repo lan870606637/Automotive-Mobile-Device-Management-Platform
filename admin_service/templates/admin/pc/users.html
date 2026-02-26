@@ -8,6 +8,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>用户管理 - 车载测试设备管理系统</title>
     <link rel="stylesheet" href="/static/admin/admin_pc.css">
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 </head>
 <body class="pc-admin-body">
     <div class="pc-admin-wrapper">
@@ -65,6 +66,8 @@
             <header class="content-header">
                 <h1>用户管理</h1>
                 <div class="header-actions">
+                    <button class="btn btn-secondary" onclick="downloadTemplate()">📥 下载导入模板</button>
+                    <button class="btn btn-success" onclick="showImportModal()">📤 批量导入</button>
                     <button class="btn btn-primary" onclick="showAddUserModal()">➕ 新增用户</button>
                 </div>
             </header>
@@ -72,7 +75,7 @@
             <!-- 筛选栏 -->
             <div class="filter-bar">
                 <div class="filter-group">
-                    <input type="text" id="searchInput" class="search-input" placeholder="搜索姓名 / 微信名 / 手机号" autocomplete="off">
+                    <input type="text" id="searchInput" class="search-input" placeholder="搜索姓名 / 邮箱" autocomplete="off">
                 </div>
                 <div class="filter-group">
                     <label>状态</label>
@@ -95,30 +98,31 @@
 
             <!-- 用户列表 -->
             <div class="data-table">
-                <table>
+                <table style="table-layout: auto;">
                     <thead>
                         <tr>
-                            <th>借用人</th>
-                            <th>微信名</th>
-                            <th>手机号</th>
-                            <th>借用次数</th>
-                            <th>角色</th>
-                            <th>状态</th>
-                            <th>注册时间</th>
-                            <th>操作</th>
+                            <th style="min-width: 80px;">用户ID</th>
+                            <th style="min-width: 120px;">借用人</th>
+                            <th style="min-width: 180px;">邮箱</th>
+                            <th style="min-width: 80px;">借用次数</th>
+                            <th style="min-width: 90px;">角色</th>
+                            <th style="min-width: 70px;">状态</th>
+                            <th style="min-width: 80px;">首次登录</th>
+                            <th style="min-width: 100px;">注册时间</th>
+                            <th style="min-width: 280px;">操作</th>
                         </tr>
                     </thead>
                     <tbody id="userTableBody">
                         {% for user in users %}
                         <tr>
+                            <td><code style="font-size: 11px; color: #666;">{{ user.id[:8] }}...</code></td>
                             <td>
                                 <div style="display:flex;align-items:center;gap:12px;">
                                     <div class="user-avatar-small">{{ user.name[0] if user.name else '?' }}</div>
                                     <strong>{{ user.name }}</strong>
                                 </div>
                             </td>
-                            <td>{{ user.weixin_name or '-' }}</td>
-                            <td>{{ user.phone or '-' }}</td>
+                            <td>{{ user.email or '-' }}</td>
                             <td>{{ user.borrow_count }}</td>
                             <td>
                                 {% if user.is_admin %}
@@ -134,10 +138,18 @@
                                 <span style="color: #52c41a;">正常</span>
                                 {% endif %}
                             </td>
+                            <td>
+                                {% if user.is_first_login %}
+                                <span style="color: #faad14;">是</span>
+                                {% else %}
+                                <span style="color: #999;">否</span>
+                                {% endif %}
+                            </td>
                             <td>{{ user.register_time }}</td>
                             <td>
                                 <div class="table-actions">
                                     <button class="btn btn-sm btn-secondary" onclick="editUser('{{ user.id }}')">编辑</button>
+                                    <button class="btn btn-sm btn-warning" onclick="resetPassword('{{ user.id }}', '{{ user.name }}')">重置密码</button>
                                     {% if user.is_frozen %}
                                     <button class="btn btn-sm btn-success" onclick="unfreezeUser('{{ user.id }}')">解冻</button>
                                     {% else %}
@@ -148,6 +160,7 @@
                                     {% else %}
                                     <button class="btn btn-sm btn-primary" onclick="setAdmin('{{ user.id }}')">设管理</button>
                                     {% endif %}
+                                    <button class="btn btn-sm btn-danger" onclick="deleteUser('{{ user.id }}', '{{ user.name }}')">删除</button>
                                 </div>
                             </td>
                         </tr>
@@ -172,16 +185,13 @@
                     <input type="text" id="userName" placeholder="请输入借用人姓名" required>
                 </div>
                 <div class="form-field">
-                    <label>微信名</label>
-                    <input type="text" id="userWeixin" placeholder="请输入微信名">
-                </div>
-                <div class="form-field">
-                    <label>手机号</label>
-                    <input type="text" id="userPhone" placeholder="请输入手机号">
+                    <label>邮箱 <span class="required">*</span></label>
+                    <input type="email" id="userEmail" placeholder="请输入邮箱" required>
                 </div>
                 <div class="form-field">
                     <label>密码 {{ '<span class="required">*</span>' if not user else '' }}</label>
-                    <input type="password" id="userPassword" placeholder="{{ '留空则不修改' if user else '请输入密码' }}">
+                    <input type="password" id="userPassword" placeholder="{{ '留空则不修改' if user else '默认密码123456' }}">
+                    <small style="color: #999;">新增用户默认密码为123456，首次登录需修改</small>
                 </div>
                 <div class="form-row" style="margin-top: 16px;">
                     <div class="form-field">
@@ -194,6 +204,33 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeModal('userModal')">取消</button>
                 <button class="btn btn-primary" onclick="saveUser()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 批量导入弹窗 -->
+    <div id="importModal" class="modal">
+        <div class="modal-dialog" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3>批量导入用户</h3>
+                <button class="modal-close" onclick="closeModal('importModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-field">
+                    <label>选择Excel文件 <span class="required">*</span></label>
+                    <input type="file" id="importFile" accept=".xlsx,.xls" style="padding: 8px; border: 1px solid #d9d9d9; border-radius: 4px;">
+                    <small style="color: #999; display: block; margin-top: 8px;">
+                        支持 .xlsx 或 .xls 格式，需包含「姓名」和「邮箱」两列<br>
+                        默认密码为123456，首次登录需修改密码
+                    </small>
+                </div>
+                <div id="importResult" style="margin-top: 16px; display: none;">
+                    <div class="alert" style="padding: 12px; border-radius: 4px;"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('importModal')">取消</button>
+                <button class="btn btn-primary" onclick="importUsers()">开始导入</button>
             </div>
         </div>
     </div>
@@ -218,29 +255,31 @@
         // 渲染用户列表
         function renderUsers(userList) {
             const tbody = document.getElementById('userTableBody');
-            
+
             if (userList.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="8" class="empty-cell">暂无用户</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" class="empty-cell">暂无用户</td></tr>';
                 return;
             }
 
             tbody.innerHTML = userList.map(user => `
                 <tr>
+                    <td><code style="font-size: 11px; color: #666;">${user.id ? user.id.substring(0, 8) + '...' : '-'}</code></td>
                     <td>
-                        <div style="display:flex;align-items:center;gap:12px;">
+                        <div style="display:flex;align-items:center;gap:12px;white-space:nowrap;">
                             <div class="user-avatar-small">${user.name ? user.name[0] : '?'}</div>
-                            <strong>${user.name}</strong>
+                            <strong style="overflow:hidden;text-overflow:ellipsis;max-width:150px;">${user.name}</strong>
                         </div>
                     </td>
-                    <td>${user.weixin_name || '-'}</td>
-                    <td>${user.phone || '-'}</td>
+                    <td style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px;" title="${user.email || ''}">${user.email || '-'}</td>
                     <td>${user.borrow_count}</td>
                     <td>${user.is_admin ? '<span class="role-badge admin">管理员</span>' : '<span class="role-badge user">普通用户</span>'}</td>
                     <td>${user.is_frozen ? '<span class="role-badge frozen">已冻结</span>' : '<span style="color: #52c41a;">正常</span>'}</td>
-                    <td>${user.register_time}</td>
+                    <td>${user.is_first_login ? '<span style="color: #faad14;">是</span>' : '<span style="color: #999;">否</span>'}</td>
+                    <td style="white-space:nowrap;">${user.register_time}</td>
                     <td>
-                        <div class="table-actions">
+                        <div class="table-actions" style="flex-wrap:wrap;gap:4px;">
                             <button class="btn btn-sm btn-secondary" onclick="editUser('${user.id}')">编辑</button>
+                            <button class="btn btn-sm btn-warning" onclick="resetPassword('${user.id}', '${user.name}')">重置密码</button>
                             ${user.is_frozen 
                                 ? `<button class="btn btn-sm btn-success" onclick="unfreezeUser('${user.id}')">解冻</button>`
                                 : `<button class="btn btn-sm btn-warning" onclick="freezeUser('${user.id}')">冻结</button>`
@@ -249,6 +288,7 @@
                                 ? `<button class="btn btn-sm btn-danger" onclick="removeAdmin('${user.id}')">取消管理</button>`
                                 : `<button class="btn btn-sm btn-primary" onclick="setAdmin('${user.id}')">设管理</button>`
                             }
+                            <button class="btn btn-sm btn-danger" onclick="deleteUser('${user.id}', '${user.name}')">删除</button>
                         </div>
                     </td>
                 </tr>
@@ -260,11 +300,79 @@
             document.getElementById('modalTitle').textContent = '新增用户';
             document.getElementById('userId').value = '';
             document.getElementById('userName').value = '';
-            document.getElementById('userWeixin').value = '';
-            document.getElementById('userPhone').value = '';
+            document.getElementById('userEmail').value = '';
             document.getElementById('userPassword').value = '';
             document.getElementById('userIsAdmin').checked = false;
             document.getElementById('userModal').classList.add('show');
+        }
+
+        // 显示批量导入弹窗
+        function showImportModal() {
+            document.getElementById('importFile').value = '';
+            document.getElementById('importResult').style.display = 'none';
+            document.getElementById('importModal').classList.add('show');
+        }
+
+        // 下载导入模板
+        function downloadTemplate() {
+            // 创建模板数据
+            const templateData = [
+                ['姓名', '邮箱'],
+                ['张三', 'zhangsan@example.com'],
+                ['李四', 'lisi@example.com']
+            ];
+
+            // 使用 SheetJS 库生成 Excel 文件
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.aoa_to_sheet(templateData);
+            XLSX.utils.book_append_sheet(wb, ws, '用户导入模板');
+            XLSX.writeFile(wb, '用户导入模板.xlsx');
+
+            showToast('模板下载成功', 'success');
+        }
+
+        // 批量导入用户
+        async function importUsers() {
+            const fileInput = document.getElementById('importFile');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                showToast('请选择文件', 'warning');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                const response = await fetch('/api/admin/users/import', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                const resultDiv = document.getElementById('importResult');
+                const alertDiv = resultDiv.querySelector('.alert');
+                
+                resultDiv.style.display = 'block';
+                
+                if (result.success) {
+                    alertDiv.className = 'alert alert-success';
+                    alertDiv.innerHTML = `
+                        <strong>导入成功！</strong><br>
+                        成功导入 ${result.success_count} 个用户<br>
+                        ${result.failed_count > 0 ? `失败 ${result.failed_count} 个` : ''}
+                    `;
+                    showToast('导入成功', 'success');
+                    loadUsers();
+                    setTimeout(() => closeModal('importModal'), 1500);
+                } else {
+                    alertDiv.className = 'alert alert-error';
+                    alertDiv.innerHTML = `<strong>导入失败：</strong>${result.message}`;
+                }
+            } catch (error) {
+                showToast('导入失败', 'error');
+            }
         }
 
         // 编辑用户
@@ -275,8 +383,7 @@
             document.getElementById('modalTitle').textContent = '编辑用户';
             document.getElementById('userId').value = user.id;
             document.getElementById('userName').value = user.name;
-            document.getElementById('userWeixin').value = user.weixin_name || '';
-            document.getElementById('userPhone').value = user.phone || '';
+            document.getElementById('userEmail').value = user.email || '';
             document.getElementById('userPassword').value = '';
             document.getElementById('userIsAdmin').checked = user.is_admin;
             document.getElementById('userModal').classList.add('show');
@@ -287,8 +394,7 @@
             const userId = document.getElementById('userId').value;
             const userData = {
                 name: document.getElementById('userName').value.trim(),
-                weixin_name: document.getElementById('userWeixin').value.trim(),
-                phone: document.getElementById('userPhone').value.trim(),
+                email: document.getElementById('userEmail').value.trim(),
                 password: document.getElementById('userPassword').value,
                 is_admin: document.getElementById('userIsAdmin').checked
             };
@@ -298,8 +404,8 @@
                 return;
             }
 
-            if (!userId && !userData.password) {
-                showToast('请输入密码', 'warning');
+            if (!userId && !userData.email) {
+                showToast('请输入邮箱', 'warning');
                 return;
             }
 
@@ -320,6 +426,42 @@
                     loadUsers();
                 } else {
                     showToast(result.message || '操作失败', 'error');
+                }
+            } catch (error) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        // 重置密码
+        async function resetPassword(userId, userName) {
+            if (!confirm(`确定要重置用户「${userName}」的密码吗？\n\n重置后密码将变为初始密码123456，用户下次登录需要修改密码。`)) return;
+
+            try {
+                const response = await fetch(`/api/admin/users/${userId}/reset_password`, { method: 'POST' });
+                const result = await response.json();
+                if (result.success) {
+                    showToast('密码已重置为123456', 'success');
+                    loadUsers();
+                } else {
+                    showToast(result.message || '操作失败', 'error');
+                }
+            } catch (error) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        // 删除用户
+        async function deleteUser(userId, userName) {
+            if (!confirm(`确定要删除用户「${userName}」吗？\n\n删除后将无法恢复，请谨慎操作。`)) return;
+
+            try {
+                const response = await fetch(`/api/admin/users/${userId}`, { method: 'DELETE' });
+                const result = await response.json();
+                if (result.success) {
+                    showToast('用户已删除', 'success');
+                    loadUsers();
+                } else {
+                    showToast(result.message || '删除失败', 'error');
                 }
             } catch (error) {
                 showToast('网络错误', 'error');
@@ -411,8 +553,7 @@
             if (keyword) {
                 filtered = filtered.filter(u => 
                     (u.name && u.name.toLowerCase().includes(keyword)) ||
-                    (u.weixin_name && u.weixin_name.toLowerCase().includes(keyword)) ||
-                    (u.phone && u.phone.includes(keyword))
+                    (u.email && u.email.toLowerCase().includes(keyword))
                 );
             }
             if (status === '正常') filtered = filtered.filter(u => !u.is_frozen);
