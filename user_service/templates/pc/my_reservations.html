@@ -1,0 +1,542 @@
+{% extends "pc/base_pc.html" %}
+
+{% block title %}我的预约 - 设备管理系统{% endblock %}
+
+{% set active_nav = 'reservations' %}
+
+{% block content %}
+<style>
+.reservation-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.stat-card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.stat-number {
+    font-size: 32px;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.stat-label {
+    font-size: 14px;
+    color: #666;
+}
+
+.stat-pending { color: #faad14; }
+.stat-approved { color: #52c41a; }
+.stat-rejected { color: #ff4d4f; }
+.stat-total { color: #1890ff; }
+
+.reservation-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    gap: 20px;
+}
+
+.reservation-card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    transition: transform 0.2s, box-shadow 0.2s;
+    border: 1px solid #f0f0f0;
+}
+
+.reservation-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+}
+
+.reservation-card.pending {
+    border-left: 4px solid #faad14;
+}
+
+.reservation-card.approved {
+    border-left: 4px solid #52c41a;
+}
+
+.reservation-card.rejected,
+.reservation-card.cancelled,
+.reservation-card.expired {
+    border-left: 4px solid #d9d9d9;
+    opacity: 0.85;
+}
+
+.reservation-card.converted {
+    border-left: 4px solid #1890ff;
+}
+
+.reservation-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 16px;
+}
+
+.device-info {
+    flex: 1;
+}
+
+.device-name {
+    font-size: 18px;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 4px;
+}
+
+.device-type {
+    font-size: 13px;
+    color: #888;
+    background: #f5f5f5;
+    padding: 2px 8px;
+    border-radius: 4px;
+    display: inline-block;
+}
+
+.status-badge {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.status-badge.pending {
+    background: #fff7e6;
+    color: #d46b08;
+}
+
+.status-badge.approved {
+    background: #f6ffed;
+    color: #389e0d;
+}
+
+.status-badge.rejected {
+    background: #fff2f0;
+    color: #cf1322;
+}
+
+.status-badge.cancelled,
+.status-badge.expired {
+    background: #f5f5f5;
+    color: #666;
+}
+
+.status-badge.converted {
+    background: #e6f7ff;
+    color: #096dd9;
+}
+
+.reservation-time {
+    background: #fafafa;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+}
+
+.time-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.time-row:last-child {
+    margin-bottom: 0;
+}
+
+.time-icon {
+    width: 20px;
+    height: 20px;
+    margin-right: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.time-label {
+    font-size: 12px;
+    color: #888;
+    width: 60px;
+}
+
+.time-value {
+    font-size: 14px;
+    color: #333;
+    font-weight: 500;
+}
+
+.reservation-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.reservation-actions .btn {
+    flex: 1;
+    padding: 8px 16px;
+    font-size: 13px;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 80px 20px;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.empty-icon {
+    width: 120px;
+    height: 120px;
+    background: linear-gradient(135deg, #e6f7ff 0%, #f6ffed 100%);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 24px;
+    font-size: 60px;
+}
+
+.empty-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 8px;
+}
+
+.empty-desc {
+    font-size: 14px;
+    color: #888;
+    margin-bottom: 24px;
+}
+
+.section-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.section-title::before {
+    content: '';
+    width: 4px;
+    height: 18px;
+    background: #1890ff;
+    border-radius: 2px;
+}
+</style>
+
+<h1 class="page-title">📅 我的预约</h1>
+
+<!-- 统计卡片 -->
+{% set pending_count = reservations|selectattr('status', 'in', ['待保管人确认', '待借用人确认', '待2人确认'])|list|length %}
+{% set approved_count = reservations|selectattr('status', 'equalto', '已同意')|list|length %}
+{% set rejected_count = reservations|selectattr('status', 'in', ['已拒绝', '已取消', '已过期'])|list|length %}
+{% set total_count = reservations|length %}
+
+<div class="reservation-stats">
+    <div class="stat-card">
+        <div class="stat-number stat-total">{{ total_count }}</div>
+        <div class="stat-label">全部预约</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-number stat-pending">{{ pending_count }}</div>
+        <div class="stat-label">待确认</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-number stat-approved">{{ approved_count }}</div>
+        <div class="stat-label">已同意</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-number stat-rejected">{{ rejected_count }}</div>
+        <div class="stat-label">已结束</div>
+    </div>
+</div>
+
+{% if reservations %}
+    <!-- 待确认预约 -->
+    {% set pending_reservations = reservations|selectattr('status', 'in', ['待保管人确认', '待借用人确认', '待2人确认'])|list %}
+    {% if pending_reservations %}
+    <div class="section-title">待确认</div>
+    <div class="reservation-grid" style="margin-bottom: 32px;">
+        {% for r in pending_reservations %}
+        <div class="reservation-card pending">
+            <div class="reservation-header">
+                <div class="device-info">
+                    <div class="device-name">{{ r.device_name }}</div>
+                    <span class="device-type">{{ r.device_type }}</span>
+                </div>
+                <span class="status-badge pending">{{ r.status }}</span>
+            </div>
+            <div class="reservation-time">
+                <div class="time-row">
+                    <div class="time-icon">📅</div>
+                    <span class="time-label">开始</span>
+                    <span class="time-value">{{ r.start_time.strftime('%Y-%m-%d %H:%M') }}</span>
+                </div>
+                <div class="time-row">
+                    <div class="time-icon">🏁</div>
+                    <span class="time-label">结束</span>
+                    <span class="time-value">{{ r.end_time.strftime('%Y-%m-%d %H:%M') }}</span>
+                </div>
+            </div>
+            <div class="reservation-actions">
+                <button class="btn btn-default" onclick="cancelReservation('{{ r.id }}')">取消预约</button>
+                <a href="/pc/device/{{ r.device_id }}?type={{ r.device_type }}" class="btn btn-primary">查看设备</a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- 已同意预约 -->
+    {% set approved_reservations = reservations|selectattr('status', 'equalto', '已同意')|list %}
+    {% if approved_reservations %}
+    <div class="section-title">已同意</div>
+    <div class="reservation-grid" style="margin-bottom: 32px;">
+        {% for r in approved_reservations %}
+        <div class="reservation-card approved">
+            <div class="reservation-header">
+                <div class="device-info">
+                    <div class="device-name">{{ r.device_name }}</div>
+                    <span class="device-type">{{ r.device_type }}</span>
+                </div>
+                <span class="status-badge approved">{{ r.status }}</span>
+            </div>
+            <div class="reservation-time">
+                <div class="time-row">
+                    <div class="time-icon">📅</div>
+                    <span class="time-label">开始</span>
+                    <span class="time-value">{{ r.start_time.strftime('%Y-%m-%d %H:%M') }}</span>
+                </div>
+                <div class="time-row">
+                    <div class="time-icon">🏁</div>
+                    <span class="time-label">结束</span>
+                    <span class="time-value">{{ r.end_time.strftime('%Y-%m-%d %H:%M') }}</span>
+                </div>
+            </div>
+            <div class="reservation-actions">
+                <button class="btn btn-default" onclick="cancelReservation('{{ r.id }}')">取消预约</button>
+                <a href="/pc/device/{{ r.device_id }}?type={{ r.device_type }}" class="btn btn-primary">查看设备</a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- 已转借用 -->
+    {% set converted_reservations = reservations|selectattr('status', 'equalto', '已转借用')|list %}
+    {% if converted_reservations %}
+    <div class="section-title">已转借用</div>
+    <div class="reservation-grid" style="margin-bottom: 32px;">
+        {% for r in converted_reservations %}
+        <div class="reservation-card converted">
+            <div class="reservation-header">
+                <div class="device-info">
+                    <div class="device-name">{{ r.device_name }}</div>
+                    <span class="device-type">{{ r.device_type }}</span>
+                </div>
+                <span class="status-badge converted">{{ r.status }}</span>
+            </div>
+            <div class="reservation-time">
+                <div class="time-row">
+                    <div class="time-icon">📅</div>
+                    <span class="time-label">开始</span>
+                    <span class="time-value">{{ r.start_time.strftime('%Y-%m-%d %H:%M') }}</span>
+                </div>
+                <div class="time-row">
+                    <div class="time-icon">🏁</div>
+                    <span class="time-label">结束</span>
+                    <span class="time-value">{{ r.end_time.strftime('%Y-%m-%d %H:%M') }}</span>
+                </div>
+            </div>
+            <div class="reservation-actions">
+                <a href="/pc/device/{{ r.device_id }}?type={{ r.device_type }}" class="btn btn-primary">查看设备</a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- 已结束预约 -->
+    {% set ended_reservations = reservations|selectattr('status', 'in', ['已拒绝', '已取消', '已过期'])|list %}
+    {% if ended_reservations %}
+    <div class="section-title">已结束</div>
+    <div class="reservation-grid">
+        {% for r in ended_reservations %}
+        <div class="reservation-card {{ 'rejected' if r.status == '已拒绝' else 'cancelled' }}">
+            <div class="reservation-header">
+                <div class="device-info">
+                    <div class="device-name">{{ r.device_name }}</div>
+                    <span class="device-type">{{ r.device_type }}</span>
+                </div>
+                <span class="status-badge {{ 'rejected' if r.status == '已拒绝' else 'cancelled' }}">{{ r.status }}</span>
+            </div>
+            <div class="reservation-time">
+                <div class="time-row">
+                    <div class="time-icon">📅</div>
+                    <span class="time-label">开始</span>
+                    <span class="time-value">{{ r.start_time.strftime('%Y-%m-%d %H:%M') }}</span>
+                </div>
+                <div class="time-row">
+                    <div class="time-icon">🏁</div>
+                    <span class="time-label">结束</span>
+                    <span class="time-value">{{ r.end_time.strftime('%Y-%m-%d %H:%M') }}</span>
+                </div>
+            </div>
+            <div class="reservation-actions">
+                <button class="btn btn-error" onclick="deleteReservation('{{ r.id }}')">删除</button>
+                <a href="/pc/device/{{ r.device_id }}?type={{ r.device_type }}" class="btn btn-primary">再次预约</a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+{% else %}
+<div class="empty-state">
+    <div class="empty-icon">📅</div>
+    <div class="empty-title">暂无预约记录</div>
+    <div class="empty-desc">您可以在设备详情页预约借用设备</div>
+    <a href="/pc" class="btn btn-primary">去浏览设备</a>
+</div>
+{% endif %}
+
+<!-- 取消预约确认弹窗 -->
+<div class="modal-overlay" id="cancelConfirmModal">
+    <div class="modal" style="max-width: 400px;">
+        <div class="modal-header">
+            <span class="modal-title">确认取消预约</span>
+            <button class="modal-close" onclick="closeModal('cancelConfirmModal')">×</button>
+        </div>
+        <div class="modal-body">
+            <p>确定要取消这个预约吗？</p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="closeModal('cancelConfirmModal')">取消</button>
+            <button class="btn btn-error" id="confirmCancelBtn">确认取消</button>
+        </div>
+    </div>
+</div>
+
+<!-- 删除预约确认弹窗 -->
+<div class="modal-overlay" id="deleteConfirmModal">
+    <div class="modal" style="max-width: 400px;">
+        <div class="modal-header">
+            <span class="modal-title">确认删除</span>
+            <button class="modal-close" onclick="closeModal('deleteConfirmModal')">×</button>
+        </div>
+        <div class="modal-body">
+            <p>确定要删除这个预约记录吗？删除后将无法恢复。</p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="closeModal('deleteConfirmModal')">取消</button>
+            <button class="btn btn-error" id="confirmDeleteBtn">确认删除</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentReservationId = null;
+
+// 打开弹窗
+function openModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+    }
+}
+
+// 关闭弹窗
+function closeModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.style.display = 'none';
+        document.body.style.overflow = '';
+    }
+}
+
+// 取消预约
+function cancelReservation(reservationId) {
+    currentReservationId = reservationId;
+    openModal('cancelConfirmModal');
+}
+
+// 确认取消
+function confirmCancel() {
+    if (!currentReservationId) return;
+
+    fetch(`/api/reservations/${currentReservationId}/cancel`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({})
+    }).then(r => r.json()).then(data => {
+        if (data.success) {
+            showToast('预约已取消');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '取消失败');
+        }
+    }).catch(() => showToast('操作失败，请重试'));
+
+    closeModal('cancelConfirmModal');
+    currentReservationId = null;
+}
+
+// 删除预约
+function deleteReservation(reservationId) {
+    currentReservationId = reservationId;
+    openModal('deleteConfirmModal');
+}
+
+// 确认删除
+function confirmDelete() {
+    if (!currentReservationId) return;
+
+    fetch(`/api/reservations/${currentReservationId}/delete`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({})
+    }).then(r => r.json()).then(data => {
+        if (data.success) {
+            showToast('预约已删除');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '删除失败');
+        }
+    }).catch(() => showToast('操作失败，请重试'));
+
+    closeModal('deleteConfirmModal');
+    currentReservationId = null;
+}
+
+// 绑定确认按钮事件
+document.addEventListener('DOMContentLoaded', function() {
+    const confirmCancelBtn = document.getElementById('confirmCancelBtn');
+    const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+    if (confirmCancelBtn) confirmCancelBtn.onclick = confirmCancel;
+    if (confirmDeleteBtn) confirmDeleteBtn.onclick = confirmDelete;
+});
+</script>
+{% endblock %}

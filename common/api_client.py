@@ -5,12 +5,18 @@
 """
 import uuid
 import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 
-from .models import Device, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, OperationLog, ViewRecord, Notification, Announcement, UserLike
-from .models import DeviceStatus, DeviceType, OperationType, EntrySource, Admin
+from .models import Device, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, OperationLog, ViewRecord, Notification, Announcement, UserLike, Reservation
+from .models import DeviceStatus, DeviceType, OperationType, EntrySource, Admin, ReservationStatus
 from .db_store import DatabaseStore, get_db_transaction
+from .email_sender import email_sender
+
+# 创建邮件发送线程池
+email_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="email_sender")
 
 # 创建全局 DatabaseStore 实例
 _db_store = DatabaseStore()
@@ -355,11 +361,49 @@ class APIClient:
         """软删除设备"""
         device = self._db.get_device_by_id(device_id)
         if device:
+            # 取消所有有效预约
+            device_type = self._get_device_type_str(device)
+            self._cancel_reservations_on_device_delete(device_id, device_type, device.name)
+            
             device.is_deleted = True
             self._db.save_device(device)
             self.add_operation_log(f"删除设备", device.name)
             return True
         return False
+    
+    def _cancel_reservations_on_device_delete(self, device_id: str, device_type: str, device_name: str):
+        """设备删除时取消所有有效预约"""
+        reservations = self._db.get_reservations_by_device(device_id, device_type)
+        now = datetime.now()
+        
+        for reservation in reservations:
+            # 只处理未完成的预约
+            if reservation.status in [
+                ReservationStatus.PENDING_CUSTODIAN.value,
+                ReservationStatus.PENDING_BORROWER.value,
+                ReservationStatus.PENDING_BOTH.value,
+                ReservationStatus.APPROVED.value
+            ]:
+                # 更新预约状态为已取消
+                reservation.status = ReservationStatus.CANCELLED.value
+                reservation.cancel_time = now
+                reservation.cancel_reason = "设备已被删除"
+                self._db.save_reservation(reservation)
+                
+                # 通知预约人
+                self._notify_reservation_cancelled_due_to_device_delete(reservation, device_name)
+    
+    def _notify_reservation_cancelled_due_to_device_delete(self, reservation: Reservation, device_name: str):
+        """通知预约人设备删除导致预约取消"""
+        self.add_notification(
+            user_id=reservation.reserver_id,
+            user_name=reservation.reserver_name,
+            title="预约已取消",
+            content=f"您预约的设备「{device_name}」已被删除，预约已自动取消",
+            device_name=device_name,
+            device_id=reservation.device_id,
+            notification_type="warning"
+        )
     
     # ==================== 录入登记/强制归还 ====================
     
@@ -807,6 +851,18 @@ class APIClient:
             if new_status != original_status:
                 status_changed = True
                 device.status = new_status
+                
+                # 如果状态变为损坏、丢失、报废或封存，取消相关预约
+                if new_status in [DeviceStatus.DAMAGED, DeviceStatus.LOST, 
+                                  DeviceStatus.SCRAPPED, DeviceStatus.SEALED]:
+                    cancelled_count = self.cancel_reservations_by_device_status_change(
+                        device_id, new_status.value, operator
+                    )
+                    if cancelled_count > 0:
+                        self.add_operation_log(
+                            f"设备状态变更为{new_status.value}，取消{cancelled_count}个预约", 
+                            device.name
+                        )
         if 'remarks' in data:
             device.remark = data['remarks']
         if 'jira_address' in data:
@@ -1125,10 +1181,56 @@ class APIClient:
                 device_list += f" 等共{len(custodian_devices)}个设备"
             return False, f"该用户还有保管中的设备：{device_list}，请移交后再删除用户"
 
+        # 处理用户的预约记录
+        self._handle_user_reservations_on_delete(user_id, user.borrower_name)
+
         user.is_deleted = True
         self._db.save_user(user)
         self.add_operation_log("删除用户", user.borrower_name)
         return True, "删除成功"
+    
+    def _handle_user_reservations_on_delete(self, user_id: str, user_name: str):
+        """用户删除时处理其预约记录"""
+        # 获取用户的所有预约
+        reservations = self._db.get_reservations_by_reserver(user_id)
+        
+        for reservation in reservations:
+            # 只处理未完成的预约
+            if reservation.status in [
+                ReservationStatus.PENDING_CUSTODIAN.value,
+                ReservationStatus.PENDING_BORROWER.value,
+                ReservationStatus.PENDING_BOTH.value,
+                ReservationStatus.APPROVED.value
+            ]:
+                # 取消预约
+                reservation.status = ReservationStatus.CANCELLED.value
+                reservation.cancelled_by = "system"
+                reservation.cancelled_at = datetime.now()
+                reservation.cancel_reason = f"预约人 {user_name} 已被删除"
+                reservation.updated_at = datetime.now()
+                self._db.save_reservation(reservation)
+                
+                # 通知相关人（保管人或当前借用人）
+                if reservation.custodian_id:
+                    self.add_notification(
+                        user_id=reservation.custodian_id,
+                        user_name="",
+                        title="预约已取消",
+                        content=f"用户 {user_name} 预约的 {reservation.device_name} 已因其账号被删除而自动取消",
+                        device_name=reservation.device_name,
+                        device_id=reservation.device_id,
+                        notification_type="info"
+                    )
+                if reservation.current_borrower_id:
+                    self.add_notification(
+                        user_id=reservation.current_borrower_id,
+                        user_name=reservation.current_borrower_name,
+                        title="预约已取消",
+                        content=f"用户 {user_name} 对您借用设备的预约已因其账号被删除而自动取消",
+                        device_name=reservation.device_name,
+                        device_id=reservation.device_id,
+                        notification_type="info"
+                    )
     
     def reset_user_password(self, user_id: str) -> bool:
         """重置用户密码为初始密码123456，并设置为首次登录状态"""
@@ -1835,6 +1937,1042 @@ class APIClient:
         self._db.save_user_like(like)
         
         return True, "点赞成功"
+
+    # ==================== 预约管理 ====================
+
+    def check_reservation_conflict(self, device_id: str, device_type: str, 
+                                   start_time: datetime, end_time: datetime,
+                                   exclude_id: str = None,
+                                   current_user_id: str = None) -> tuple:
+        """
+        检查预约时间冲突
+        返回: (has_conflict, conflict_info)
+        current_user_id: 当前用户ID，如果是自己的预约则不视为冲突
+        """
+        # 1. 检查与现有预约的冲突
+        existing_reservations = self._db.get_reservations_by_device(
+            device_id, device_type, active_only=True
+        )
+        
+        for r in existing_reservations:
+            if exclude_id and r.id == exclude_id:
+                continue
+            # 如果是自己的预约，不视为冲突
+            if current_user_id and r.reserver_id == current_user_id:
+                continue
+            # 时间重叠检测
+            if not (end_time <= r.start_time or start_time >= r.end_time):
+                return True, {
+                    "type": "reservation",
+                    "conflict_with": r.reserver_name,
+                    "reserver_id": r.reserver_id,
+                    "start_time": r.start_time,
+                    "end_time": r.end_time
+                }
+        
+        # 2. 检查与当前借用的冲突（借用中设备）
+        device = self._db.get_device_by_id(device_id)
+        if device and device.status == DeviceStatus.BORROWED:
+            # 如果是当前借用人自己，不视为冲突
+            if current_user_id and device.borrower_id == current_user_id:
+                return False, None
+            # 如果有预计归还时间，检查是否重叠
+            if device.expected_return_date:
+                if start_time < device.expected_return_date:
+                    return True, {
+                        "type": "current_borrow",
+                        "conflict_with": device.borrower,
+                        "borrower_id": device.borrower_id,
+                        "end_time": device.expected_return_date
+                    }
+        
+        return False, None
+
+    def create_reservation(self, device_id: str, device_type: str,
+                          reserver_id: str, reserver_name: str,
+                          start_time: datetime, end_time: datetime,
+                          reason: str = "") -> tuple:
+        """
+        创建预约
+        返回: (success, result_or_message)
+        """
+        # 获取设备信息
+        device = self._db.get_device_by_id(device_id)
+        if not device:
+            return False, "设备不存在"
+        
+        # 检查设备状态
+        if device.status == DeviceStatus.SCRAPPED:
+            return False, "该设备已报废，无法预约"
+        if device.status == DeviceStatus.DAMAGED:
+            return False, "该设备已损坏，无法预约"
+        if device.status == DeviceStatus.LOST:
+            return False, "该设备已丢失，无法预约"
+        if device.status == DeviceStatus.SEALED:
+            return False, "该设备已封存，无法预约"
+        
+        # 检查设备是否逾期（借用中且逾期的设备不能预约）
+        if device.status == DeviceStatus.BORROWED and device.expected_return_date:
+            if datetime.now() > device.expected_return_date:
+                return False, "该设备已逾期，需要原借用人归还后才能预约"
+        
+        # 检查用户是否正在借用该设备（自己借用自己预约的情况）
+        if device.status == DeviceStatus.BORROWED and device.borrower_id == reserver_id:
+            # 用户正在借用该设备，将预约转为续期意图
+            # 检查预约时间是否在当前借用之后
+            if start_time > device.borrow_time:
+                # 允许创建预约，但标记为自动续期类型
+                pass  # 继续创建预约流程
+        
+        # 检查时间冲突（只检查与现有预约的冲突，借用中设备可以预约）
+        has_conflict, conflict_info = self.check_reservation_conflict(
+            device_id, device_type, start_time, end_time, current_user_id=reserver_id
+        )
+        if has_conflict:
+            if conflict_info["type"] == "reservation":
+                return False, (
+                    f"当前时段已被预约，需要让 {conflict_info['conflict_with']} "
+                    f"取消借用或更改预约借用时段"
+                )
+            # 借用中设备不阻止预约，后面会处理确认流程
+        
+        # 确定预约状态
+        status = ReservationStatus.APPROVED.value
+        custodian_id = device.custodian_id if hasattr(device, 'custodian_id') else ""
+        current_borrower_id = ""
+        current_borrower_name = ""
+        
+        if device.status == DeviceStatus.IN_CUSTODY:
+            # 保管中设备 - 需要保管人确认
+            status = ReservationStatus.PENDING_CUSTODIAN.value
+        elif device.status == DeviceStatus.BORROWED:
+            # 借用中设备
+            current_borrower_id = device.borrower_id
+            current_borrower_name = device.borrower
+            
+            # 检查时间是否重合
+            if device.expected_return_date and start_time < device.expected_return_date:
+                # 时间重合，需要当前借用人确认
+                if custodian_id:
+                    # 有保管人，需要双方确认
+                    status = ReservationStatus.PENDING_BOTH.value
+                else:
+                    # 无保管人，只需要借用人确认
+                    status = ReservationStatus.PENDING_BORROWER.value
+            else:
+                # 时间不重合，无需确认
+                status = ReservationStatus.APPROVED.value
+        
+        # 创建预约
+        reservation = Reservation(
+            id=str(uuid.uuid4()),
+            device_id=device_id,
+            device_type=device_type,
+            device_name=device.name,
+            reserver_id=reserver_id,
+            reserver_name=reserver_name,
+            start_time=start_time,
+            end_time=end_time,
+            status=status,
+            custodian_id=custodian_id,
+            current_borrower_id=current_borrower_id,
+            current_borrower_name=current_borrower_name,
+            reason=reason
+        )
+        
+        self._db.save_reservation(reservation)
+        
+        # 发送通知
+        if status == ReservationStatus.PENDING_CUSTODIAN.value:
+            # 通知保管人
+            self._notify_custodian_reservation_pending(reservation)
+        elif status == ReservationStatus.PENDING_BORROWER.value:
+            # 通知当前借用人
+            self._notify_borrower_reservation_pending(reservation)
+        elif status == ReservationStatus.PENDING_BOTH.value:
+            # 通知保管人和借用人
+            self._notify_custodian_reservation_pending(reservation)
+            self._notify_borrower_reservation_pending(reservation)
+        
+        return True, reservation
+
+    def approve_reservation(self, reservation_id: str, approver_id: str, 
+                           approver_role: str) -> tuple:
+        """
+        同意预约
+        approver_role: 'custodian' 或 'borrower'
+        返回: (success, message)
+        """
+        reservation = self._db.get_reservation_by_id(reservation_id)
+        if not reservation:
+            return False, "预约不存在"
+        
+        if reservation.status in [ReservationStatus.CANCELLED.value, 
+                                  ReservationStatus.REJECTED.value,
+                                  ReservationStatus.EXPIRED.value]:
+            return False, "该预约已失效"
+        
+        if reservation.status == ReservationStatus.APPROVED.value:
+            return False, "该预约已被同意"
+        
+        now = datetime.now()
+        
+        if approver_role == 'custodian':
+            # 保管人同意
+            if reservation.custodian_approved:
+                return False, "您已同意过该预约"
+            
+            reservation.custodian_approved = True
+            reservation.custodian_approved_at = now
+            
+            # 更新状态
+            if reservation.status == ReservationStatus.PENDING_CUSTODIAN.value:
+                reservation.status = ReservationStatus.APPROVED.value
+            elif reservation.status == ReservationStatus.PENDING_BOTH.value:
+                if reservation.borrower_approved:
+                    reservation.status = ReservationStatus.APPROVED.value
+                else:
+                    reservation.status = ReservationStatus.PENDING_BORROWER.value
+        
+        elif approver_role == 'borrower':
+            # 借用人同意
+            if reservation.borrower_approved:
+                return False, "您已同意过该预约"
+            
+            reservation.borrower_approved = True
+            reservation.borrower_approved_at = now
+            
+            # 更新状态
+            if reservation.status == ReservationStatus.PENDING_BORROWER.value:
+                reservation.status = ReservationStatus.APPROVED.value
+            elif reservation.status == ReservationStatus.PENDING_BOTH.value:
+                if reservation.custodian_approved:
+                    reservation.status = ReservationStatus.APPROVED.value
+                else:
+                    reservation.status = ReservationStatus.PENDING_CUSTODIAN.value
+        
+        reservation.updated_at = now
+        self._db.save_reservation(reservation)
+        
+        # 如果已同意，通知预约人
+        if reservation.status == ReservationStatus.APPROVED.value:
+            self._notify_reserver_reservation_approved(reservation)
+        
+        return True, "同意成功"
+
+    def reject_reservation(self, reservation_id: str, rejected_by: str, 
+                          reason: str = "") -> tuple:
+        """
+        拒绝预约
+        返回: (success, message)
+        """
+        reservation = self._db.get_reservation_by_id(reservation_id)
+        if not reservation:
+            return False, "预约不存在"
+        
+        if reservation.status in [ReservationStatus.CANCELLED.value, 
+                                  ReservationStatus.REJECTED.value,
+                                  ReservationStatus.EXPIRED.value]:
+            return False, "该预约已失效"
+        
+        reservation.status = ReservationStatus.REJECTED.value
+        reservation.rejected_by = rejected_by
+        reservation.rejected_at = datetime.now()
+        reservation.updated_at = datetime.now()
+        
+        self._db.save_reservation(reservation)
+        
+        # 通知预约人
+        self._notify_reserver_reservation_rejected(reservation, rejected_by)
+        
+        return True, "拒绝成功"
+
+    def cancel_reservation(self, reservation_id: str, cancelled_by: str,
+                          reason: str = "") -> tuple:
+        """
+        取消预约
+        返回: (success, message)
+        """
+        reservation = self._db.get_reservation_by_id(reservation_id)
+        if not reservation:
+            return False, "预约不存在"
+        
+        if reservation.status in [ReservationStatus.CANCELLED.value, 
+                                  ReservationStatus.REJECTED.value,
+                                  ReservationStatus.EXPIRED.value,
+                                  ReservationStatus.CONVERTED.value]:
+            return False, "该预约已无法取消"
+        
+        reservation.status = ReservationStatus.CANCELLED.value
+        reservation.cancelled_by = cancelled_by
+        reservation.cancelled_at = datetime.now()
+        reservation.cancel_reason = reason
+        reservation.updated_at = datetime.now()
+        
+        self._db.save_reservation(reservation)
+        
+        return True, "取消成功"
+
+    def delete_reservation(self, reservation_id: str, user_id: str) -> tuple:
+        """
+        删除预约（仅已拒绝、已取消、已过期的可删除）
+        返回: (success, message)
+        """
+        reservation = self._db.get_reservation_by_id(reservation_id)
+        if not reservation:
+            return False, "预约不存在"
+        
+        # 只能删除自己的预约
+        if reservation.reserver_id != user_id:
+            return False, "只能删除自己的预约"
+        
+        if reservation.status not in [ReservationStatus.REJECTED.value,
+                                      ReservationStatus.CANCELLED.value,
+                                      ReservationStatus.EXPIRED.value]:
+            return False, "只能删除已拒绝、已取消或过期的预约"
+        
+        self._db.delete_reservation(reservation_id)
+        return True, "删除成功"
+
+    def get_device_reservations(self, device_id: str, device_type: str = None,
+                                active_only: bool = False) -> List[Reservation]:
+        """获取设备的预约列表"""
+        return self._db.get_reservations_by_device(device_id, device_type, active_only=active_only)
+
+    def get_user_reservations(self, user_id: str, status: str = None) -> List[Reservation]:
+        """获取用户的预约列表"""
+        return self._db.get_reservations_by_reserver(user_id, status)
+
+    def get_pending_reservations_for_user(self, user_id: str, role: str) -> List[Reservation]:
+        """获取用户需要处理的预约"""
+        if role == 'custodian':
+            return self._db.get_reservations_by_custodian(user_id, pending_only=True)
+        elif role == 'borrower':
+            return self._db.get_reservations_by_borrower(user_id, pending_only=True)
+        return []
+
+    def convert_reservation_to_borrow(self, reservation_id: str) -> tuple:
+        """
+        将预约转为借用（定时任务调用）
+        返回: (success, message)
+        """
+        reservation = self._db.get_reservation_by_id(reservation_id)
+        if not reservation:
+            return False, "预约不存在"
+        
+        if reservation.status != ReservationStatus.APPROVED.value:
+            return False, "预约状态不正确"
+        
+        if reservation.converted_to_borrow:
+            return False, "该预约已转为借用"
+        
+        # 获取设备
+        device = self._db.get_device_by_id(reservation.device_id)
+        if not device:
+            return False, "设备不存在"
+        
+        # 检查设备状态
+        if device.status == DeviceStatus.BORROWED:
+            # 如果当前借用人就是预约人，自动续期
+            if device.borrower_id == reservation.reserver_id:
+                # 自动续期：只更新预计归还时间
+                device.expected_return_date = reservation.end_time
+                self._db.save_device(device)
+                
+                # 更新预约状态
+                reservation.converted_to_borrow = True
+                reservation.converted_at = datetime.now()
+                reservation.status = ReservationStatus.CONVERTED.value
+                reservation.updated_at = datetime.now()
+                self._db.save_reservation(reservation)
+                
+                # 创建续期记录
+                record = Record(
+                    id=str(uuid.uuid4()),
+                    device_id=device.id,
+                    device_name=device.name,
+                    device_type=device.device_type.value if hasattr(device.device_type, 'value') else str(device.device_type),
+                    operation_type=OperationType.RENEW,
+                    operator=reservation.reserver_name,
+                    operation_time=datetime.now(),
+                    borrower=reservation.reserver_name,
+                    reason=f"预约自动续期至 {reservation.end_time.strftime('%Y-%m-%d %H:%M')}",
+                    entry_source="预约自动续期"
+                )
+                self._db.save_record(record)
+                
+                # 通知用户续期成功
+                self.add_notification(
+                    user_id=reservation.reserver_id,
+                    user_name=reservation.reserver_name,
+                    title="预约自动续期成功",
+                    content=f"您预约的 {reservation.device_name} 已自动续期，借用时间延长至 {reservation.end_time.strftime('%Y-%m-%d %H:%M')}",
+                    device_name=reservation.device_name,
+                    device_id=reservation.device_id,
+                    notification_type="success"
+                )
+                
+                return True, "预约自动续期成功"
+            else:
+                # 设备被其他人借用，无法转换
+                # 通知预约人
+                self._notify_reserver_device_not_available(reservation)
+                reservation.status = ReservationStatus.CANCELLED.value
+                reservation.cancel_reason = "设备已被他人借用，无法转为借用"
+                reservation.updated_at = datetime.now()
+                self._db.save_reservation(reservation)
+                return False, "设备已被他人借用"
+        
+        # 执行借用（设备未被借用的情况）
+        device.status = DeviceStatus.BORROWED
+        device.borrower = reservation.reserver_name
+        device.borrower_id = reservation.reserver_id
+        device.borrow_time = datetime.now()
+        device.expected_return_date = reservation.end_time
+        device.reason = reservation.reason
+        device.entry_source = "预约借用"
+        
+        self._db.save_device(device)
+        
+        # 更新预约状态
+        reservation.converted_to_borrow = True
+        reservation.converted_at = datetime.now()
+        reservation.status = ReservationStatus.CONVERTED.value
+        reservation.updated_at = datetime.now()
+        self._db.save_reservation(reservation)
+        
+        # 创建借还记录 - 修改借用人和原因显示
+        record = Record(
+            id=str(uuid.uuid4()),
+            device_id=device.id,
+            device_name=device.name,
+            device_type=device.device_type.value if hasattr(device.device_type, 'value') else str(device.device_type),
+            operation_type=OperationType.BORROW,
+            operator=reservation.reserver_name,
+            operation_time=datetime.now(),
+            borrower=f"自动借用：{reservation.reserver_name}",
+            reason=f"预约时间已到，原预约借用",
+            entry_source="预约借用"
+        )
+        self._db.save_record(record)
+        
+        # 通知预约人
+        self._notify_reserver_reservation_converted(reservation)
+        
+        # 通知原借用人（如果设备之前有借用人）
+        if reservation.current_borrower_id and reservation.current_borrower_id != reservation.reserver_id:
+            self._notify_original_borrower_reservation_converted(reservation, device)
+        
+        # 通知保管人（如果存在）
+        if reservation.custodian_id:
+            self._notify_custodian_reservation_converted(reservation, device)
+        
+        return True, "转为借用成功"
+
+    def expire_reservation(self, reservation_id: str) -> bool:
+        """将预约标记为过期（定时任务调用）"""
+        reservation = self._db.get_reservation_by_id(reservation_id)
+        if not reservation:
+            return False
+        
+        if reservation.status in [ReservationStatus.PENDING_CUSTODIAN.value,
+                                  ReservationStatus.PENDING_BORROWER.value,
+                                  ReservationStatus.PENDING_BOTH.value]:
+            reservation.status = ReservationStatus.EXPIRED.value
+            reservation.updated_at = datetime.now()
+            self._db.save_reservation(reservation)
+            
+            # 通知预约人
+            self._notify_reserver_reservation_expired(reservation)
+            return True
+        
+        return False
+
+    def cancel_reservations_by_device_status_change(self, device_id: str, 
+                                                     new_status: str,
+                                                     operator: str) -> int:
+        """
+        设备状态变更时取消相关预约（损坏、丢失、报废、封存等）
+        返回取消的预约数量
+        """
+        if new_status not in [DeviceStatus.DAMAGED.value, DeviceStatus.LOST.value,
+                              DeviceStatus.SCRAPPED.value, DeviceStatus.SEALED.value]:
+            return 0
+        
+        reservations = self._db.get_reservations_by_device(device_id, active_only=True)
+        cancelled_count = 0
+        
+        for r in reservations:
+            if r.status in [ReservationStatus.APPROVED.value,
+                           ReservationStatus.PENDING_CUSTODIAN.value,
+                           ReservationStatus.PENDING_BORROWER.value,
+                           ReservationStatus.PENDING_BOTH.value]:
+                r.status = ReservationStatus.CANCELLED.value
+                r.cancelled_by = "system"
+                r.cancelled_at = datetime.now()
+                r.cancel_reason = f"设备已{new_status}，无法预约"
+                r.updated_at = datetime.now()
+                self._db.save_reservation(r)
+                
+                # 通知预约人
+                self._notify_reserver_reservation_cancelled_by_status(r, new_status)
+                cancelled_count += 1
+        
+        return cancelled_count
+
+    def check_transfer_conflict(self, device_id: str) -> dict:
+        """
+        检查转借时是否有预约冲突
+        返回: {'has_conflict': bool, 'reservations': list}
+        冲突定义：任何已同意或待确认的预约，且预约时间包含当前时间或与转借后借用时间重叠
+        """
+        now = datetime.now()
+        reservations = self._db.get_reservations_by_device(device_id)
+        
+        conflict_reservations = []
+        for r in reservations:
+            # 跳过已取消、已拒绝、已过期、已转借用的预约
+            if r.status in [ReservationStatus.CANCELLED.value,
+                           ReservationStatus.REJECTED.value,
+                           ReservationStatus.EXPIRED.value,
+                           ReservationStatus.CONVERTED.value]:
+                continue
+            
+            # 检查预约时间是否与当前时间重叠（即预约正在进行中或即将开始）
+            # 转借后新借用人预计借用1天，所以检查当前时间是否在预约时间内
+            # 或者预约开始时间在转借后的借用期内
+            if r.start_time <= now <= r.end_time:
+                # 当前正在进行中的预约
+                conflict_reservations.append(r)
+            elif r.start_time > now:
+                # 未来的预约
+                conflict_reservations.append(r)
+        
+        return {
+            'has_conflict': len(conflict_reservations) > 0,
+            'reservations': conflict_reservations
+        }
+
+    def cancel_reservations_due_to_transfer(self, device_id: str, 
+                                           transfer_to: str,
+                                           cancelled_by: str) -> int:
+        """
+        强制转借时取消相关预约
+        返回取消的预约数量
+        """
+        now = datetime.now()
+        device = self._db.get_device_by_id(device_id)
+        reservations = self._db.get_reservations_by_device(device_id)
+        
+        cancelled_count = 0
+        for r in reservations:
+            # 取消已同意的未来预约
+            if r.status == ReservationStatus.APPROVED.value and r.start_time > now:
+                r.status = ReservationStatus.CANCELLED.value
+                r.cancelled_by = cancelled_by
+                r.cancelled_at = datetime.now()
+                r.cancel_reason = f"设备被强制转借给{transfer_to}，预约自动取消"
+                r.updated_at = datetime.now()
+                self._db.save_reservation(r)
+                
+                # 通知预约人
+                self._notify_reserver_reservation_cancelled_by_transfer(r, transfer_to)
+                
+                # 记录操作日志
+                self.add_operation_log(
+                    f"强制转借取消预约",
+                    f"设备: {r.device_name}, 预约人: {r.reserver_name}, 转借给: {transfer_to}"
+                )
+                cancelled_count += 1
+            
+            # 拒绝待确认的预约
+            elif r.status in [ReservationStatus.PENDING_CUSTODIAN.value,
+                             ReservationStatus.PENDING_BORROWER.value,
+                             ReservationStatus.PENDING_BOTH.value]:
+                r.status = ReservationStatus.REJECTED.value
+                r.rejected_by = cancelled_by
+                r.rejected_at = datetime.now()
+                r.updated_at = datetime.now()
+                self._db.save_reservation(r)
+                
+                # 通知预约人
+                self._notify_reserver_reservation_rejected(r, cancelled_by, 
+                    reason=f"设备已被强制转借给{transfer_to}")
+                
+                # 记录操作日志
+                self.add_operation_log(
+                    f"强制转借拒绝预约",
+                    f"设备: {r.device_name}, 预约人: {r.reserver_name}, 转借给: {transfer_to}"
+                )
+                cancelled_count += 1
+        
+        # 通知保管人（如果设备有保管人）
+        if device and hasattr(device, 'custodian_id') and device.custodian_id:
+            custodian_user = None
+            for u in self._users:
+                if u.id == device.custodian_id:
+                    custodian_user = u
+                    break
+            if custodian_user and custodian_user.borrower_name != cancelled_by:
+                self.add_notification(
+                    user_id=custodian_user.id,
+                    user_name=custodian_user.borrower_name,
+                    title="设备强制转借通知",
+                    content=f"您保管的设备「{device.name}」已被强制转借给 {transfer_to}，相关预约已自动取消",
+                    device_name=device.name,
+                    device_id=device.id,
+                    notification_type="warning"
+                )
+        
+        return cancelled_count
+
+    # ==================== 预约通知方法 ====================
+
+    def _notify_custodian_reservation_pending(self, reservation: Reservation):
+        """通知保管人有待确认的预约"""
+        if not reservation.custodian_id:
+            return
+        
+        self.add_notification(
+            user_id=reservation.custodian_id,
+            user_name="",
+            title="设备预约申请",
+            content=(
+                f"{reservation.reserver_name} 预约了 {reservation.device_name}，"
+                f"预约时间：{reservation.start_time.strftime('%Y-%m-%d %H:%M')} 至 "
+                f"{reservation.end_time.strftime('%Y-%m-%d %H:%M')}，"
+                f"请确认是否同意"
+            ),
+            device_name=reservation.device_name,
+            device_id=reservation.device_id,
+            notification_type="warning"
+        )
+        reservation.custodian_notified = True
+        self._db.save_reservation(reservation)
+
+    def _notify_borrower_reservation_pending(self, reservation: Reservation):
+        """通知当前借用人有待确认的预约"""
+        user_id = reservation.current_borrower_id
+        user_name = reservation.current_borrower_name
+        
+        # 如果 borrower_id 为空，尝试通过 borrower_name 查找用户
+        if not user_id and user_name:
+            for user in self._db.get_all_users():
+                if user.borrower_name == user_name:
+                    user_id = user.id
+                    break
+        
+        if not user_id:
+            return
+        
+        self.add_notification(
+            user_id=user_id,
+            user_name=user_name,
+            title="设备预约申请",
+            content=(
+                f"{reservation.reserver_name} 预约了 {reservation.device_name}，"
+                f"与您当前借用时间重合，请确认是否同意"
+            ),
+            device_name=reservation.device_name,
+            device_id=reservation.device_id,
+            notification_type="warning"
+        )
+        reservation.borrower_notified = True
+        self._db.save_reservation(reservation)
+
+    def _notify_reserver_reservation_approved(self, reservation: Reservation):
+        """通知预约人预约已同意"""
+        self.add_notification(
+            user_id=reservation.reserver_id,
+            user_name=reservation.reserver_name,
+            title="预约已同意",
+            content=(
+                f"您预约的 {reservation.device_name} 已被同意，"
+                f"将在预约时间自动转为借用"
+            ),
+            device_name=reservation.device_name,
+            device_id=reservation.device_id,
+            notification_type="success"
+        )
+
+    def _notify_reserver_reservation_rejected(self, reservation: Reservation, 
+                                              rejected_by: str, reason: str = ""):
+        """通知预约人预约被拒绝"""
+        content = f"您预约的 {reservation.device_name} 已被 {rejected_by} 拒绝"
+        if reason:
+            content += f"，原因：{reason}"
+        
+        self.add_notification(
+            user_id=reservation.reserver_id,
+            user_name=reservation.reserver_name,
+            title="预约被拒绝",
+            content=content,
+            device_name=reservation.device_name,
+            device_id=reservation.device_id,
+            notification_type="error"
+        )
+
+    def _notify_reserver_reservation_expired(self, reservation: Reservation):
+        """通知预约人预约已过期"""
+        self.add_notification(
+            user_id=reservation.reserver_id,
+            user_name=reservation.reserver_name,
+            title="预约已过期",
+            content=(
+                f"您预约的 {reservation.device_name} 因未及时处理已过期，"
+                f"如需借用请重新预约"
+            ),
+            device_name=reservation.device_name,
+            device_id=reservation.device_id,
+            notification_type="warning"
+        )
+
+    def _notify_reserver_reservation_converted(self, reservation: Reservation):
+        """通知预约人预约已转为借用"""
+        self.add_notification(
+            user_id=reservation.reserver_id,
+            user_name=reservation.reserver_name,
+            title="预约已转为借用",
+            content=(
+                f"您预约的 {reservation.device_name} 已自动转为借用，"
+                f"借用时间至 {reservation.end_time.strftime('%Y-%m-%d %H:%M')}"
+            ),
+            device_name=reservation.device_name,
+            device_id=reservation.device_id,
+            notification_type="success"
+        )
+
+    def _notify_reserver_device_not_available(self, reservation: Reservation):
+        """通知预约人设备不可用"""
+        self.add_notification(
+            user_id=reservation.reserver_id,
+            user_name=reservation.reserver_name,
+            title="预约取消",
+            content=(
+                f"您预约的 {reservation.device_name} 因设备仍在借用中，"
+                f"无法按时转为借用，预约已自动取消"
+            ),
+            device_name=reservation.device_name,
+            device_id=reservation.device_id,
+            notification_type="error"
+        )
+
+    def _notify_reserver_reservation_cancelled_by_status(self, reservation: Reservation,
+                                                         new_status: str):
+        """通知预约人因设备状态变更被取消"""
+        self.add_notification(
+            user_id=reservation.reserver_id,
+            user_name=reservation.reserver_name,
+            title="预约已取消",
+            content=f"您预约的 {reservation.device_name} 因设备已{new_status}而自动取消",
+            device_name=reservation.device_name,
+            device_id=reservation.device_id,
+            notification_type="error"
+        )
+
+    def _notify_reserver_reservation_cancelled_by_transfer(self, reservation: Reservation,
+                                                           transfer_to: str):
+        """通知预约人因设备被转借被取消"""
+        self.add_notification(
+            user_id=reservation.reserver_id,
+            user_name=reservation.reserver_name,
+            title="预约已被取消",
+            content=(
+                f"您预约的 {reservation.device_name} 因设备被转借给 {transfer_to} "
+                f"而自动取消，原预约时间：{reservation.start_time.strftime('%Y-%m-%d %H:%M')} 至 "
+                f"{reservation.end_time.strftime('%Y-%m-%d %H:%M')}"
+            ),
+            device_name=reservation.device_name,
+            device_id=reservation.device_id,
+            notification_type="error"
+        )
+
+    def _notify_original_borrower_reservation_converted(self, reservation: Reservation, device):
+        """通知原借用人预约已转为借用（自动转借给预约人）"""
+        self.add_notification(
+            user_id=reservation.current_borrower_id,
+            user_name=reservation.current_borrower_name,
+            title="设备自动转借通知",
+            content=(
+                f"{reservation.device_name} 设备预约时间已到，"
+                f"已自动转借给 {reservation.reserver_name}"
+            ),
+            device_name=reservation.device_name,
+            device_id=reservation.device_id,
+            notification_type="info"
+        )
+
+    def _notify_custodian_reservation_converted(self, reservation: Reservation, device):
+        """通知保管人预约已转为借用"""
+        self.add_notification(
+            user_id=reservation.custodian_id,
+            user_name="",
+            title="设备自动转借通知",
+            content=(
+                f"{reservation.device_name} 设备预约时间已到，"
+                f"已自动转借给 {reservation.reserver_name}"
+            ),
+            device_name=reservation.device_name,
+            device_id=reservation.device_id,
+            notification_type="info"
+        )
+
+    def process_reservations_schedule(self):
+        """
+        定时任务：处理预约
+        1. 将到期的已同意预约转为借用
+        2. 将过期的待确认预约标记为过期
+        3. 清理已结束超过7天的预约记录
+        """
+        now = datetime.now()
+        
+        # 1. 处理到期的已同意预约
+        pending_convert = self._db.get_pending_reservations_to_convert()
+        for r in pending_convert:
+            try:
+                self.convert_reservation_to_borrow(r.id)
+            except Exception as e:
+                print(f"转换预约失败 {r.id}: {e}")
+        
+        # 2. 处理过期的待确认预约
+        expired_pending = self._db.get_expired_pending_reservations()
+        for r in expired_pending:
+            try:
+                self.expire_reservation(r.id)
+            except Exception as e:
+                print(f"标记预约过期失败 {r.id}: {e}")
+        
+        # 3. 清理已结束超过7天的预约记录
+        try:
+            self._cleanup_old_reservations()
+        except Exception as e:
+            print(f"清理旧预约记录失败: {e}")
+    
+    def _cleanup_old_reservations(self):
+        """清理已结束超过7天的预约记录"""
+        from datetime import timedelta
+        cutoff_date = datetime.now() - timedelta(days=7)
+        
+        # 获取需要清理的预约（已结束超过7天的）
+        reservations_to_cleanup = self._db.get_reservations_to_cleanup(cutoff_date)
+        
+        cleanup_count = 0
+        for r in reservations_to_cleanup:
+            try:
+                self._db.delete_reservation(r.id)
+                cleanup_count += 1
+            except Exception as e:
+                print(f"删除旧预约记录失败 {r.id}: {e}")
+        
+        if cleanup_count > 0:
+            print(f"已清理 {cleanup_count} 条旧预约记录")
+    
+    def send_overdue_email_reminders(self):
+        """发送逾期3天提醒邮件"""
+        from datetime import timedelta
+        
+        # 获取所有借用中的设备
+        all_devices = self.get_all_devices()
+        now = datetime.now()
+        
+        # 按借用人分组逾期设备
+        overdue_devices_by_user: Dict[str, List[dict]] = {}
+        
+        for device in all_devices:
+            if (device.status == DeviceStatus.BORROWED and 
+                device.expected_return_date and 
+                device.borrower_id):
+                
+                # 计算逾期天数
+                if now > device.expected_return_date:
+                    overdue_days = (now.date() - device.expected_return_date.date()).days
+                    
+                    # 只处理逾期3天及以上的
+                    if overdue_days >= 3:
+                        if device.borrower_id not in overdue_devices_by_user:
+                            overdue_devices_by_user[device.borrower_id] = []
+                        
+                        overdue_devices_by_user[device.borrower_id].append({
+                            'name': device.name,
+                            'device_type': self._get_device_type_str(device),
+                            'overdue_days': overdue_days
+                        })
+        
+        # 异步发送邮件
+        def send_overdue_email(user, devices_list):
+            try:
+                success = email_sender.send_overdue_reminder(
+                    to_email=user.email,
+                    borrower_name=user.borrower_name,
+                    devices=devices_list
+                )
+                if success:
+                    print(f"逾期提醒邮件发送成功: {user.email}")
+            except Exception as e:
+                print(f"发送逾期提醒邮件失败 {user.email}: {e}")
+        
+        sent_count = 0
+        for user_id, devices in overdue_devices_by_user.items():
+            user = self._db.get_user_by_id(user_id)
+            if user and user.email:
+                # 使用线程池异步发送邮件
+                email_executor.submit(send_overdue_email, user, devices)
+                sent_count += 1
+        
+        if sent_count > 0:
+            print(f"已提交 {sent_count} 封逾期提醒邮件发送任务")
+    
+    def send_reservation_pending_email_reminders(self):
+        """发送预约待确认提醒邮件"""
+        from datetime import timedelta
+        
+        # 获取所有待确认的预约
+        pending_reservations = []
+        
+        # 待保管人确认
+        pending_reservations.extend(
+            self._db.get_reservations_by_status(ReservationStatus.PENDING_CUSTODIAN.value)
+        )
+        
+        # 待借用人确认
+        pending_reservations.extend(
+            self._db.get_reservations_by_status(ReservationStatus.PENDING_BORROWER.value)
+        )
+        
+        # 待2人确认
+        pending_reservations.extend(
+            self._db.get_reservations_by_status(ReservationStatus.PENDING_BOTH.value)
+        )
+        
+        # 去重：使用预约ID去重
+        seen_ids = set()
+        unique_reservations = []
+        for r in pending_reservations:
+            if r.id not in seen_ids:
+                seen_ids.add(r.id)
+                unique_reservations.append(r)
+        
+        # 记录已发送的邮箱，避免同一分钟内重复发送
+        sent_emails = set()
+        sent_count = 0
+        
+        # 定义异步发送邮件函数
+        def send_pending_email_async(to_email, recipient_name, device_name, device_type,
+                                     start_time, end_time, reserver_name, role):
+            try:
+                success = email_sender.send_reservation_pending_reminder(
+                    to_email=to_email,
+                    recipient_name=recipient_name,
+                    device_name=device_name,
+                    device_type=device_type,
+                    start_time=start_time,
+                    end_time=end_time,
+                    reserver_name=reserver_name,
+                    role=role
+                )
+                if success:
+                    print(f"预约确认提醒邮件发送成功: {to_email}")
+            except Exception as e:
+                print(f"发送预约确认提醒邮件失败 {to_email}: {e}")
+        
+        for reservation in unique_reservations:
+            try:
+                # 根据状态确定需要通知谁
+                if reservation.status == ReservationStatus.PENDING_CUSTODIAN.value:
+                    # 通知保管人
+                    if reservation.custodian_id:
+                        custodian = self._db.get_user_by_id(reservation.custodian_id)
+                        if custodian and custodian.email:
+                            # 检查是否已发送过
+                            if custodian.email in sent_emails:
+                                continue
+                            # 异步发送邮件
+                            email_executor.submit(
+                                send_pending_email_async,
+                                custodian.email,
+                                custodian.borrower_name,
+                                reservation.device_name,
+                                reservation.device_type,
+                                reservation.start_time,
+                                reservation.end_time,
+                                reservation.reserver_name,
+                                'custodian'
+                            )
+                            sent_count += 1
+                            sent_emails.add(custodian.email)
+                
+                elif reservation.status == ReservationStatus.PENDING_BORROWER.value:
+                    # 通知当前借用人
+                    if reservation.current_borrower_id:
+                        borrower = self._db.get_user_by_id(reservation.current_borrower_id)
+                        if borrower and borrower.email:
+                            # 检查是否已发送过
+                            if borrower.email in sent_emails:
+                                continue
+                            # 异步发送邮件
+                            email_executor.submit(
+                                send_pending_email_async,
+                                borrower.email,
+                                borrower.borrower_name,
+                                reservation.device_name,
+                                reservation.device_type,
+                                reservation.start_time,
+                                reservation.end_time,
+                                reservation.reserver_name,
+                                'borrower'
+                            )
+                            sent_count += 1
+                            sent_emails.add(borrower.email)
+                
+                elif reservation.status == ReservationStatus.PENDING_BOTH.value:
+                    # 通知双方
+                    # 通知保管人
+                    if reservation.custodian_id:
+                        custodian = self._db.get_user_by_id(reservation.custodian_id)
+                        if custodian and custodian.email:
+                            # 检查是否已发送过
+                            if custodian.email not in sent_emails:
+                                # 异步发送邮件
+                                email_executor.submit(
+                                    send_pending_email_async,
+                                    custodian.email,
+                                    custodian.borrower_name,
+                                    reservation.device_name,
+                                    reservation.device_type,
+                                    reservation.start_time,
+                                    reservation.end_time,
+                                    reservation.reserver_name,
+                                    'custodian'
+                                )
+                                sent_count += 1
+                                sent_emails.add(custodian.email)
+
+                    # 通知借用人
+                    if reservation.current_borrower_id:
+                        borrower = self._db.get_user_by_id(reservation.current_borrower_id)
+                        if borrower and borrower.email:
+                            # 检查是否已发送过
+                            if borrower.email not in sent_emails:
+                                # 异步发送邮件
+                                email_executor.submit(
+                                    send_pending_email_async,
+                                    borrower.email,
+                                    borrower.borrower_name,
+                                    reservation.device_name,
+                                    reservation.device_type,
+                                    reservation.start_time,
+                                    reservation.end_time,
+                                    reservation.reserver_name,
+                                    'borrower'
+                                )
+                                sent_count += 1
+                                sent_emails.add(borrower.email)
+            
+            except Exception as e:
+                print(f"发送预约待确认提醒邮件失败 {reservation.id}: {e}")
+        
+        if sent_count > 0:
+            print(f"已提交 {sent_count} 封预约待确认提醒邮件发送任务")
 
 
 # 全局 API 客户端实例

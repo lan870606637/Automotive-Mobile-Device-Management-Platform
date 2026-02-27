@@ -77,21 +77,35 @@
         </aside>
 
         <!-- 主内容区 -->
-        <main class="main-content">
-            <!-- 公告栏（重新设计） -->
-            <div id="announcementBar" class="announcement-bar" style="display: none;">
-                <div class="announcement-bar-icon">📢</div>
-                <div class="announcement-bar-content">
-                    <div id="announcementScroller" class="announcement-scroller"></div>
+        <main class="main-content" style="padding-top: 0;">
+            <!-- 顶部栏：公告 + 搜索框 -->
+            <div class="top-bar" style="margin: 0 -32px 0 -32px;">
+                <!-- 公告栏（重新设计） -->
+                <div id="announcementBar" class="announcement-bar" style="display: none;">
+                    <div class="announcement-bar-icon">📢</div>
+                    <div class="announcement-bar-content">
+                        <div id="announcementScroller" class="announcement-scroller"></div>
+                    </div>
+                    <div class="announcement-bar-actions">
+                        <button class="announcement-bar-btn" onclick="showAllAnnouncements()" title="查看全部公告">
+                            📋
+                        </button>
+                        <button class="announcement-bar-btn" onclick="hideAnnouncementBar()" title="关闭">
+                            ✕
+                        </button>
+                    </div>
                 </div>
-                <div class="announcement-bar-actions">
-                    <button class="announcement-bar-btn" onclick="showAllAnnouncements()" title="查看全部公告">
-                        📋
-                    </button>
-                    <button class="announcement-bar-btn" onclick="hideAnnouncementBar()" title="关闭">
-                        ✕
-                    </button>
+
+                <!-- 全局设备搜索栏（某些页面不显示） -->
+                {% if not hide_search %}
+                <div class="global-search-bar">
+                    <div class="global-search-wrapper">
+                        <span class="global-search-icon">🔍</span>
+                        <input type="text" id="globalDeviceSearch" class="global-search-input" placeholder="搜索设备号或型号..." autocomplete="off">
+                        <div id="globalSearchSuggestions" class="global-search-suggestions"></div>
+                    </div>
                 </div>
+                {% endif %}
             </div>
 
             {% block content %}{% endblock %}
@@ -170,6 +184,34 @@
 
     <!-- Toast提示 -->
     <div id="toast" class="pc-toast"></div>
+
+    <!-- 预约确认弹窗（全局） -->
+    <div id="reservationConfirmModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; justify-content: center; align-items: center;">
+        <div style="background: white; border-radius: 12px; padding: 24px; max-width: 450px; width: 90%; box-shadow: 0 4px 20px rgba(0,0,0,0.15);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <h3 style="margin: 0; font-size: 18px;">📅 预约确认</h3>
+                <button onclick="document.getElementById('reservationConfirmModal').style.display='none'" style="background: none; border: none; font-size: 20px; cursor: pointer;">×</button>
+            </div>
+            <div style="background: #e6f7ff; padding: 16px; border-radius: 8px; margin-bottom: 16px; border-left: 4px solid #1890ff;">
+                <p style="margin: 0; color: #096dd9; font-size: 14px;">
+                    <strong id="confirmReserverName">张三</strong> 申请预约借用设备
+                </p>
+            </div>
+            <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+                <p style="margin: 0 0 8px 0; font-size: 14px;"><strong>设备：</strong><span id="confirmDeviceName">iPhone 15</span></p>
+                <p style="margin: 0 0 8px 0; font-size: 14px;"><strong>预约时间：</strong></p>
+                <p style="margin: 0 0 4px 0; font-size: 13px; color: #666; padding-left: 12px;">开始：<span id="confirmStartTime">2026-02-28 09:00</span></p>
+                <p style="margin: 0; font-size: 13px; color: #666; padding-left: 12px;">结束：<span id="confirmEndTime">2026-03-07 09:00</span></p>
+            </div>
+            <div style="display: flex; gap: 12px;">
+                <button onclick="rejectReservationConfirm()" style="flex: 1; padding: 10px; border: 1px solid #d9d9d9; background: white; border-radius: 6px; cursor: pointer; font-size: 14px;">拒绝</button>
+                <button onclick="approveReservationConfirm()" style="flex: 1; padding: 10px; border: none; background: #1890ff; color: white; border-radius: 6px; cursor: pointer; font-size: 14px;">同意</button>
+            </div>
+            <div style="margin-top: 12px; text-align: center;">
+                <a id="confirmDeviceLink" href="#" style="color: #1890ff; font-size: 13px; text-decoration: none;">查看设备详情 →</a>
+            </div>
+        </div>
+    </div>
 
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     <script>
@@ -395,10 +437,247 @@
             return div.innerHTML;
         }
 
+        // ==================== 全局设备搜索功能 ====================
+        let allDevices = [];
+        let searchDebounceTimer = null;
+
+        // 加载所有设备数据
+        async function loadAllDevicesForSearch() {
+            try {
+                const response = await fetch('/api/all-devices');
+                const data = await response.json();
+                if (data.success) {
+                    allDevices = data.devices || [];
+                }
+            } catch (e) {
+                console.error('加载设备数据失败:', e);
+            }
+        }
+
+        // 处理搜索输入
+        function handleGlobalSearchInput(value) {
+            clearTimeout(searchDebounceTimer);
+            const suggestionsDiv = document.getElementById('globalSearchSuggestions');
+            
+            if (!value.trim()) {
+                suggestionsDiv.style.display = 'none';
+                return;
+            }
+
+            searchDebounceTimer = setTimeout(() => {
+                // 处理搜索词：移除所有空格，支持模糊匹配
+                const searchTerm = value.toLowerCase().replace(/\s+/g, '');
+                console.log('搜索关键词:', searchTerm);
+                console.log('设备总数:', allDevices.length);
+                
+                const matches = allDevices.filter(device => {
+                    // 设备名称和型号也移除空格后进行匹配
+                    const deviceName = (device.name || '').toLowerCase().replace(/\s+/g, '');
+                    const deviceModel = (device.model || '').toLowerCase().replace(/\s+/g, '');
+                    const nameMatch = deviceName.includes(searchTerm);
+                    const modelMatch = deviceModel.includes(searchTerm);
+                    
+                    if (nameMatch || modelMatch) {
+                        console.log('匹配到设备:', device.name);
+                    }
+                    
+                    return nameMatch || modelMatch;
+                }).slice(0, 8); // 最多显示8个结果
+
+                console.log('匹配结果数:', matches.length);
+
+                if (matches.length > 0) {
+                    suggestionsDiv.innerHTML = matches.map(device => `
+                        <div class="global-search-suggestion-item" onclick="goToDevice('${device.id}', '${device.device_type}')">
+                            <span class="suggestion-name">${escapeHtml(device.name)}</span>
+                            <span class="suggestion-type">${device.device_type}</span>
+                        </div>
+                    `).join('');
+                    suggestionsDiv.style.display = 'block';
+                } else {
+                    suggestionsDiv.innerHTML = '<div class="global-search-no-result">未找到匹配的设备</div>';
+                    suggestionsDiv.style.display = 'block';
+                }
+            }, 200);
+        }
+
+        // 处理搜索框键盘事件
+        function handleGlobalSearchKeydown(event) {
+            if (event.key === 'Enter') {
+                const value = document.getElementById('globalDeviceSearch').value.trim();
+                if (!value) return;
+                
+                // 处理搜索词：移除所有空格
+                const searchTerm = value.toLowerCase().replace(/\s+/g, '');
+                
+                // 查找匹配的设备
+                const matches = allDevices.filter(device => {
+                    const deviceName = (device.name || '').toLowerCase().replace(/\s+/g, '');
+                    const deviceModel = (device.model || '').toLowerCase().replace(/\s+/g, '');
+                    return deviceName.includes(searchTerm) || deviceModel.includes(searchTerm);
+                });
+                
+                // 如果只有一个匹配结果，直接跳转到设备详情页
+                if (matches.length === 1) {
+                    goToDevice(matches[0].id, matches[0].device_type);
+                } else {
+                    // 否则跳转到设备列表页
+                    window.location.href = `/pc/devices?search=${encodeURIComponent(value)}`;
+                }
+            }
+        }
+
+        // 跳转到设备详情
+        function goToDevice(deviceId, deviceType) {
+            window.location.href = `/pc/device/${deviceId}?device_type=${encodeURIComponent(deviceType)}`;
+        }
+
+        // 点击外部关闭搜索建议
+        document.addEventListener('click', function(e) {
+            const searchWrapper = document.querySelector('.global-search-wrapper');
+            if (searchWrapper && !searchWrapper.contains(e.target)) {
+                const suggestionsDiv = document.getElementById('globalSearchSuggestions');
+                if (suggestionsDiv) {
+                    suggestionsDiv.style.display = 'none';
+                }
+            }
+        });
+
+        // 页面加载时初始化搜索
+        document.addEventListener('DOMContentLoaded', function() {
+            loadAllDevicesForSearch();
+            
+            const searchInput = document.getElementById('globalDeviceSearch');
+            if (searchInput) {
+                searchInput.addEventListener('input', function(e) {
+                    handleGlobalSearchInput(e.target.value);
+                });
+                searchInput.addEventListener('keydown', handleGlobalSearchKeydown);
+            }
+        });
+
+        // ==================== 预约确认功能（全局） ====================
+        let pendingReservations = [];
+        let currentReservationIndex = 0;
+
+        // 检查所有待确认的预约
+        async function checkAllPendingReservations() {
+            try {
+                // 添加时间戳参数防止缓存
+                const timestamp = new Date().getTime();
+                
+                // 使用 AbortController 设置超时
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 5000);
+                
+                const response = await fetch(`/api/my-pending-reservations?_t=${timestamp}`, {
+                    signal: controller.signal,
+                    cache: 'no-cache'
+                });
+                clearTimeout(timeoutId);
+                
+                const data = await response.json();
+                
+                if (data.success && data.reservations && data.reservations.length > 0) {
+                    pendingReservations = data.reservations;
+                    currentReservationIndex = 0;
+                    showNextReservationConfirm();
+                }
+            } catch (e) {
+                if (e.name === 'AbortError') {
+                    console.error('检查待确认预约超时');
+                } else {
+                    console.error('检查待确认预约失败:', e);
+                }
+            }
+        }
+
+        // 显示下一个预约确认弹窗
+        function showNextReservationConfirm() {
+            if (currentReservationIndex >= pendingReservations.length) {
+                pendingReservations = [];
+                currentReservationIndex = 0;
+                return;
+            }
+            
+            const reservation = pendingReservations[currentReservationIndex];
+            document.getElementById('confirmReserverName').textContent = reservation.reserver_name;
+            document.getElementById('confirmDeviceName').textContent = reservation.device_name;
+            document.getElementById('confirmStartTime').textContent = reservation.start_time;
+            document.getElementById('confirmEndTime').textContent = reservation.end_time;
+            document.getElementById('confirmDeviceLink').href = `/pc/device/${reservation.device_id}?device_type=${encodeURIComponent(reservation.device_type)}`;
+            
+            // 显示弹窗
+            document.getElementById('reservationConfirmModal').style.display = 'flex';
+        }
+
+        // 同意预约
+        async function approveReservationConfirm() {
+            if (pendingReservations.length === 0) return;
+            
+            const reservation = pendingReservations[currentReservationIndex];
+            
+            try {
+                const response = await fetch(`/api/reservations/${reservation.id}/approve`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({role: reservation.confirm_role})
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    showToast('已同意预约');
+                } else {
+                    showToast(data.message || '操作失败');
+                }
+            } catch (e) {
+                showToast('操作失败，请重试');
+            }
+            
+            currentReservationIndex++;
+            showNextReservationConfirm();
+        }
+
+        // 拒绝预约
+        async function rejectReservationConfirm() {
+            if (pendingReservations.length === 0) return;
+            
+            const reservation = pendingReservations[currentReservationIndex];
+            
+            try {
+                const response = await fetch(`/api/reservations/${reservation.id}/reject`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({})
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    showToast('已拒绝预约');
+                } else {
+                    showToast(data.message || '操作失败');
+                }
+            } catch (e) {
+                showToast('操作失败，请重试');
+            }
+            
+            currentReservationIndex++;
+            showNextReservationConfirm();
+        }
+
         // 页面加载时初始化
         document.addEventListener('DOMContentLoaded', function() {
             loadAnnouncements();
             loadNotifications();
+            // 立即检查待确认预约
+            checkAllPendingReservations();
+            
+            // 页面获得焦点时再次检查
+            document.addEventListener('visibilitychange', function() {
+                if (document.visibilityState === 'visible') {
+                    checkAllPendingReservations();
+                }
+            });
         });
 
         // ==================== 通知功能 ====================
@@ -571,6 +850,115 @@
             }
         }
     </script>
+
+    <!-- 全局搜索框样式 -->
+    <style>
+        /* 顶部栏容器 */
+        .top-bar {
+            background: transparent;
+            position: relative;
+        }
+
+        /* 全局搜索栏 */
+        .global-search-bar {
+            padding: 12px 24px;
+            background: transparent;
+            border-bottom: 1px solid #e8e8e8;
+        }
+
+        .global-search-wrapper {
+            position: relative;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .global-search-icon {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 16px;
+            color: #999;
+            pointer-events: none;
+        }
+
+        .global-search-input {
+            width: 100%;
+            padding: 10px 12px 10px 38px;
+            border: 1px solid #d9d9d9;
+            border-radius: 20px;
+            font-size: 14px;
+            transition: all 0.3s;
+            background: #f5f5f5;
+        }
+
+        .global-search-input:focus {
+            outline: none;
+            border-color: #1890ff;
+            background: #fff;
+            box-shadow: 0 0 0 3px rgba(24, 144, 255, 0.1);
+        }
+
+        .global-search-input::placeholder {
+            color: #999;
+        }
+
+        /* 搜索建议下拉框 */
+        .global-search-suggestions {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: #fff;
+            border: 1px solid #e8e8e8;
+            border-radius: 8px;
+            margin-top: 4px;
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        .global-search-suggestion-item {
+            padding: 10px 16px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background 0.2s;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .global-search-suggestion-item:last-child {
+            border-bottom: none;
+        }
+
+        .global-search-suggestion-item:hover {
+            background: #e6f7ff;
+        }
+
+        .global-search-suggestion-item .suggestion-name {
+            font-size: 14px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .global-search-suggestion-item .suggestion-type {
+            font-size: 12px;
+            color: #999;
+            background: #f5f5f5;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+
+        .global-search-no-result {
+            padding: 16px;
+            text-align: center;
+            color: #999;
+            font-size: 14px;
+        }
+    </style>
     {% block extra_js %}{% endblock %}
 </body>
 </html>

@@ -57,6 +57,18 @@ class EntrySource(Enum):
     USER = "用户自助"
 
 
+class ReservationStatus(Enum):
+    """预约状态"""
+    PENDING_CUSTODIAN = "待保管人确认"
+    PENDING_BORROWER = "待借用人确认"
+    PENDING_BOTH = "待2人确认"
+    APPROVED = "已同意"
+    REJECTED = "已拒绝"
+    CANCELLED = "已取消"
+    EXPIRED = "已过期"
+    CONVERTED = "已转借用"
+
+
 @dataclass
 class Device:
     """设备基础类"""
@@ -788,4 +800,136 @@ class Announcement:
             "create_time": self.create_time.strftime("%Y-%m-%d %H:%M:%S") if self.create_time else "",
             "update_time": self.update_time.strftime("%Y-%m-%d %H:%M:%S") if self.update_time else "",
             "force_show_version": self.force_show_version,
+        }
+
+
+@dataclass
+class Reservation:
+    """预约记录"""
+    id: str
+    device_id: str
+    device_type: str
+    device_name: str
+    reserver_id: str
+    reserver_name: str
+    start_time: datetime
+    end_time: datetime
+    status: str
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    
+    # 确认相关
+    custodian_approved: bool = False
+    custodian_approved_at: Optional[datetime] = None
+    borrower_approved: bool = False
+    borrower_approved_at: Optional[datetime] = None
+    
+    # 通知相关
+    custodian_notified: bool = False
+    borrower_notified: bool = False
+    
+    # 取消/拒绝信息
+    cancelled_by: str = ""
+    cancelled_at: Optional[datetime] = None
+    cancel_reason: str = ""
+    rejected_by: str = ""
+    rejected_at: Optional[datetime] = None
+    
+    # 转为借用记录
+    converted_to_borrow: bool = False
+    converted_at: Optional[datetime] = None
+    
+    # 相关人ID（用于借用中设备的预约）
+    custodian_id: str = ""
+    current_borrower_id: str = ""
+    current_borrower_name: str = ""
+    
+    # 借用原因
+    reason: str = ""
+    
+    def __post_init__(self):
+        if self.created_at is None:
+            self.created_at = datetime.now()
+        if self.updated_at is None:
+            self.updated_at = datetime.now()
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Reservation':
+        """从字典创建预约对象"""
+        from datetime import datetime
+        
+        def parse_datetime(val):
+            if val is None or val == '':
+                return None
+            if isinstance(val, datetime):
+                return val
+            if isinstance(val, str):
+                for fmt in ['%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d']:
+                    try:
+                        return datetime.strptime(val, fmt)
+                    except:
+                        continue
+            return None
+        
+        return cls(
+            id=data.get('id', ''),
+            device_id=data.get('device_id', ''),
+            device_type=data.get('device_type', ''),
+            device_name=data.get('device_name', ''),
+            reserver_id=data.get('reserver_id', ''),
+            reserver_name=data.get('reserver_name', ''),
+            start_time=parse_datetime(data.get('start_time')),
+            end_time=parse_datetime(data.get('end_time')),
+            status=data.get('status', ReservationStatus.PENDING_CUSTODIAN.value),
+            created_at=parse_datetime(data.get('created_at')),
+            updated_at=parse_datetime(data.get('updated_at')),
+            custodian_approved=bool(data.get('custodian_approved', 0)),
+            custodian_approved_at=parse_datetime(data.get('custodian_approved_at')),
+            borrower_approved=bool(data.get('borrower_approved', 0)),
+            borrower_approved_at=parse_datetime(data.get('borrower_approved_at')),
+            custodian_notified=bool(data.get('custodian_notified', 0)),
+            borrower_notified=bool(data.get('borrower_notified', 0)),
+            cancelled_by=data.get('cancelled_by', ''),
+            cancelled_at=parse_datetime(data.get('cancelled_at')),
+            cancel_reason=data.get('cancel_reason', ''),
+            rejected_by=data.get('rejected_by', ''),
+            rejected_at=parse_datetime(data.get('rejected_at')),
+            converted_to_borrow=bool(data.get('converted_to_borrow', 0)),
+            converted_at=parse_datetime(data.get('converted_at')),
+            custodian_id=data.get('custodian_id', ''),
+            current_borrower_id=data.get('current_borrower_id', ''),
+            current_borrower_name=data.get('current_borrower_name', ''),
+            reason=data.get('reason', '')
+        )
+    
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "device_id": self.device_id,
+            "device_type": self.device_type,
+            "device_name": self.device_name,
+            "reserver_id": self.reserver_id,
+            "reserver_name": self.reserver_name,
+            "start_time": self.start_time.strftime("%Y-%m-%d %H:%M:%S") if self.start_time else "",
+            "end_time": self.end_time.strftime("%Y-%m-%d %H:%M:%S") if self.end_time else "",
+            "status": self.status,
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else "",
+            "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else "",
+            "custodian_approved": self.custodian_approved,
+            "custodian_approved_at": self.custodian_approved_at.strftime("%Y-%m-%d %H:%M:%S") if self.custodian_approved_at else "",
+            "borrower_approved": self.borrower_approved,
+            "borrower_approved_at": self.borrower_approved_at.strftime("%Y-%m-%d %H:%M:%S") if self.borrower_approved_at else "",
+            "custodian_notified": self.custodian_notified,
+            "borrower_notified": self.borrower_notified,
+            "cancelled_by": self.cancelled_by,
+            "cancelled_at": self.cancelled_at.strftime("%Y-%m-%d %H:%M:%S") if self.cancelled_at else "",
+            "cancel_reason": self.cancel_reason,
+            "rejected_by": self.rejected_by,
+            "rejected_at": self.rejected_at.strftime("%Y-%m-%d %H:%M:%S") if self.rejected_at else "",
+            "converted_to_borrow": self.converted_to_borrow,
+            "converted_at": self.converted_at.strftime("%Y-%m-%d %H:%M:%S") if self.converted_at else "",
+            "custodian_id": self.custodian_id,
+            "current_borrower_id": self.current_borrower_id,
+            "current_borrower_name": self.current_borrower_name,
+            "reason": self.reason
         }

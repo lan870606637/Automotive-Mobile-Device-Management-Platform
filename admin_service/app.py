@@ -1447,7 +1447,8 @@ def api_device_detail(device_id):
 def api_permanent_delete_device(device_id):
     """物理删除设备API - 彻底从数据库删除"""
     try:
-        from common.db_store import get_db_transaction
+        from common.db_store import get_db_transaction, IS_MYSQL
+        from common.models import ReservationStatus
         
         with get_db_transaction() as conn:
             cursor = conn.cursor()
@@ -1465,6 +1466,13 @@ def api_permanent_delete_device(device_id):
             
             device_name = row[0] if not isinstance(row, dict) else row['name']
             device_type = row[1] if not isinstance(row, dict) else row['device_type']
+            
+            # 先删除关联的预约记录
+            cursor.execute(
+                "DELETE FROM reservations WHERE device_id = %s AND device_type = %s" if IS_MYSQL else 
+                "DELETE FROM reservations WHERE device_id = ? AND device_type = ?",
+                (device_id, device_type)
+            )
             
             # 物理删除设备
             cursor.execute(

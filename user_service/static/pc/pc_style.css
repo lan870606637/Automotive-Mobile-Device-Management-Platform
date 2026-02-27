@@ -1340,12 +1340,12 @@ a { text-decoration: none; color: inherit; }
     align-items: center;
     background: linear-gradient(135deg, #f0f5ff 0%, #e6f7ff 50%, #f6ffed 100%);
     border-bottom: 1px solid #91d5ff;
-    padding: 12px 20px;
-    margin: -24px -24px 0 -24px;
-    min-height: 52px;
+    padding: 10px 24px;
+    min-height: 48px;
     box-sizing: border-box;
     position: relative;
     overflow: hidden;
+    margin: 0;
 }
 
 /* 装饰性背景元素 */

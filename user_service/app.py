@@ -22,7 +22,7 @@ from flask import Flask, render_template, request, jsonify, session, redirect, u
 from dotenv import load_dotenv
 
 # 从 common 导入
-from common.models import DeviceStatus, DeviceType, OperationType, EntrySource, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, ViewRecord
+from common.models import DeviceStatus, DeviceType, OperationType, EntrySource, ReservationStatus, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, ViewRecord
 from common.api_client import api_client
 from common.db_store import DatabaseStore, init_database
 from common.utils import mask_phone, is_mobile_device
@@ -36,6 +36,14 @@ try:
 except ImportError:
     QRCODE_AVAILABLE = False
     print("警告: qrcode模块未安装，二维码功能将使用备用方案")
+
+# 尝试导入APScheduler用于定时任务
+try:
+    from apscheduler.schedulers.background import BackgroundScheduler
+    APSCHEDULER_AVAILABLE = True
+except ImportError:
+    APSCHEDULER_AVAILABLE = False
+    print("警告: APScheduler模块未安装，定时任务功能将不可用")
 
 load_dotenv()
 
@@ -556,8 +564,11 @@ def pc_dashboard():
         device.is_overdue = False
         device.overdue_days = 0
         device.overdue_hours = 0
+        device.overdue_minutes = 0
         device.remaining_days = 0
         device.remaining_hours = 0
+        device.remaining_minutes = 0
+        device.remaining_time_display = ''  # 格式化后的剩余时间显示
         device.can_renew = False
         device.renew_disabled_reason = ''
 
@@ -570,6 +581,7 @@ def pc_dashboard():
                 device.is_overdue = True
                 device.overdue_hours = int(abs(total_seconds) // 3600)
                 device.overdue_days = int(abs(total_seconds) // (24 * 3600))
+                device.overdue_minutes = int(abs(total_seconds) // 60)
                 # 逾期超过3天不能续借
                 if device.overdue_days > 3:
                     device.can_renew = False
@@ -583,6 +595,33 @@ def pc_dashboard():
                 total_hours_float = total_seconds / 3600
                 total_hours_int = int(total_hours_float)
                 device.remaining_hours = total_hours_int if total_hours_float == total_hours_int else total_hours_int + 1
+                
+                # 计算剩余分钟数（用于小于1小时的显示）
+                device.remaining_minutes = int(total_seconds // 60)
+                
+                # 生成格式化的剩余时间显示
+                if device.remaining_days > 0:
+                    # 大于1天，显示天、小时和分钟
+                    remaining_hours_after_days = int((total_seconds % (24 * 3600)) // 3600)
+                    remaining_mins = int((total_seconds % 3600) // 60)
+                    if remaining_hours_after_days > 0 and remaining_mins > 0:
+                        device.remaining_time_display = f"{device.remaining_days} 天 {remaining_hours_after_days} 小时 {remaining_mins} 分钟"
+                    elif remaining_hours_after_days > 0:
+                        device.remaining_time_display = f"{device.remaining_days} 天 {remaining_hours_after_days} 小时"
+                    else:
+                        device.remaining_time_display = f"{device.remaining_days} 天"
+                elif device.remaining_hours > 0:
+                    # 小于24小时，显示小时和分钟
+                    remaining_mins = int((total_seconds % 3600) // 60)
+                    if remaining_mins > 0:
+                        device.remaining_time_display = f"{device.remaining_hours} 小时 {remaining_mins} 分钟"
+                    else:
+                        device.remaining_time_display = f"{device.remaining_hours} 小时"
+                else:
+                    # 小于1小时，显示分钟
+                    mins = int(total_seconds // 60)
+                    device.remaining_time_display = f"{mins} 分钟"
+                
                 # 剩余时间小于24小时才能续借
                 device.can_renew = device.remaining_hours < 24
                 if not device.can_renew:
@@ -591,6 +630,48 @@ def pc_dashboard():
         my_borrowed_devices.append(device)
 
     my_borrowed_count = len(my_borrowed_devices)
+
+    # 获取我的预约
+    from datetime import datetime
+    my_reservations = api_client.get_user_reservations(user['user_id'])
+    
+    # 筛选需要显示的预约：
+    # 1. 待确认的预约（始终显示）
+    # 2. 已同意的预约（如果预约开始时间未到，显示；如果已到，不显示，因为已自动转为借用）
+    # 3. 已拒绝的预约（保留显示到预约开始时间，但如果该设备有更新状态的预约记录则隐藏）
+    # 4. 已取消的预约（不显示）
+    active_reservations = []
+    now = datetime.now()
+    
+    # 按设备ID分组，找出每个设备最新的预约记录时间
+    device_latest_reservation_time = {}
+    for r in my_reservations:
+        if r.device_id not in device_latest_reservation_time:
+            device_latest_reservation_time[r.device_id] = r.created_at
+        elif r.created_at and r.created_at > device_latest_reservation_time[r.device_id]:
+            device_latest_reservation_time[r.device_id] = r.created_at
+    
+    for r in my_reservations:
+        # 待确认的预约始终显示
+        if r.status in ['待保管人确认', '待借用人确认', '待2人确认']:
+            active_reservations.append(r)
+        # 已同意的预约，只显示预约开始时间未到期的
+        elif r.status == '已同意':
+            if r.start_time and r.start_time > now:
+                active_reservations.append(r)
+        # 已拒绝的预约，保留显示到预约开始时间
+        # 但如果该设备有更新状态的预约记录（即不是该设备最新的预约），则隐藏
+        elif r.status == '已拒绝':
+            if r.start_time and r.start_time > now:
+                # 检查该预约是否是该设备最新的预约
+                # 如果不是最新的（有更新的预约记录），则隐藏
+                if r.created_at and r.created_at >= device_latest_reservation_time.get(r.device_id, r.created_at):
+                    active_reservations.append(r)
+        # 已取消的预约不显示
+        # elif r.status == '已取消':
+        #     pass
+    
+    my_reservation_count = len(active_reservations)
 
     # 统计各类型借用设备数量
     my_borrowed_type_counts = {}
@@ -784,7 +865,41 @@ def pc_dashboard():
                          borrow_rank=borrow_rank,
                          borrow_total=borrow_total,
                          return_rank=return_rank,
-                         return_total=return_total)
+                         return_total=return_total,
+                         my_reservation_count=my_reservation_count,
+                         my_reservations=active_reservations)
+
+
+@app.route('/api/all-devices')
+@login_required
+def api_get_all_devices():
+    """获取所有设备数据（用于全局搜索）"""
+    api_client.reload_data()
+    devices = api_client.get_all_devices()
+    
+    device_list = []
+    for device in devices:
+        # 确保所有字段都有值
+        device_name = getattr(device, 'name', '') or ''
+        device_model = getattr(device, 'model', '') or ''
+        device_id = getattr(device, 'id', '') or ''
+        
+        device_type_val = ''
+        if hasattr(device, 'device_type'):
+            device_type_val = device.device_type.value if hasattr(device.device_type, 'value') else str(device.device_type)
+        
+        device_list.append({
+            'id': device_id,
+            'name': device_name,
+            'model': device_model,
+            'device_type': device_type_val,
+            'status': device.status.value if hasattr(device.status, 'value') else str(device.status)
+        })
+    
+    return jsonify({
+        'success': True,
+        'devices': device_list
+    })
 
 
 @app.route('/pc/devices')
@@ -835,41 +950,42 @@ def pc_device_list():
     elif status == 'borrowed':
         devices = [d for d in devices if d.status == DeviceStatus.BORROWED]
 
-    # 搜索过滤 - 支持所有字段和组合搜索
+    # 搜索过滤 - 支持所有字段和组合搜索（移除空格进行模糊匹配）
     if search:
-        search_lower = search.lower()
+        # 移除搜索词中的所有空格
+        search_normalized = search.lower().replace(' ', '').replace('\t', '').replace('\n', '')
         filtered_devices = []
         for d in devices:
-            # 基础字段搜索
-            match = (search_lower in d.name.lower() or
-                     search_lower in (d.model or '').lower() or
-                     search_lower in (d.borrower or '').lower() or
-                     search_lower in (d.jira_address or '').lower() or
-                     search_lower in (d.remark or '').lower() or
-                     search_lower in d.status.value.lower() or
-                     search_lower in d.device_type.value.lower())
+            # 基础字段搜索（移除空格后匹配）
+            match = (search_normalized in d.name.lower().replace(' ', '') or
+                     search_normalized in (d.model or '').lower().replace(' ', '') or
+                     search_normalized in (d.borrower or '').lower().replace(' ', '') or
+                     search_normalized in (d.jira_address or '').lower().replace(' ', '') or
+                     search_normalized in (d.remark or '').lower().replace(' ', '') or
+                     search_normalized in d.status.value.lower().replace(' ', '') or
+                     search_normalized in d.device_type.value.lower().replace(' ', ''))
 
             # 车机/仪表特有字段
             if not match and d.device_type.value in ['车机', '仪表']:
-                match = (search_lower in (d.project_attribute or '').lower() or
-                         search_lower in (d.connection_method or '').lower() or
-                         search_lower in (d.os_version or '').lower() or
-                         search_lower in (d.os_platform or '').lower() or
-                         search_lower in (d.product_name or '').lower() or
-                         search_lower in (d.screen_orientation or '').lower() or
-                         search_lower in (d.screen_resolution or '').lower() or
-                         search_lower in (d.hardware_version or '').lower())
+                match = (search_normalized in (d.project_attribute or '').lower().replace(' ', '') or
+                         search_normalized in (d.connection_method or '').lower().replace(' ', '') or
+                         search_normalized in (d.os_version or '').lower().replace(' ', '') or
+                         search_normalized in (d.os_platform or '').lower().replace(' ', '') or
+                         search_normalized in (d.product_name or '').lower().replace(' ', '') or
+                         search_normalized in (d.screen_orientation or '').lower().replace(' ', '') or
+                         search_normalized in (d.screen_resolution or '').lower().replace(' ', '') or
+                         search_normalized in (d.hardware_version or '').lower().replace(' ', ''))
 
             # 手机特有字段
             if not match and d.device_type.value == '手机':
-                match = (search_lower in (d.system_version or '').lower() or
-                         search_lower in (d.imei or '').lower() or
-                         search_lower in (d.sn or '').lower() or
-                         search_lower in (d.carrier or '').lower())
+                match = (search_normalized in (d.system_version or '').lower().replace(' ', '') or
+                         search_normalized in (d.imei or '').lower().replace(' ', '') or
+                         search_normalized in (d.sn or '').lower().replace(' ', '') or
+                         search_normalized in (d.carrier or '').lower().replace(' ', ''))
 
             # 手机卡特有字段
             if not match and d.device_type.value == '手机卡':
-                match = search_lower in (d.carrier or '').lower()
+                match = search_normalized in (d.carrier or '').lower().replace(' ', '')
 
             if match:
                 filtered_devices.append(d)
@@ -1093,7 +1209,8 @@ def pc_device_list():
                          in_custody_count=stats['in_custody_count'],
                          no_cabinet_count=stats['no_cabinet_count'],
                          circulating_count=stats['circulating_count'],
-                         unavailable_count=stats['unavailable_count'])
+                         unavailable_count=stats['unavailable_count'],
+                         hide_search=True)
 
 
 @app.route('/pc/device/<device_id>')
@@ -1482,6 +1599,7 @@ def pc_user_rankings():
     return render_template('pc/user_rankings.html',
                          ranking_type='borrow',
                          user=get_current_user(),
+                         hide_search=True,
                          **stats)
 
 
@@ -1532,15 +1650,32 @@ def api_borrow():
     user_email = user.get('email', '')
     
     # 计算预计归还时间
+    borrow_start_time = datetime.now()
     if expected_return_date:
         # 使用前端传递的日期，时间设为当前时间
         from datetime import datetime as dt
         date_part = dt.strptime(expected_return_date, '%Y-%m-%d')
-        now = dt.now()
-        device.expected_return_date = date_part.replace(hour=now.hour, minute=now.minute, second=now.second)
+        now_time = dt.now()
+        device.expected_return_date = date_part.replace(hour=now_time.hour, minute=now_time.minute, second=now_time.second)
     else:
         # 使用默认天数
         device.expected_return_date = datetime.now() + timedelta(days=int(days))
+    
+    # 检查是否有预约冲突（只检查与预约时间重合的情况，自己的预约不视为冲突）
+    has_conflict, conflict_info = api_client.check_reservation_conflict(
+        device_id=device_id,
+        device_type=get_device_type_str(device),
+        start_time=borrow_start_time,
+        end_time=device.expected_return_date,
+        current_user_id=user['user_id']
+    )
+    
+    if has_conflict:
+        if conflict_info['type'] == 'reservation':
+            return jsonify({
+                'success': False, 
+                'message': f"该设备已被 {conflict_info['conflict_with']} 预约，预约时间 {conflict_info['start_time'].strftime('%Y-%m-%d %H:%M')} 至 {conflict_info['end_time'].strftime('%Y-%m-%d %H:%M')}，请修改借用时长或者联系 {conflict_info['conflict_with']} 取消预约"
+            })
     
     # 更新设备信息
     device.status = DeviceStatus.BORROWED
@@ -1698,6 +1833,26 @@ def api_return():
 
     api_client.add_operation_log(f"归还设备: {original_borrower}", device.name)
     
+    # 检查是否有等待的预约，通知第一个等待的预约人
+    device_type = get_device_type_str(device)
+    waiting_reservations = api_client._db.get_reservations_by_device(device_id, device_type)
+    notified_reserver = None
+    for reservation in waiting_reservations:
+        # 只通知已同意且预约开始时间在未来或现在的预约
+        if (reservation.status == ReservationStatus.APPROVED.value and 
+            reservation.start_time <= datetime.now() + timedelta(days=1)):  # 预约时间在现在或明天内
+            api_client.add_notification(
+                user_id=reservation.reserver_id,
+                user_name=reservation.reserver_name,
+                title="设备已归还",
+                content=f"您预约的设备「{device.name}」已被归还，可以借用了",
+                device_name=device.name,
+                device_id=device.id,
+                notification_type="success"
+            )
+            notified_reserver = reservation.reserver_name
+            break  # 只通知第一个
+    
 
     # 归还通知逻辑：
     # - 借用人自己归还：通知保管人（设备回到保管人处）
@@ -1710,140 +1865,20 @@ def api_return():
                 custodian_user = u
                 break
         if custodian_user:
+            content = f"您保管的设备「{device.name}」已被 {user['borrower_name']} 归还"
+            if notified_reserver:
+                content += f"，已通知预约人 {notified_reserver}"
             api_client.add_notification(
                 user_id=custodian_user.id,
                 user_name=custodian_user.borrower_name,
                 title="设备归还通知",
-                content=f"您保管的设备「{device.name}」已被 {user['borrower_name']} 归还",
+                content=content,
                 device_name=device.name,
                 device_id=device.id,
                 notification_type="success"
             )
 
     return jsonify({'success': True, 'message': '归还成功'})
-
-
-@app.route('/api/transfer', methods=['POST'])
-@login_required
-def api_transfer():
-    """转借设备API"""
-    user = get_current_user()
-    data = request.json
-    
-    # 重新加载数据以获取最新状态
-    api_client.reload_data()
-    
-    device_id = data.get('device_id')
-    transfer_to = data.get('transfer_to', '').strip()
-    
-    device = api_client.get_device_by_id(device_id)
-    if not device:
-        return jsonify({'success': False, 'message': '设备不存在'})
-    
-    # 检查是否是当前借用人或保管人
-    is_borrower = device.borrower == user['borrower_name']
-    is_custodian = device.cabinet_number == user['borrower_name']
-
-    if not is_borrower and not is_custodian:
-        return jsonify({'success': False, 'message': '您不是该设备的当前借用人或保管人'})
-
-    # 借用人只能在借出状态转借
-    if is_borrower and device.status != DeviceStatus.BORROWED:
-        return jsonify({'success': False, 'message': '设备状态异常'})
-
-    if not transfer_to:
-        return jsonify({'success': False, 'message': '请选择转借对象'})
-
-    # 检查不能转借给自己
-    if transfer_to == user['borrower_name']:
-        return jsonify({'success': False, 'message': '不能转借给自己'})
-
-    # 检查不能转借给当前借用人（已经在借用设备的人）
-    if transfer_to == device.borrower:
-        return jsonify({'success': False, 'message': '该用户已经在借用此设备'})
-    
-    # 检查转借对象是否存在
-    target_user = None
-    for u in api_client._users:
-        if u.borrower_name == transfer_to:
-            target_user = u
-            break
-    
-    if not target_user:
-        return jsonify({'success': False, 'message': '转借对象不存在'})
-    
-    if target_user.is_frozen:
-        return jsonify({'success': False, 'message': '转借对象账号已被冻结'})
-    
-    original_borrower = device.borrower
-    remark = data.get('remark', '')
-    
-    # 更新设备信息 - 保存上一个借用人
-    device.previous_borrower = original_borrower
-    device.borrower = transfer_to
-    device.entry_source = EntrySource.USER.value
-    device.expected_return_date = datetime.now() + timedelta(days=1)  # 转借后预计归还时间刷新为当前时间+1天
-    
-    # 如果是保管人转借，更新设备状态为借出（在库或保管中都可以转借）
-    if is_custodian and device.status in [DeviceStatus.IN_STOCK, DeviceStatus.IN_CUSTODY]:
-        device.status = DeviceStatus.BORROWED
-        device.borrow_time = datetime.now()
-    
-    api_client.update_device(device)
-    
-    # 添加记录
-    record = Record(
-        id=str(uuid.uuid4()),
-        device_id=device.id,
-        device_name=device.name,
-        device_type=get_device_type_str(device),
-        operation_type=OperationType.TRANSFER,
-        operator=user['borrower_name'],
-        operation_time=datetime.now(),
-        borrower=f"{original_borrower or '保管人'}——>{transfer_to}",
-        reason='保管人转借' if is_custodian else '用户转借',
-        remark=remark,
-        entry_source=EntrySource.USER.value
-    )
-    api_client._db.save_record(record)
-    
-    # 给接收方增加借用次数
-    for u in api_client._users:
-        if u.borrower_name == transfer_to:
-            u.borrow_count += 1
-            api_client._db.save_user(u)
-            break
-
-    api_client.add_operation_log(f"转借设备 {original_borrower or '保管人'} -> {transfer_to}", device.name)
-    
-    
-    # 发送通知
-    api_client.notify_transfer(
-        device_id=device.id,
-        device_name=device.name,
-        original_borrower=original_borrower or user['borrower_name'],
-        new_borrower=transfer_to,
-        operator=user['borrower_name']
-    )
-    # 通知保管人（如果保管人不是转借双方且不是操作人）
-    if device.cabinet_number and device.cabinet_number != original_borrower and device.cabinet_number != transfer_to and device.cabinet_number != user['borrower_name']:
-        custodian_user = None
-        for u in api_client._users:
-            if u.borrower_name == device.cabinet_number:
-                custodian_user = u
-                break
-        if custodian_user:
-            api_client.add_notification(
-                user_id=custodian_user.id,
-                user_name=custodian_user.borrower_name,
-                title="设备转借通知",
-                content=f"您保管的设备「{device.name}」已被 {user['borrower_name']} 从 {original_borrower or '保管人'} 转借给 {transfer_to}",
-                device_name=device.name,
-                device_id=device.id,
-                notification_type="info"
-            )
-    
-    return jsonify({'success': True, 'message': '转借成功'})
 
 
 @app.route('/api/remark/add', methods=['POST'])
@@ -1910,6 +1945,35 @@ def api_transfer_to_me():
     borrow_limit = 10  # 最大借用数量（车机+手机卡）
     if user_borrowed_count >= borrow_limit:
         return jsonify({'success': False, 'message': f'您已借用 {user_borrowed_count} 台设备，达到上限 ({borrow_limit}台)，无法接收设备'})
+    
+    # 检查是否强制转借
+    force = data.get('force', False)
+    
+    # 检查预约冲突
+    if not force:
+        conflict_check = api_client.check_transfer_conflict(device_id)
+        if conflict_check['has_conflict']:
+            r = conflict_check['reservations'][0]
+            return jsonify({
+                'success': False,
+                'code': 'RESERVATION_CONFLICT',
+                'message': f'该设备已被 {r.reserver_name} 预约借用，时间：{r.start_time.strftime("%Y-%m-%d %H:%M")} 至 {r.end_time.strftime("%Y-%m-%d %H:%M")}',
+                'conflict_info': {
+                    'reserver_name': r.reserver_name,
+                    'reserver_id': r.reserver_id,
+                    'start_time': r.start_time.strftime('%Y-%m-%d %H:%M'),
+                    'end_time': r.end_time.strftime('%Y-%m-%d %H:%M'),
+                    'reservation_id': r.id
+                }
+            }), 409
+    
+    # 强制转借：取消相关预约
+    if force:
+        cancelled_count = api_client.cancel_reservations_due_to_transfer(
+            device_id=device_id,
+            transfer_to=user['borrower_name'],
+            cancelled_by=user['borrower_name']
+        )
     
     # 保存原借用人信息
     original_borrower = device.borrower
@@ -2835,15 +2899,8 @@ def api_not_found():
     
     if previous_borrower:
         # 有上一个借用人，转回给他
-        # 获取上一个借用人的手机号
-        prev_phone = ''
-        for u in api_client._users:
-            if u.borrower_name == previous_borrower:
-                prev_phone = u.phone
-                break
-        
         device.borrower = previous_borrower
-        device.phone = prev_phone
+        device.phone = ''  # 清空手机号
         device.previous_borrower = ''  # 清空上一个借用人
         
         api_client.update_device(device)
@@ -2858,7 +2915,7 @@ def api_not_found():
             operator=user['borrower_name'],
             operation_time=datetime.now(),
             borrower=f"未找到：{user['borrower_name']}——>{previous_borrower}",
-            phone=prev_phone,
+            phone='',
             reason='设备未找到，退回给上一个借用人',
             entry_source=EntrySource.USER.value
         )
@@ -3064,17 +3121,43 @@ def api_renew():
             if overdue_days > 3:
                 return jsonify({'success': False, 'message': '无法续期，设备已逾期超过3天，请先归还后再借用'})
     
-    # 更新预计归还日期
+    # 计算新的预计归还日期
     if new_return_date:
         # 使用前端传递的日期，时间设为当前时间
         from datetime import datetime as dt
         date_part = dt.strptime(new_return_date, '%Y-%m-%d')
         now = dt.now()
-        device.expected_return_date = date_part.replace(hour=now.hour, minute=now.minute, second=now.second)
+        new_expected_return_date = date_part.replace(hour=now.hour, minute=now.minute, second=now.second)
     elif device.expected_return_date:
-        device.expected_return_date = device.expected_return_date + timedelta(days=int(days))
+        new_expected_return_date = device.expected_return_date + timedelta(days=int(days))
     else:
-        device.expected_return_date = datetime.now() + timedelta(days=int(days))
+        new_expected_return_date = datetime.now() + timedelta(days=int(days))
+    
+    # 检查续期是否与预约冲突
+    # 获取设备类型
+    device_type = get_device_type_str(device)
+    
+    # 检查是否有预约与新的归还日期冲突
+    reservations = api_client._db.get_reservations_by_device(device_id, device_type)
+    for reservation in reservations:
+        # 只检查已同意或待确认的预约
+        if reservation.status in [ReservationStatus.APPROVED.value, 
+                                   ReservationStatus.PENDING_CUSTODIAN.value,
+                                   ReservationStatus.PENDING_BORROWER.value,
+                                   ReservationStatus.PENDING_BOTH.value]:
+            # 如果新的归还日期超过了预约开始时间，说明有冲突
+            if new_expected_return_date > reservation.start_time:
+                # 检查是否是预约人自己续期自己的预约
+                if reservation.reserver_id == user['user_id']:
+                    # 自己的预约，允许续期，但需要在预约到期时自动处理
+                    continue
+                return jsonify({
+                    'success': False, 
+                    'message': f"无法续期，该设备已被 {reservation.reserver_name} 预约，预约时间 {reservation.start_time.strftime('%Y-%m-%d %H:%M')} 至 {reservation.end_time.strftime('%Y-%m-%d %H:%M')}"
+                })
+    
+    # 更新设备的预计归还日期
+    device.expected_return_date = new_expected_return_date
     
     api_client.update_device(device)
     
@@ -3267,6 +3350,7 @@ def pc_profile():
     return render_template('pc/profile.html',
                          user=user,
                          full_user=full_user,
+                         hide_search=True,
                          **stats)
 
 
@@ -3360,6 +3444,559 @@ def api_update_avatar():
     })
 
 
+# ==================== 预约管理API ====================
+
+@app.route('/api/reservations/create', methods=['POST'])
+@login_required
+def api_create_reservation():
+    """创建预约API"""
+    user = get_current_user()
+    data = request.json
+    
+    device_id = data.get('device_id')
+    device_type = data.get('device_type')
+    start_time_str = data.get('start_time')
+    end_time_str = data.get('end_time')
+    reason = data.get('reason', '测试')
+    
+    if not device_id or not device_type:
+        return jsonify({'success': False, 'message': '设备信息不完整'})
+    
+    if not start_time_str or not end_time_str:
+        return jsonify({'success': False, 'message': '请选择预约时间'})
+    
+    try:
+        start_time = datetime.fromisoformat(start_time_str.replace('Z', '+00:00').replace('+00:00', ''))
+        end_time = datetime.fromisoformat(end_time_str.replace('Z', '+00:00').replace('+00:00', ''))
+    except:
+        return jsonify({'success': False, 'message': '时间格式错误'})
+    
+    success, result = api_client.create_reservation(
+        device_id=device_id,
+        device_type=device_type,
+        reserver_id=user['user_id'],
+        reserver_name=user['borrower_name'],
+        start_time=start_time,
+        end_time=end_time,
+        reason=reason
+    )
+    
+    if success:
+        return jsonify({'success': True, 'message': '预约成功', 'reservation': result.to_dict()})
+    else:
+        return jsonify({'success': False, 'message': result})
+
+
+@app.route('/api/reservations/<reservation_id>/approve', methods=['POST'])
+@login_required
+def api_approve_reservation(reservation_id):
+    """同意预约API"""
+    user = get_current_user()
+    data = request.json or {}
+    approver_role = data.get('role', 'custodian')  # 'custodian' 或 'borrower'
+    
+    success, message = api_client.approve_reservation(
+        reservation_id=reservation_id,
+        approver_id=user['user_id'],
+        approver_role=approver_role
+    )
+    
+    return jsonify({'success': success, 'message': message})
+
+
+@app.route('/api/reservations/<reservation_id>/reject', methods=['POST'])
+@login_required
+def api_reject_reservation(reservation_id):
+    """拒绝预约API"""
+    user = get_current_user()
+    data = request.json or {}
+    reason = data.get('reason', '')
+    
+    success, message = api_client.reject_reservation(
+        reservation_id=reservation_id,
+        rejected_by=user['borrower_name'],
+        reason=reason
+    )
+    
+    return jsonify({'success': success, 'message': message})
+
+
+@app.route('/api/reservations/<reservation_id>/cancel', methods=['POST'])
+@login_required
+def api_cancel_reservation(reservation_id):
+    """取消预约API"""
+    user = get_current_user()
+    data = request.json or {}
+    reason = data.get('reason', '')
+    
+    success, message = api_client.cancel_reservation(
+        reservation_id=reservation_id,
+        cancelled_by=user['borrower_name'],
+        reason=reason
+    )
+    
+    return jsonify({'success': success, 'message': message})
+
+
+@app.route('/api/reservations/<reservation_id>/delete', methods=['POST'])
+@login_required
+def api_delete_reservation(reservation_id):
+    """删除预约API（仅已拒绝、已取消、已过期的可删除）"""
+    user = get_current_user()
+    
+    success, message = api_client.delete_reservation(
+        reservation_id=reservation_id,
+        user_id=user['user_id']
+    )
+    
+    return jsonify({'success': success, 'message': message})
+
+
+@app.route('/api/reservations', methods=['GET'])
+@login_required
+def api_get_reservations():
+    """获取我的预约列表API"""
+    user = get_current_user()
+    status = request.args.get('status')
+    
+    reservations = api_client.get_user_reservations(user['user_id'], status)
+    
+    return jsonify({
+        'success': True,
+        'reservations': [r.to_dict() for r in reservations]
+    })
+
+
+@app.route('/api/device/<device_id>/reservations', methods=['GET'])
+@login_required
+def api_get_device_reservations(device_id):
+    """获取设备预约日历API"""
+    device_type = request.args.get('device_type')
+    
+    # 获取设备信息
+    device = api_client.get_device_by_id(device_id)
+    if not device:
+        return jsonify({'success': False, 'message': '设备不存在'}), 404
+    
+    user = get_current_user()
+    
+    # 获取所有有效预约
+    reservations = api_client.get_device_reservations(device_id, device_type, active_only=True)
+    
+    # 格式化预约数据
+    reservation_list = []
+    for r in reservations:
+        reservation_list.append({
+            'id': r.id,
+            'reserver_name': r.reserver_name,
+            'reserver_id': r.reserver_id,
+            'start_time': r.start_time.strftime('%Y-%m-%d %H:%M:%S') if r.start_time else '',
+            'end_time': r.end_time.strftime('%Y-%m-%d %H:%M:%S') if r.end_time else '',
+            'status': r.status,
+            'is_my_reservation': r.reserver_id == user['user_id']
+        })
+    
+    # 当前借用信息
+    current_borrow = None
+    if device.status == DeviceStatus.BORROWED:
+        current_borrow = {
+            'borrower': device.borrower,
+            'borrower_id': device.borrower_id,
+            'start': device.borrow_time.strftime('%Y-%m-%d %H:%M:%S') if device.borrow_time else None,
+            'end': device.expected_return_date.strftime('%Y-%m-%d %H:%M:%S') if device.expected_return_date else None
+        }
+    
+    return jsonify({
+        'success': True,
+        'reservations': reservation_list,
+        'current_borrow': current_borrow
+    })
+
+
+@app.route('/api/device/<device_id>/pending-reservations')
+@login_required
+def api_get_device_pending_reservations(device_id):
+    """获取设备待确认的预约（用于弹窗提示）"""
+    user = get_current_user()
+    device_type = request.args.get('device_type')
+    
+    # 获取设备信息
+    device = api_client.get_device_by_id(device_id)
+    if not device:
+        return jsonify({'success': False, 'message': '设备不存在'}), 404
+    
+    # 判断当前用户角色
+    is_custodian = device.cabinet_number == user['borrower_name']
+    is_borrower = device.borrower == user['borrower_name'] and device.status == DeviceStatus.BORROWED
+    
+    # 获取待确认的预约
+    pending_reservations = []
+    all_reservations = api_client.get_device_reservations(device_id, device_type)
+    
+    for r in all_reservations:
+        # 保管人需要确认的预约
+        if is_custodian and r.status in ['待保管人确认', '待2人确认'] and not r.custodian_approved:
+            if r.custodian_id == user['user_id'] or (not r.custodian_id and device.cabinet_number == user['borrower_name']):
+                pending_reservations.append({
+                    'id': r.id,
+                    'reserver_name': r.reserver_name,
+                    'reserver_id': r.reserver_id,
+                    'device_name': r.device_name,
+                    'start_time': r.start_time.strftime('%Y-%m-%d %H:%M') if r.start_time else '',
+                    'end_time': r.end_time.strftime('%Y-%m-%d %H:%M') if r.end_time else '',
+                    'confirm_role': 'custodian'
+                })
+        
+        # 借用人需要确认的预约
+        if is_borrower and r.status in ['待借用人确认', '待2人确认'] and not r.borrower_approved:
+            # 检查是否是当前借用人（通过ID或姓名匹配）
+            is_current_borrower = (
+                r.current_borrower_id == user['user_id'] or 
+                (not r.current_borrower_id and device.borrower_id == user['user_id']) or
+                r.current_borrower_name == user['borrower_name'] or
+                device.borrower == user['borrower_name']
+            )
+            if is_current_borrower:
+                pending_reservations.append({
+                    'id': r.id,
+                    'reserver_name': r.reserver_name,
+                    'reserver_id': r.reserver_id,
+                    'device_name': r.device_name,
+                    'start_time': r.start_time.strftime('%Y-%m-%d %H:%M') if r.start_time else '',
+                    'end_time': r.end_time.strftime('%Y-%m-%d %H:%M') if r.end_time else '',
+                    'confirm_role': 'borrower'
+                })
+    
+    return jsonify({
+        'success': True,
+        'reservations': pending_reservations
+    })
+
+
+@app.route('/api/my-pending-reservations')
+@login_required
+def api_get_my_pending_reservations():
+    """获取所有需要当前用户确认的预约（用于首页弹窗）"""
+    user = get_current_user()
+    api_client.reload_data()
+    
+    pending_reservations = []
+    
+    # 获取所有设备
+    all_devices = api_client.get_all_devices()
+    
+    for device in all_devices:
+        # 检查用户是否是保管人
+        is_custodian = device.cabinet_number == user['borrower_name']
+        # 检查用户是否是借用人
+        is_borrower = (device.borrower and user['borrower_name'] in device.borrower) and device.status == DeviceStatus.BORROWED
+        
+        if not is_custodian and not is_borrower:
+            continue
+        
+        # 获取该设备的所有预约（包括待确认的）
+        reservations = api_client.get_device_reservations(device.id, None, False)
+        
+        for r in reservations:
+            # 保管人需要确认的预约
+            if is_custodian and r.status in ['待保管人确认', '待2人确认'] and not r.custodian_approved:
+                if r.custodian_id == user['user_id'] or (not r.custodian_id and device.cabinet_number == user['borrower_name']):
+                    pending_reservations.append({
+                        'id': r.id,
+                        'reserver_name': r.reserver_name,
+                        'reserver_id': r.reserver_id,
+                        'device_id': device.id,
+                        'device_name': device.name,
+                        'device_type': get_device_type_str(device),
+                        'start_time': r.start_time.strftime('%Y-%m-%d %H:%M') if r.start_time else '',
+                        'end_time': r.end_time.strftime('%Y-%m-%d %H:%M') if r.end_time else '',
+                        'confirm_role': 'custodian'
+                    })
+            
+            # 借用人需要确认的预约
+            if is_borrower and r.status in ['待借用人确认', '待2人确认'] and not r.borrower_approved:
+                # 检查是否是当前借用人（通过ID或姓名匹配）
+                is_current_borrower = (
+                    r.current_borrower_id == user['user_id'] or 
+                    r.current_borrower_name == user['borrower_name'] or
+                    device.borrower == user['borrower_name']
+                )
+                if is_current_borrower:
+                    pending_reservations.append({
+                        'id': r.id,
+                        'reserver_name': r.reserver_name,
+                        'reserver_id': r.reserver_id,
+                        'device_id': device.id,
+                        'device_name': device.name,
+                        'device_type': get_device_type_str(device),
+                        'start_time': r.start_time.strftime('%Y-%m-%d %H:%M') if r.start_time else '',
+                        'end_time': r.end_time.strftime('%Y-%m-%d %H:%M') if r.end_time else '',
+                        'confirm_role': 'borrower'
+                    })
+    
+    return jsonify({
+        'success': True,
+        'reservations': pending_reservations
+    })
+
+
+@app.route('/pc/my-reservations')
+@login_required
+def pc_my_reservations():
+    """我的预约列表页面"""
+    api_client.reload_data()
+    user = get_current_user()
+    
+    # 获取用户的所有预约
+    reservations = api_client.get_user_reservations(user['user_id'])
+    
+    # 获取设备统计数据
+    stats = get_device_stats()
+    
+    return render_template('pc/my_reservations.html',
+                         user=user,
+                         reservations=reservations,
+                         hide_search=True,
+                         **stats)
+
+
+# ==================== 转借API（支持强制转借）====================
+
+@app.route('/api/transfer', methods=['POST'])
+@login_required
+def api_transfer():
+    """转借设备API（支持强制转借）"""
+    user = get_current_user()
+    data = request.json
+    
+    # 重新加载数据以获取最新状态
+    api_client.reload_data()
+    
+    device_id = data.get('device_id')
+    device_type = data.get('device_type')
+    transfer_to = data.get('transfer_to')
+    remark = data.get('remark', '')
+    force = data.get('force', False)  # 是否强制转借
+    
+    device = api_client.get_device_by_id(device_id)
+    if not device:
+        return jsonify({'success': False, 'message': '设备不存在'})
+    
+    # 检查是否是当前借用人或保管人
+    is_borrower = device.borrower == user['borrower_name']
+    is_custodian = device.cabinet_number == user['borrower_name']
+    
+    if not is_borrower and not is_custodian:
+        return jsonify({'success': False, 'message': '您不是该设备的当前借用人或保管人'})
+    
+    # 借用人只能在借出状态转借
+    if is_borrower and device.status != DeviceStatus.BORROWED:
+        return jsonify({'success': False, 'message': '设备状态异常'})
+    
+    # 检查转借对象是否存在
+    target_user = None
+    for u in api_client._users:
+        if u.borrower_name == transfer_to:
+            target_user = u
+            break
+    
+    if not target_user:
+        return jsonify({'success': False, 'message': '转借对象不存在'})
+    
+    if target_user.is_frozen:
+        return jsonify({'success': False, 'message': '转借对象账号已被冻结'})
+    
+    # 检查不能转借给自己
+    if transfer_to == user['borrower_name']:
+        return jsonify({'success': False, 'message': '不能转借给自己'})
+    
+    # 检查转借对象借用数量限制
+    user_borrowed_count = 0
+    all_devices = api_client.get_all_devices()
+    for d in all_devices:
+        if d.borrower == transfer_to and d.status == DeviceStatus.BORROWED:
+            user_borrowed_count += 1
+    
+    borrow_limit = 10
+    if user_borrowed_count >= borrow_limit:
+        return jsonify({'success': False, 'message': f'{transfer_to}已借用 {user_borrowed_count} 台设备，达到上限 ({borrow_limit}台)，无法接收设备'})
+    
+    # 检查预约冲突
+    if not force:
+        conflict_check = api_client.check_transfer_conflict(device_id)
+        if conflict_check['has_conflict']:
+            r = conflict_check['reservations'][0]
+            return jsonify({
+                'success': False,
+                'code': 'RESERVATION_CONFLICT',
+                'message': f'该设备已被 {r.reserver_name} 预约借用',
+                'conflict_info': {
+                    'reserver_name': r.reserver_name,
+                    'reserver_id': r.reserver_id,
+                    'start_time': r.start_time.strftime('%Y-%m-%d %H:%M'),
+                    'end_time': r.end_time.strftime('%Y-%m-%d %H:%M'),
+                    'reservation_id': r.id
+                }
+            }), 409
+    
+    # 强制转借：取消相关预约
+    if force:
+        cancelled_count = api_client.cancel_reservations_due_to_transfer(
+            device_id=device_id,
+            transfer_to=transfer_to,
+            cancelled_by=user['borrower_name']
+        )
+    
+    # 保存原借用人信息
+    original_borrower = device.borrower
+    
+    # 更新设备信息
+    device.borrower = transfer_to
+    device.phone = ''  # 转借时清空手机号，由接收人自行填写
+    device.previous_borrower = original_borrower
+    device.status = DeviceStatus.BORROWED
+    device.lost_time = None  # 清除丢失时间
+    device.entry_source = EntrySource.USER.value
+    device.expected_return_date = datetime.now() + timedelta(days=1)  # 转借后预计归还时间刷新为当前时间+1天
+    
+    api_client.update_device(device)
+    
+    # 添加记录
+    record = Record(
+        id=str(uuid.uuid4()),
+        device_id=device.id,
+        device_name=device.name,
+        device_type=get_device_type_str(device),
+        operation_type=OperationType.TRANSFER,
+        operator=user['borrower_name'],
+        operation_time=datetime.now(),
+        borrower=f"被转借：{original_borrower or '保管人'}——>{transfer_to}",
+        phone='',
+        reason=remark or '用户转借',
+        entry_source=EntrySource.USER.value
+    )
+    api_client._db.save_record(record)
+    
+    # 给转借对象增加借用次数
+    for u in api_client._users:
+        if u.borrower_name == transfer_to:
+            u.borrow_count += 1
+            api_client._db.save_user(u)
+            break
+    
+    api_client.add_operation_log(f"转借设备 {original_borrower or '保管人'} -> {transfer_to}", device.name)
+    
+    # 通知转借对象
+    api_client.add_notification(
+        user_id=target_user.id,
+        user_name=target_user.borrower_name,
+        title="设备转借通知",
+        content=f"设备「{device.name}」已被 {user['borrower_name']} 转借给您",
+        device_name=device.name,
+        device_id=device.id,
+        notification_type="info"
+    )
+    
+    # 通知原借用人（如果存在且不是当前用户）
+    if original_borrower and original_borrower != user['borrower_name']:
+        original_user = None
+        for u in api_client._users:
+            if u.borrower_name == original_borrower:
+                original_user = u
+                break
+        if original_user:
+            api_client.add_notification(
+                user_id=original_user.id,
+                user_name=original_user.borrower_name,
+                title="设备被转借通知",
+                content=f"您借用的设备「{device.name}」已被 {user['borrower_name']} 转借给 {transfer_to}",
+                device_name=device.name,
+                device_id=device.id,
+                notification_type="warning"
+            )
+    
+    # 通知保管人（如果存在且不是相关人）
+    if device.cabinet_number and device.cabinet_number != original_borrower and device.cabinet_number != user['borrower_name']:
+        custodian_user = None
+        for u in api_client._users:
+            if u.borrower_name == device.cabinet_number:
+                custodian_user = u
+                break
+        if custodian_user:
+            api_client.add_notification(
+                user_id=custodian_user.id,
+                user_name=custodian_user.borrower_name,
+                title="设备转借通知",
+                content=f"您保管的设备「{device.name}」已被 {user['borrower_name']} 从 {original_borrower or '保管人'} 转借给 {transfer_to}",
+                device_name=device.name,
+                device_id=device.id,
+                notification_type="info"
+            )
+    
+    message = '转借成功'
+    if force:
+        message = '强制转借成功，已取消相关预约'
+    
+    return jsonify({'success': True, 'message': message})
+
+
+# ==================== 定时任务 ====================
+
+def process_reservations_job():
+    """定时任务：处理预约（每分钟执行）"""
+    try:
+        with app.app_context():
+            api_client.process_reservations_schedule()
+    except Exception as e:
+        print(f"定时任务执行失败: {e}")
+
+
+def send_overdue_reminder_job():
+    """定时任务：发送逾期3天提醒邮件（每天执行）"""
+    try:
+        with app.app_context():
+            api_client.send_overdue_email_reminders()
+    except Exception as e:
+        print(f"发送逾期提醒邮件失败: {e}")
+
+
+def send_reservation_pending_reminder_job():
+    """定时任务：发送预约待确认提醒邮件（每小时执行）"""
+    try:
+        with app.app_context():
+            api_client.send_reservation_pending_email_reminders()
+    except Exception as e:
+        print(f"发送预约待确认提醒邮件失败: {e}")
+
+
+# 初始化定时任务
+scheduler = None
+if APSCHEDULER_AVAILABLE:
+    scheduler = BackgroundScheduler()
+    # 添加任务前先移除已存在的同名任务（防止重复添加）
+    try:
+        scheduler.remove_job('process_reservations')
+    except:
+        pass
+    try:
+        scheduler.remove_job('send_overdue_reminders')
+    except:
+        pass
+    try:
+        scheduler.remove_job('send_reservation_pending_reminders')
+    except:
+        pass
+    
+    # 每分钟执行一次预约处理
+    scheduler.add_job(process_reservations_job, 'interval', minutes=1, id='process_reservations')
+    # 每天上午9点发送逾期提醒邮件
+    scheduler.add_job(send_overdue_reminder_job, 'cron', hour=9, minute=0, id='send_overdue_reminders')
+    # 每5分钟发送预约待确认提醒邮件（避免过于频繁）
+    scheduler.add_job(send_reservation_pending_reminder_job, 'interval', minutes=5, id='send_reservation_pending_reminders')
+    scheduler.start()
+    print("✓ 定时任务已启动：每分钟处理预约、每天9点发送逾期提醒、每5分钟发送预约确认提醒")
+
+
 # ==================== 错误处理 ====================
 
 @app.errorhandler(404)
@@ -3374,5 +4011,11 @@ def internal_error(error):
 
 if __name__ == '__main__':
     print(f"用户服务启动在端口 {USER_SERVICE_PORT}")
-    app.run(debug=True, host='0.0.0.0', port=USER_SERVICE_PORT)
+    try:
+        app.run(debug=True, host='0.0.0.0', port=USER_SERVICE_PORT)
+    finally:
+        # 关闭定时任务
+        if scheduler:
+            scheduler.shutdown()
+            print("定时任务已关闭")
 

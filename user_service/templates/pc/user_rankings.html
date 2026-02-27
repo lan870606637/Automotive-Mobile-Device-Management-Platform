@@ -386,7 +386,7 @@
 let currentRankingType = 'borrow';
 let rankingsData = [];
 let remainingLikes = 5;
-let currentUserId = '{{ user.id }}';
+let currentUserId = '{{ user.user_id }}';
 
 // 切换排名类型
 function switchRanking(type) {
@@ -489,7 +489,9 @@ function renderRankings() {
             levelHtml = `<div class="ranking-title ${titleClass}">${user.title}</div>`;
             levelHtml += `<div class="ranking-stars" style="margin-top: 2px;">${starsHtml}</div>`;
         } else {
-            levelHtml = `<div class="ranking-stars">${starsHtml}</div>`;
+            // 没有称号时，使用一个空的占位div保持高度一致
+            levelHtml = `<div class="ranking-title-placeholder" style="height: 22px; margin-bottom: 2px;"></div>`;
+            levelHtml += `<div class="ranking-stars">${starsHtml}</div>`;
         }
 
         // 头像显示
@@ -552,7 +554,9 @@ function renderRankings() {
                 levelHtml = `<span style="font-size: 12px; color: #1890ff; font-weight: 600; padding: 2px 8px; background: #e6f7ff; border-radius: 4px;">${user.title}</span>`;
                 levelHtml += `<div style="margin-top: 4px;">${starsHtml}</div>`;
             } else {
-                levelHtml = `<span style="font-size: 14px;">${starsHtml}</span>`;
+                // 没有称号时，使用占位保持高度一致
+                levelHtml = `<div style="height: 20px; margin-bottom: 2px;"></div>`;
+                levelHtml += `<span style="font-size: 14px;">${starsHtml}</span>`;
             }
 
             // 头像显示

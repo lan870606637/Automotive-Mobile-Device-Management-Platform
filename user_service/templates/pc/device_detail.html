@@ -147,9 +147,17 @@
             <div class="card-header">
                 <span class="card-title">⚡ 操作</span>
             </div>
-            <div class="card-body" style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px;">
-                <button class="btn btn-primary" onclick="openBorrowModal()" style="font-size: 24px; padding: 20px 60px; border-radius: 12px; min-width: 200px;">我要借用</button>
-                <p style="font-size: 14px; color: #8c8c8c; margin-top: 20px; text-align: center;">借用后可查看柜号信息</p>
+            <div class="card-body" style="display: flex; flex-direction: column; align-items: center; padding: 40px 20px;">
+                <!-- 第一行：我要借用 + 预约借用 并排 -->
+                <div style="display: flex; gap: 16px; margin-bottom: 16px;">
+                    <button class="btn btn-primary" onclick="openBorrowModal()" style="font-size: 20px; padding: 16px 48px; border-radius: 10px; min-width: 160px;">我要借用</button>
+                    <button class="btn btn-success" onclick="openReserveModal()" style="font-size: 20px; padding: 16px 48px; border-radius: 10px; min-width: 160px;">预约借用</button>
+                </div>
+                <!-- 第二行：查看预约日历 -->
+                <button class="btn btn-info" onclick="openReservationCalendar()" style="font-size: 14px; padding: 10px 32px; border-radius: 8px;">
+                    📅 查看预约日历
+                </button>
+                <p style="font-size: 14px; color: #8c8c8c; margin-top: 16px; text-align: center;">借用后可立即使用，预约可在未来时间段借用</p>
             </div>
         </div>
 
@@ -210,11 +218,17 @@
             <div class="card-header">
                 <span class="card-title">⚡ 操作</span>
             </div>
-            <div class="card-body">
-                <div class="action-btns">
-                    <button class="btn btn-default btn-lg btn-block" disabled>设备已借出</button>
-                    <button class="btn btn-primary btn-block" onclick="confirmTransferToMe()">转给自己</button>
+            <div class="card-body" style="display: flex; flex-direction: column; align-items: center; padding: 30px 20px;">
+                <button class="btn btn-default btn-lg btn-block" disabled style="margin-bottom: 16px;">设备已借出</button>
+                <!-- 第一行：转给自己 + 预约借用 并排 -->
+                <div style="display: flex; gap: 12px; margin-bottom: 12px; width: 100%;">
+                    <button class="btn btn-primary btn-block" onclick="confirmTransferToMe()" style="font-size: 16px; padding: 12px 24px;">转给自己</button>
+                    <button class="btn btn-success btn-block" onclick="openReserveModal()" style="font-size: 16px; padding: 12px 24px;">预约借用</button>
                 </div>
+                <!-- 第二行：查看预约日历 -->
+                <button class="btn btn-info btn-block" onclick="openReservationCalendar()" style="font-size: 14px; padding: 10px 24px;">
+                    📅 查看预约日历
+                </button>
             </div>
         </div>
 
@@ -409,8 +423,9 @@
                     <span class="info-value" style="color: #1890ff; font-size: 18px; font-weight: 600;">{{ device.cabinet_number }}</span>
                 </div>
                 {% if is_borrower %}
-                <div style="margin-bottom: 16px;">
+                <div style="margin-bottom: 16px; display: flex; gap: 12px;">
                     <button class="btn btn-primary" onclick="openCabinetMapModal()">🗺️ 查看柜子位置图</button>
+                    <button class="btn btn-info" onclick="openReservationCalendar()">📅 预约日历</button>
                 </div>
                 {% endif %}
                 {% endif %}
@@ -420,7 +435,7 @@
                 </div>
                 <div class="info-row">
                     <span class="info-label">借用时间</span>
-                    <span class="info-value">{{ device.borrow_time.strftime('%Y-%m-%d %H:%M') }}</span>
+                    <span class="info-value">{{ device.borrow_time.strftime('%Y-%m-%d %H:%M') if device.borrow_time else '-' }}</span>
                 </div>
                 <div class="info-row">
                     <span class="info-label">借用原因</span>
@@ -434,7 +449,15 @@
                         {% if is_overdue %}
                         <span style="margin-left: 8px;">⚠️ 已逾期 {% if overdue_hours < 24 %}{{ overdue_hours }} 小时{% else %}{{ overdue_days }} 天{% endif %}</span>
                         {% else %}
-                        <span style="margin-left: 8px; color: #52c41a;">⏰ 还剩{% if remaining_days > 0 %}{{ remaining_days }} 天{% elif remaining_hours > 0 %}{{ remaining_hours }} 小时{% else %}{{ remaining_minutes }} 分钟{% endif %}</span>
+                        <span style="margin-left: 8px; color: #52c41a;">⏰ 还剩
+                            {% if remaining_days > 0 %}
+                                {{ remaining_days }} 天 {{ remaining_hours % 24 }} 小时 {{ remaining_minutes % 60 }} 分钟
+                            {% elif remaining_hours > 0 %}
+                                {{ remaining_hours }} 小时 {{ remaining_minutes % 60 }} 分钟
+                            {% else %}
+                                {{ remaining_minutes }} 分钟
+                            {% endif %}
+                        </span>
                         {% endif %}
                     </span>
                 </div>
@@ -859,6 +882,214 @@
         </div>
     </div>
 </div>
+
+<!-- 弹窗：预约借用 -->
+<div class="modal-overlay" id="reserveModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">📅 预约借用</span>
+            <button class="modal-close" onclick="closeModal('reserveModal')">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label">预约人</label>
+                <input type="text" class="form-input" value="{{ user.borrower_name }}" readonly>
+            </div>
+            <div class="form-group">
+                <label class="form-label">借用原因</label>
+                <div class="radio-group">
+                    <label class="radio-item"><input type="radio" name="reserveReason" value="测试" checked><span>测试</span></label>
+                    <label class="radio-item"><input type="radio" name="reserveReason" value="开发"><span>开发</span></label>
+                    <label class="radio-item"><input type="radio" name="reserveReason" value="演示"><span>演示</span></label>
+                    <label class="radio-item"><input type="radio" name="reserveReason" value="出差"><span>出差</span></label>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">预约开始时间</label>
+                <input type="datetime-local" id="reserveStartTime" class="form-input">
+            </div>
+            <div class="form-group">
+                <label class="form-label">借用天数</label>
+                <select id="reserveDays" class="form-select" onchange="updateReserveEndTime()">
+                    <option value="1">1天</option>
+                    <option value="3">3天</option>
+                    <option value="7" selected>7天</option>
+                    <option value="14">14天</option>
+                    <option value="30">30天</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">预计结束时间</label>
+                <input type="datetime-local" id="reserveEndTime" class="form-input" readonly>
+            </div>
+            <div id="reserveConflictInfo" style="display: none; background: #fff1f0; padding: 12px; border-radius: 8px; margin-top: 12px; color: #ff4d4f; font-size: 13px;">
+                <!-- 冲突提示信息 -->
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="closeModal('reserveModal')">取消</button>
+            <button class="btn btn-success" onclick="submitReserve()">确认预约</button>
+        </div>
+    </div>
+</div>
+
+<!-- 弹窗：预约日历 -->
+<div class="modal-overlay" id="reservationCalendarModal" style="align-items: flex-start; padding-top: 40px;">
+    <div class="modal" style="max-width: 800px; width: 90%;">
+        <div class="modal-header">
+            <span class="modal-title">📅 设备预约日历 - {{ device.name }}</span>
+            <button class="modal-close" onclick="closeModal('reservationCalendarModal')">×</button>
+        </div>
+        <div class="modal-body" style="padding: 20px;">
+            <!-- 图例 -->
+            <div style="margin-bottom: 16px; padding: 12px; background: #f5f5f5; border-radius: 8px; display: flex; gap: 24px; flex-wrap: wrap; justify-content: center;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div style="width: 20px; height: 20px; background: #52c41a; border-radius: 4px;"></div>
+                    <span style="font-size: 13px; color: #666;">已被预约</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div style="width: 20px; height: 20px; background: #1890ff; border-radius: 4px;"></div>
+                    <span style="font-size: 13px; color: #666;">当前借用中</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div style="width: 20px; height: 20px; background: #faad14; border-radius: 4px;"></div>
+                    <span style="font-size: 13px; color: #666;">我的预约</span>
+                </div>
+            </div>
+
+            <!-- 月份切换 -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <button class="btn btn-default btn-sm" onclick="changeCalendarMonth(-1)">← 上月</button>
+                <h3 id="calendarMonthTitle" style="margin: 0; font-size: 18px;">2026年2月</h3>
+                <button class="btn btn-default btn-sm" onclick="changeCalendarMonth(1)">下月 →</button>
+            </div>
+            
+            <!-- 日历表格 -->
+            <div id="reservationCalendar" style="width: 100%;">
+                <!-- 星期标题 -->
+                <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-bottom: 8px;">
+                    <div style="text-align: center; font-weight: 600; color: #666; padding: 8px;">日</div>
+                    <div style="text-align: center; font-weight: 600; color: #666; padding: 8px;">一</div>
+                    <div style="text-align: center; font-weight: 600; color: #666; padding: 8px;">二</div>
+                    <div style="text-align: center; font-weight: 600; color: #666; padding: 8px;">三</div>
+                    <div style="text-align: center; font-weight: 600; color: #666; padding: 8px;">四</div>
+                    <div style="text-align: center; font-weight: 600; color: #666; padding: 8px;">五</div>
+                    <div style="text-align: center; font-weight: 600; color: #666; padding: 8px;">六</div>
+                </div>
+                <!-- 日期格子 -->
+                <div id="calendarDays" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px;">
+                    <!-- JS动态生成 -->
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="closeModal('reservationCalendarModal')">关闭</button>
+        </div>
+    </div>
+</div>
+
+<!-- 弹窗：预约详情 -->
+<div class="modal-overlay" id="reservationDetailModal">
+    <div class="modal" style="max-width: 400px;">
+        <div class="modal-header">
+            <span class="modal-title">📋 预约详情</span>
+            <button class="modal-close" onclick="closeModal('reservationDetailModal')">×</button>
+        </div>
+        <div class="modal-body" id="reservationDetailContent">
+            <!-- JS动态填充 -->
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="closeModal('reservationDetailModal')">关闭</button>
+        </div>
+    </div>
+</div>
+
+<!-- 弹窗：预约确认（保管人/借用人确认） -->
+<div class="modal-overlay" id="reservationConfirmModal">
+    <div class="modal" style="max-width: 450px;">
+        <div class="modal-header">
+            <span class="modal-title">📅 预约确认</span>
+            <button class="modal-close" onclick="closeModal('reservationConfirmModal')">×</button>
+        </div>
+        <div class="modal-body">
+            <div style="background: #e6f7ff; padding: 16px; border-radius: 8px; margin-bottom: 16px; border-left: 4px solid #1890ff;">
+                <p style="margin: 0; color: #096dd9; font-size: 14px;">
+                    <strong id="confirmReserverName">张三</strong> 申请预约借用设备
+                </p>
+            </div>
+            <div style="background: #f5f5f5; padding: 12px; border-radius: 8px; margin-bottom: 16px;">
+                <p style="margin: 0 0 8px 0; color: #666; font-size: 13px;">设备：<strong id="confirmDeviceName">设备名称</strong></p>
+                <p style="margin: 0 0 8px 0; color: #666; font-size: 13px;">预约时间：</p>
+                <p style="margin: 0; color: #333; font-size: 14px; font-weight: 500;">
+                    <span id="confirmStartTime">2026-02-28 09:00</span> 至 
+                    <span id="confirmEndTime">2026-03-07 09:00</span>
+                </p>
+            </div>
+            <p style="margin: 0; color: #666; font-size: 13px;">请确认是否同意该预约？</p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="rejectReservationConfirm()">拒绝</button>
+            <button class="btn btn-success" onclick="approveReservationConfirm()">同意</button>
+        </div>
+    </div>
+</div>
+
+<!-- 弹窗：转借冲突提示 -->
+<div class="modal-overlay" id="transferConflictModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">⚠️ 转借冲突提醒</span>
+            <button class="modal-close" onclick="closeTransferConflictModal()">×</button>
+        </div>
+        <div class="modal-body">
+            <div style="background: #fff7e6; padding: 16px; border-radius: 8px; margin-bottom: 16px; border-left: 4px solid #faad14;">
+                <p style="margin: 0; color: #d46b08; font-size: 14px;">
+                    该设备已被 <strong id="conflictReserverName">张三</strong> 预约借用
+                </p>
+            </div>
+            <div style="background: #f5f5f5; padding: 12px; border-radius: 8px; margin-bottom: 16px;">
+                <p style="margin: 0 0 8px 0; color: #666; font-size: 13px;">预约时间：</p>
+                <p style="margin: 0; color: #333; font-size: 14px; font-weight: 500;">
+                    <span id="conflictStartTime">2026-02-28 09:00</span> 至
+                    <span id="conflictEndTime">2026-03-01 09:00</span>
+                </p>
+            </div>
+            <div style="background: #fff2f0; padding: 12px; border-radius: 8px; margin-bottom: 16px; border-left: 4px solid #ff4d4f;">
+                <p style="margin: 0; color: #cf1322; font-size: 13px;">
+                    <strong>⚠️ 注意：</strong>强制转借会取消预约人的预约，请沟通后再转借
+                </p>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="closeTransferConflictModal()">取消转借</button>
+            <button class="btn btn-warning" onclick="showForceTransferConfirm()">强制转借</button>
+        </div>
+    </div>
+</div>
+
+<!-- 弹窗：强制转借二次确认 -->
+<div class="modal-overlay" id="forceTransferConfirmModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">⚠️ 确认强制转借</span>
+            <button class="modal-close" onclick="closeForceTransferConfirmModal()">×</button>
+        </div>
+        <div class="modal-body">
+            <div style="background: #fff1f0; padding: 16px; border-radius: 8px; border-left: 4px solid #ff4d4f;">
+                <p style="margin: 0; color: #cf1322; font-size: 14px;">
+                    此操作将取消 <strong id="forceTransferReserverName">张三</strong> 的预约借用
+                </p>
+            </div>
+            <p style="margin: 16px 0 0 0; color: #666; font-size: 13px;">
+                取消后系统将自动通知预约人
+            </p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="closeForceTransferConfirmModal()">取消</button>
+            <button class="btn btn-error" onclick="submitForceTransfer()">确认强制转借</button>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -1095,7 +1326,21 @@ function submitTransfer() {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({device_id: deviceId, transfer_to: to, remark: remark})
-    }).then(r => r.json()).then(data => {
+    }).then(r => {
+        if (r.status === 409) {
+            // 预约冲突
+            return r.json().then(data => {
+                if (data.code === 'RESERVATION_CONFLICT' && data.conflict_info) {
+                    showTransferConflictModal(data.conflict_info, to, remark);
+                } else {
+                    showToast(data.message || '转借失败：存在预约冲突');
+                }
+                return null;
+            });
+        }
+        return r.json();
+    }).then(data => {
+        if (data === null) return; // 已经处理了冲突情况
         if (data.success) { showToast('转借成功'); setTimeout(() => window.location.href = '/pc', 1000); }
         else { showToast(data.message || '转借失败'); }
     }).catch(() => showToast('提交失败，请重试'));
@@ -1222,7 +1467,21 @@ function confirmTransferToMe() {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({device_id: deviceId})
-    }).then(r => r.json()).then(data => {
+    }).then(r => {
+        if (r.status === 409) {
+            // 预约冲突
+            return r.json().then(data => {
+                if (data.code === 'RESERVATION_CONFLICT' && data.conflict_info) {
+                    showTransferConflictModal(data.conflict_info, null, null);
+                } else {
+                    showToast(data.message || '转借失败：存在预约冲突');
+                }
+                return null;
+            });
+        }
+        return r.json();
+    }).then(data => {
+        if (data === null) return; // 已经处理了冲突情况
         if (data.success) { showToast('转借成功'); setTimeout(() => location.reload(), 1000); }
         else { showToast(data.message || '转借失败'); }
     }).catch(() => showToast('提交失败，请重试'));
@@ -1388,5 +1647,525 @@ window.selectUser = selectUser;
 window.openModal = openModal;
 window.closeModal = closeModal;
 
+// ==================== 预约相关函数 ====================
+
+// 日历相关变量
+let currentCalendarDate = new Date();
+let deviceReservations = [];
+let currentBorrowInfo = null;
+let transferConflictData = null;
+
+// 打开预约弹窗
+function openReserveModal() {
+    // 设置默认开始时间为明天
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(9, 0, 0, 0);
+    
+    const startTimeEl = document.getElementById('reserveStartTime');
+    if (startTimeEl) {
+        startTimeEl.value = formatDateTimeLocal(tomorrow);
+        startTimeEl.min = formatDateTimeLocal(new Date());
+    }
+    
+    // 更新结束时间
+    updateReserveEndTime();
+    
+    // 清空冲突提示
+    const conflictInfo = document.getElementById('reserveConflictInfo');
+    if (conflictInfo) {
+        conflictInfo.style.display = 'none';
+        conflictInfo.textContent = '';
+    }
+    
+    openModal('reserveModal');
+}
+
+// 格式化日期时间为datetime-local格式
+function formatDateTimeLocal(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+// 更新预约结束时间
+function updateReserveEndTime() {
+    const startTimeEl = document.getElementById('reserveStartTime');
+    const daysEl = document.getElementById('reserveDays');
+    const endTimeEl = document.getElementById('reserveEndTime');
+    
+    if (startTimeEl && daysEl && endTimeEl && startTimeEl.value) {
+        const startTime = new Date(startTimeEl.value);
+        const days = parseInt(daysEl.value);
+        const endTime = new Date(startTime.getTime() + days * 24 * 60 * 60 * 1000);
+        endTimeEl.value = formatDateTimeLocal(endTime);
+    }
+}
+
+// 提交预约
+function submitReserve() {
+    const reasonEl = document.querySelector('input[name="reserveReason"]:checked');
+    const startTimeEl = document.getElementById('reserveStartTime');
+    const endTimeEl = document.getElementById('reserveEndTime');
+    
+    if (!reasonEl) { showToast('请选择借用原因'); return; }
+    if (!startTimeEl || !startTimeEl.value) { showToast('请选择预约开始时间'); return; }
+    if (!endTimeEl || !endTimeEl.value) { showToast('请设置预约结束时间'); return; }
+    
+    const reason = reasonEl.value;
+    const startTime = startTimeEl.value;
+    const endTime = endTimeEl.value;
+    
+    // 检查时间是否有效
+    const now = new Date();
+    const start = new Date(startTime);
+    if (start <= now) {
+        showToast('预约开始时间必须晚于当前时间');
+        return;
+    }
+    
+    fetch('/api/reservations/create', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            device_id: deviceId,
+            device_type: deviceType,
+            start_time: startTime,
+            end_time: endTime,
+            reason: reason
+        })
+    }).then(r => r.json()).then(data => {
+        if (data.success) {
+            const reservation = data.reservation;
+            showToast(`已预约${reservation.device_name}，${reservation.start_time}至${reservation.end_time}`);
+            closeModal('reserveModal');
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showToast(data.message || '预约失败');
+        }
+    }).catch(() => showToast('提交失败，请重试'));
+}
+
+// 打开预约日历
+async function openReservationCalendar() {
+    openModal('reservationCalendarModal');
+    
+    // 先显示加载状态
+    document.getElementById('calendarDays').innerHTML = '<div style="text-align: center; padding: 40px;">加载中...</div>';
+    
+    try {
+        const response = await fetch(`/api/device/${deviceId}/reservations?device_type=${deviceType}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            deviceReservations = data.reservations || [];
+            currentBorrowInfo = data.current_borrow;
+            
+            // 默认显示当前月
+            currentCalendarDate = new Date();
+            
+            // 如果有预约，切换到第一个预约的月份
+            if (deviceReservations.length > 0) {
+                const firstReservation = deviceReservations[0];
+                const firstDate = new Date(firstReservation.start_time);
+                currentCalendarDate = new Date(firstDate.getFullYear(), firstDate.getMonth(), firstDate.getDate());
+            }
+            
+            renderCalendar();
+        }
+    } catch (e) {
+        console.error('Error loading reservations:', e);
+        showToast('加载预约信息失败');
+    }
+}
+
+// 渲染日历
+function renderCalendar() {
+    const year = currentCalendarDate.getFullYear();
+    const month = currentCalendarDate.getMonth();
+    
+    // 更新标题
+    document.getElementById('calendarMonthTitle').textContent = 
+        `${year}年${month + 1}月`;
+    
+    // 获取月份第一天和最后一天
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    const startDayOfWeek = firstDay.getDay();
+    
+    // 获取上个月的日期
+    const prevMonthLastDay = new Date(year, month, 0).getDate();
+    
+    const calendarDays = document.getElementById('calendarDays');
+    calendarDays.innerHTML = '';
+    
+    // 填充上个月的日期
+    for (let i = startDayOfWeek - 1; i >= 0; i--) {
+        const day = prevMonthLastDay - i;
+        const dayEl = createCalendarDay(day, true);
+        calendarDays.appendChild(dayEl);
+    }
+    
+    // 填充当月的日期
+    const today = new Date();
+    for (let day = 1; day <= daysInMonth; day++) {
+        const date = new Date(year, month, day);
+        const isToday = date.toDateString() === today.toDateString();
+        const dayEl = createCalendarDay(day, false, isToday, date);
+        calendarDays.appendChild(dayEl);
+    }
+    
+    // 填充下个月的日期
+    const remainingCells = 42 - (startDayOfWeek + daysInMonth);
+    for (let day = 1; day <= remainingCells; day++) {
+        const dayEl = createCalendarDay(day, true);
+        calendarDays.appendChild(dayEl);
+    }
+}
+
+// 创建日历日期格子
+function createCalendarDay(day, isOtherMonth, isToday = false, date = null) {
+    const dayEl = document.createElement('div');
+    dayEl.className = 'calendar-day';
+    if (isOtherMonth) dayEl.classList.add('other-month');
+    if (isToday) dayEl.classList.add('today');
+    dayEl.style.cssText = 'aspect-ratio: 1; border: 1px solid #e8e8e8; border-radius: 8px; padding: 8px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; cursor: pointer; transition: all 0.2s; min-height: 80px;';
+    
+    if (!isOtherMonth) {
+        dayEl.onmouseover = () => { dayEl.style.borderColor = '#1890ff'; dayEl.style.boxShadow = '0 2px 8px rgba(24, 144, 255, 0.15)'; };
+        dayEl.onmouseout = () => { dayEl.style.borderColor = '#e8e8e8'; dayEl.style.boxShadow = 'none'; };
+    }
+    
+    // 日期数字
+    const numberEl = document.createElement('div');
+    numberEl.className = 'calendar-day-number';
+    numberEl.textContent = day;
+    numberEl.style.cssText = 'font-size: 14px; font-weight: 500; margin-bottom: 4px;';
+    dayEl.appendChild(numberEl);
+    
+    // 如果有日期，检查预约和借用情况
+    if (date) {
+        const dateStr = date.toISOString().split('T')[0];
+        const currentUserId = '{{ user.user_id }}';
+        
+        // 检查当前借用
+        if (currentBorrowInfo && isDateInRange(date, currentBorrowInfo.start, currentBorrowInfo.end)) {
+            const borrowEl = document.createElement('div');
+            borrowEl.style.cssText = 'width: 100%; background: #1890ff; color: white; font-size: 11px; padding: 2px 4px; border-radius: 3px; text-align: center; margin-top: 2px;';
+            borrowEl.textContent = currentBorrowInfo.borrower;
+            dayEl.appendChild(borrowEl);
+        }
+        
+        // 检查预约
+        const dayReservations = deviceReservations.filter(r => 
+            isDateInRange(date, r.start_time, r.end_time)
+        );
+        
+        dayReservations.forEach(r => {
+            const resEl = document.createElement('div');
+            const isMine = r.reserver_id === currentUserId;
+            resEl.style.cssText = `width: 100%; background: ${isMine ? '#faad14' : '#52c41a'}; color: white; font-size: 11px; padding: 2px 4px; border-radius: 3px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px;`;
+            resEl.textContent = r.reserver_name;
+            dayEl.appendChild(resEl);
+        });
+        
+        // 点击显示详情
+        if (dayReservations.length > 0 || (currentBorrowInfo && isDateInRange(date, currentBorrowInfo.start, currentBorrowInfo.end))) {
+            dayEl.onclick = () => showReservationDetail(date, dayReservations);
+        }
+    }
+    
+    return dayEl;
+}
+
+// 检查日期是否在范围内
+function isDateInRange(date, startStr, endStr) {
+    // 将日期转换为YYYY-MM-DD格式进行比较
+    const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const start = new Date(startStr);
+    const end = new Date(endStr);
+    
+    // 只比较日期部分，忽略时间
+    const dStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const startDate = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    const endDate = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+    
+    return d >= startDate && d <= endDate;
+}
+
+// 切换月份
+function changeCalendarMonth(delta) {
+    currentCalendarDate.setMonth(currentCalendarDate.getMonth() + delta);
+    renderCalendar();
+}
+
+// 显示预约详情
+function showReservationDetail(date, reservations) {
+    const content = document.getElementById('reservationDetailContent');
+    const dateStr = date.toLocaleDateString('zh-CN', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        weekday: 'long'
+    });
+    
+    const currentUserId = '{{ user.user_id }}';
+    let html = `<div style="margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #e8e8e8;">
+        <strong style="font-size: 16px;">${dateStr}</strong>
+    </div>`;
+    
+    // 显示当前借用
+    if (currentBorrowInfo && isDateInRange(date, currentBorrowInfo.start, currentBorrowInfo.end)) {
+        html += `
+        <div style="background: #e6f7ff; padding: 12px; border-radius: 8px; margin-bottom: 12px; border-left: 4px solid #1890ff;">
+            <div style="font-weight: 600; color: #1890ff; margin-bottom: 4px;">📘 当前借用中</div>
+            <div style="font-size: 13px; color: #666;">借用人：${currentBorrowInfo.borrower}</div>
+            <div style="font-size: 13px; color: #666;">借用时间：${formatDateTime(currentBorrowInfo.start)}</div>
+            <div style="font-size: 13px; color: #666;">预计归还：${formatDateTime(currentBorrowInfo.end)}</div>
+        </div>`;
+    }
+    
+    // 显示预约
+    if (reservations.length > 0) {
+        html += `<div style="font-weight: 600; margin-bottom: 8px; color: #333;">📅 预约信息：</div>`;
+        reservations.forEach(r => {
+            const isMine = r.reserver_id === currentUserId;
+            html += `
+            <div style="background: ${isMine ? '#fff7e6' : '#f6ffed'}; padding: 12px; border-radius: 8px; margin-bottom: 8px; border-left: 4px solid ${isMine ? '#faad14' : '#52c41a'};">
+                <div style="font-weight: 600; color: ${isMine ? '#d46b08' : '#389e0d'}; margin-bottom: 4px;">
+                    ${isMine ? '⭐ 我的预约' : '👤 ' + r.reserver_name}
+                </div>
+                <div style="font-size: 13px; color: #666;">预约时间：${formatDateTime(r.start_time)}</div>
+                <div style="font-size: 13px; color: #666;">预计结束：${formatDateTime(r.end_time)}</div>
+                <div style="font-size: 13px; color: #666;">状态：${r.status}</div>
+            </div>`;
+        });
+    }
+    
+    content.innerHTML = html;
+    openModal('reservationDetailModal');
+}
+
+// 格式化日期时间
+function formatDateTime(dateStr) {
+    const date = new Date(dateStr);
+    return date.toLocaleString('zh-CN', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+// ==================== 转借冲突处理 ====================
+
+// 显示转借冲突弹窗
+function showTransferConflictModal(conflictInfo, transferTo, remark) {
+    transferConflictData = {
+        conflictInfo: conflictInfo,
+        transferTo: transferTo,
+        remark: remark
+    };
+    
+    document.getElementById('conflictReserverName').textContent = conflictInfo.reserver_name;
+    document.getElementById('conflictStartTime').textContent = conflictInfo.start_time;
+    document.getElementById('conflictEndTime').textContent = conflictInfo.end_time;
+    
+    openModal('transferConflictModal');
+}
+
+// 关闭转借冲突弹窗
+function closeTransferConflictModal() {
+    closeModal('transferConflictModal');
+    transferConflictData = null;
+}
+
+// 显示强制转借确认弹窗
+function showForceTransferConfirm() {
+    if (!transferConflictData) return;
+    
+    document.getElementById('forceTransferReserverName').textContent = 
+        transferConflictData.conflictInfo.reserver_name;
+    
+    closeModal('transferConflictModal');
+    openModal('forceTransferConfirmModal');
+}
+
+// 关闭强制转借确认弹窗
+function closeForceTransferConfirmModal() {
+    closeModal('forceTransferConfirmModal');
+    if (transferConflictData) {
+        openModal('transferConflictModal');
+    }
+}
+
+// 提交强制转借
+function submitForceTransfer() {
+    if (!transferConflictData) return;
+    
+    const { transferTo, remark } = transferConflictData;
+    
+    // 如果没有 transferTo，说明是"转给自己"的情况
+    if (!transferTo) {
+        fetch('/api/transfer-to-me', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({device_id: deviceId, force: true})
+        }).then(r => r.json()).then(data => {
+            if (data.success) { 
+                showToast('强制转借成功，已取消预约'); 
+                setTimeout(() => location.reload(), 1000); 
+            } else { 
+                showToast(data.message || '转借失败'); 
+            }
+        }).catch(() => showToast('提交失败，请重试'));
+    } else {
+        // 转借给他人
+        fetch('/api/transfer', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                device_id: deviceId,
+                device_type: deviceType,
+                transfer_to: transferTo,
+                remark: remark,
+                force: true
+            })
+        }).then(r => r.json()).then(data => {
+            if (data.success) { 
+                showToast('强制转借成功，已取消预约'); 
+                setTimeout(() => window.location.href = '/pc', 1000); 
+            } else { 
+                showToast(data.message || '转借失败'); 
+            }
+        }).catch(() => showToast('提交失败，请重试'));
+    }
+    
+    closeModal('forceTransferConfirmModal');
+    transferConflictData = null;
+}
+
+// ==================== 预约确认弹窗功能 ====================
+
+let pendingReservation = null;
+
+// 页面加载时检查待确认的预约
+async function checkPendingReservations() {
+    try {
+        // 获取当前设备的待确认预约，添加时间戳防止缓存
+        const timestamp = new Date().getTime();
+        const response = await fetch(`/api/device/${deviceId}/pending-reservations?_t=${timestamp}`);
+        const data = await response.json();
+
+        if (data.success && data.reservations && data.reservations.length > 0) {
+            // 显示第一个待确认的预约
+            pendingReservation = data.reservations[0];
+            showReservationConfirmModal(pendingReservation);
+        }
+    } catch (e) {
+        console.error('检查待确认预约失败:', e);
+    }
+}
+
+// 显示预约确认弹窗
+function showReservationConfirmModal(reservation) {
+    document.getElementById('confirmReserverName').textContent = reservation.reserver_name;
+    document.getElementById('confirmDeviceName').textContent = reservation.device_name;
+    document.getElementById('confirmStartTime').textContent = reservation.start_time;
+    document.getElementById('confirmEndTime').textContent = reservation.end_time;
+    openModal('reservationConfirmModal');
+}
+
+// 同意预约
+async function approveReservationConfirm() {
+    if (!pendingReservation) return;
+    
+    try {
+        const response = await fetch(`/api/reservations/${pendingReservation.id}/approve`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({role: pendingReservation.confirm_role || 'custodian'})
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            showToast('已同意预约');
+            closeModal('reservationConfirmModal');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '操作失败');
+        }
+    } catch (e) {
+        showToast('操作失败，请重试');
+    }
+    
+    pendingReservation = null;
+}
+
+// 拒绝预约
+async function rejectReservationConfirm() {
+    if (!pendingReservation) return;
+    
+    try {
+        const response = await fetch(`/api/reservations/${pendingReservation.id}/reject`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({})
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            showToast('已拒绝预约');
+            closeModal('reservationConfirmModal');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '操作失败');
+        }
+    } catch (e) {
+        showToast('操作失败，请重试');
+    }
+    
+    pendingReservation = null;
+}
+
+// 页面加载完成后检查待确认的预约
+document.addEventListener('DOMContentLoaded', function() {
+    checkPendingReservations();
+});
+
+// 导出预约相关函数到全局
+window.openReserveModal = openReserveModal;
+window.updateReserveEndTime = updateReserveEndTime;
+window.submitReserve = submitReserve;
+window.openReservationCalendar = openReservationCalendar;
+window.changeCalendarMonth = changeCalendarMonth;
+window.showTransferConflictModal = showTransferConflictModal;
+window.closeTransferConflictModal = closeTransferConflictModal;
+window.showForceTransferConfirm = showForceTransferConfirm;
+window.closeForceTransferConfirmModal = closeForceTransferConfirmModal;
+window.submitForceTransfer = submitForceTransfer;
+window.approveReservationConfirm = approveReservationConfirm;
+window.rejectReservationConfirm = rejectReservationConfirm;
+
 </script>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+/* 日历其他月份日期样式 */
+.calendar-day.other-month {
+    background: #f5f5f5;
+    color: #bfbfbf;
+    cursor: default;
+}
+
+.calendar-day.other-month:hover {
+    border-color: #e8e8e8;
+    box-shadow: none;
+}
+</style>
 {% endblock %}

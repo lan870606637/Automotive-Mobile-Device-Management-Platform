@@ -5,230 +5,407 @@
 {% set active_nav = 'dashboard' %}
 
 {% block content %}
-<h1 class="page-title">📊 我的设备详情</h1>
+<h1 class="page-title" style="margin-bottom: 12px;">📊 我的设备详情</h1>
 
-<!-- 主布局：左边快捷操作，右边我的设备和借用列表 -->
-<div class="dashboard-main-layout">
-    <!-- 左侧：我的设备和快捷操作 -->
-    <div class="dashboard-left">
-        <!-- 我的设备 -->
-        <h2 style="font-size: 16px; color: #666; margin: 0 0 12px 0; font-weight: 500;">👤 我的设备</h2>
-        <div class="my-devices-grid">
-            <a href="{{ url_for('pc_my_custodian_devices') }}" style="text-decoration: none;">
-                <div class="my-device-card">
-                    <span class="my-device-icon">🔐</span>
-                    <span class="my-device-title">我的保管</span>
-                    <span class="my-device-count">{{ my_custodian_count }}</span>
-                </div>
-            </a>
-            <a href="{{ url_for('pc_device_list') }}" style="text-decoration: none;">
-                <div class="my-device-card">
-                    <span class="my-device-icon">📋</span>
-                    <span class="my-device-title">我的借用</span>
-                    <span class="my-device-count">{{ my_borrowed_count }}</span>
-                </div>
-            </a>
-        </div>
-
+<!-- 主布局：改为上下布局，更紧凑 -->
+<div style="display: flex; flex-direction: column; gap: 12px;">
+    
+    <!-- 第一行：我的排行、我的设备、快捷操作 -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+        
         <!-- 我的排行 -->
-        <h2 style="font-size: 16px; color: #666; margin: 16px 0 10px 0; font-weight: 500;">🏆 我的排行</h2>
-        <div style="font-size: 12px; color: #8c8c8c; margin-bottom: 10px;">⏰ 每天凌晨0点更新排行榜数据</div>
-        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-            <!-- 借用次数排行 -->
-            <div style="flex: 1; min-width: 120px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 16px; border-radius: 12px; color: white;">
-                <div style="font-size: 12px; opacity: 0.9; margin-bottom: 4px;">借用次数排行</div>
-                <div style="display: flex; align-items: baseline; gap: 4px;">
-                    {% if borrow_rank is not none %}
-                    <span style="font-size: 28px; font-weight: 700;">#{{ borrow_rank }}</span>
-                    {% else %}
-                    <span style="font-size: 18px; font-weight: 600;">暂无</span>
-                    {% endif %}
-                </div>
-                {% if borrow_title %}
-                <div style="font-size: 11px; margin-top: 4px; padding: 2px 6px; background: rgba(255,255,255,0.2); border-radius: 4px; display: inline-block;">
-                    {{ borrow_title }}
-                </div>
-                {% endif %}
-                <div style="font-size: 13px; opacity: 0.85; margin-top: 4px;">
-                    借用 {{ borrow_total or 0 }} 次
-                </div>
+        <div class="card" style="min-width: 0;">
+            <div class="card-header">
+                <span class="card-title">🏆 我的排行</span>
+                <span style="font-size: 11px; color: #8c8c8c;">每天0点更新</span>
             </div>
-            <!-- 归还次数排行 -->
-            <div style="flex: 1; min-width: 120px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); padding: 16px; border-radius: 12px; color: white;">
-                <div style="font-size: 12px; opacity: 0.9; margin-bottom: 4px;">归还次数排行</div>
-                <div style="display: flex; align-items: baseline; gap: 4px;">
-                    {% if return_rank is not none %}
-                    <span style="font-size: 28px; font-weight: 700;">#{{ return_rank }}</span>
-                    {% else %}
-                    <span style="font-size: 18px; font-weight: 600;">暂无</span>
-                    {% endif %}
-                </div>
-                {% if return_title %}
-                <div style="font-size: 11px; margin-top: 4px; padding: 2px 6px; background: rgba(255,255,255,0.2); border-radius: 4px; display: inline-block;">
-                    {{ return_title }}
-                </div>
-                {% endif %}
-                <div style="font-size: 13px; opacity: 0.85; margin-top: 4px;">
-                    归还 {{ return_total or 0 }} 次
+            <div class="card-body" style="padding: 12px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                    <a href="{{ url_for('pc_user_rankings') }}" style="text-decoration: none;">
+                        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 12px; border-radius: 8px; color: white; text-align: center;">
+                            <div style="font-size: 11px; opacity: 0.9;">借用排行</div>
+                            <div style="font-size: 22px; font-weight: 700; margin: 4px 0;">
+                                {% if borrow_rank is not none %}#{{ borrow_rank }}{% else %}-{% endif %}
+                            </div>
+                            <div style="font-size: 10px; min-height: 20px; margin: 4px 0;">
+                                {% if borrow_title %}
+                                    <span class="dashboard-ranking-title {% if borrow_rank <= 10 %}top{{ borrow_rank }}{% endif %}">{{ borrow_title }}</span>
+                                {% else %}
+                                    <span class="dashboard-ranking-title no-title">暂无称号</span>
+                                {% endif %}
+                            </div>
+                            <div style="font-size: 11px; opacity: 0.85;">{{ borrow_total or 0 }} 次</div>
+                        </div>
+                    </a>
+                    <a href="{{ url_for('pc_user_rankings') }}" style="text-decoration: none;">
+                        <div style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); padding: 12px; border-radius: 8px; color: white; text-align: center;">
+                            <div style="font-size: 11px; opacity: 0.9;">归还排行</div>
+                            <div style="font-size: 22px; font-weight: 700; margin: 4px 0;">
+                                {% if return_rank is not none %}#{{ return_rank }}{% else %}-{% endif %}
+                            </div>
+                            <div style="font-size: 10px; min-height: 20px; margin: 4px 0;">
+                                {% if return_title %}
+                                    <span class="dashboard-ranking-title {% if return_rank <= 10 %}top{{ return_rank }}{% endif %}">{{ return_title }}</span>
+                                {% else %}
+                                    <span class="dashboard-ranking-title no-title">暂无称号</span>
+                                {% endif %}
+                            </div>
+                            <div style="font-size: 11px; opacity: 0.85;">{{ return_total or 0 }} 次</div>
+                        </div>
+                    </a>
                 </div>
             </div>
         </div>
-        {% if borrow_rank is none and return_rank is none %}
-        <div style="text-align: center; padding: 12px; color: #8c8c8c; font-size: 13px; margin-top: 8px;">
-            借用或归还设备后将显示排行
+
+        <!-- 我的设备 -->
+        <div class="card" style="min-width: 0;">
+            <div class="card-header">
+                <span class="card-title">👤 我的设备</span>
+            </div>
+            <div class="card-body" style="padding: 12px;">
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
+                    <a href="{{ url_for('pc_my_custodian_devices') }}" style="text-decoration: none; text-align: center; padding: 12px 8px; background: #f6ffed; border-radius: 8px; border: 1px solid #b7eb8f;">
+                        <div style="font-size: 24px; margin-bottom: 4px;">🔐</div>
+                        <div style="font-size: 12px; color: #666;">我的保管</div>
+                        <div style="font-size: 18px; font-weight: 600; color: #52c41a;">{{ my_custodian_count }}</div>
+                    </a>
+                    <a href="{{ url_for('pc_device_list') }}" style="text-decoration: none; text-align: center; padding: 12px 8px; background: #e6f7ff; border-radius: 8px; border: 1px solid #91d5ff;">
+                        <div style="font-size: 24px; margin-bottom: 4px;">📋</div>
+                        <div style="font-size: 12px; color: #666;">我的借用</div>
+                        <div style="font-size: 18px; font-weight: 600; color: #1890ff;">{{ my_borrowed_count }}</div>
+                    </a>
+                    <a href="{{ url_for('pc_my_reservations') }}" style="text-decoration: none; text-align: center; padding: 12px 8px; background: #fff7e6; border-radius: 8px; border: 1px solid #ffd591;">
+                        <div style="font-size: 24px; margin-bottom: 4px;">📅</div>
+                        <div style="font-size: 12px; color: #666;">我的预约</div>
+                        <div style="font-size: 18px; font-weight: 600; color: #fa8c16;">{{ my_reservation_count }}</div>
+                    </a>
+                </div>
+            </div>
         </div>
-        {% endif %}
 
         <!-- 快捷操作 -->
-        <h2 style="font-size: 16px; color: #666; margin: 16px 0 10px 0; font-weight: 500;">⚡ 快捷操作</h2>
-        <div class="quick-actions-grid">
-            <a href="{{ url_for('pc_device_list', type='car') }}" class="quick-action-card car">
-                <span class="quick-action-icon">🚗</span>
-                <span class="quick-action-title">借用车机</span>
-            </a>
-            <a href="{{ url_for('pc_device_list', type='phone') }}" class="quick-action-card phone">
-                <span class="quick-action-icon">📱</span>
-                <span class="quick-action-title">借用手机</span>
-            </a>
-            <a href="{{ url_for('pc_device_list', type='instrument') }}" class="quick-action-card instrument">
-                <span class="quick-action-icon">📊</span>
-                <span class="quick-action-title">借用仪表</span>
-            </a>
-            <a href="{{ url_for('pc_device_list', type='simcard') }}" class="quick-action-card simcard">
-                <span class="quick-action-icon">📲</span>
-                <span class="quick-action-title">借用手机卡</span>
-            </a>
-            <a href="{{ url_for('pc_device_list', type='other') }}" class="quick-action-card other">
-                <span class="quick-action-icon">🔧</span>
-                <span class="quick-action-title">借用其它</span>
-            </a>
-            <a href="{{ url_for('pc_records') }}" class="quick-action-card records">
-                <span class="quick-action-icon">📋</span>
-                <span class="quick-action-title">查看记录</span>
-            </a>
-        </div>
-    </div>
-
-    <!-- 右侧：我的借用设备 -->
-    <div class="dashboard-right">
-        <!-- 设备搜索 -->
-        <div class="card" style="margin-bottom: 16px;">
+        <div class="card" style="min-width: 0;">
             <div class="card-header">
-                <span class="card-title">🔍 设备搜索</span>
+                <span class="card-title">⚡ 快捷操作</span>
             </div>
-            <div class="card-body">
-                <div style="display: flex; gap: 10px; align-items: flex-start;">
-                    <div style="flex: 1; position: relative;">
-                        <input type="text" id="deviceSearchInput" class="search-input" placeholder="输入设备号或型号进行搜索..." 
-                               style="width: 100%; padding: 10px 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px;"
-                               oninput="handleDeviceSearchInput(this.value)" onkeydown="handleDeviceSearchKeydown(event)">
-                        <div id="searchSuggestions" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #d9d9d9; border-radius: 6px; margin-top: 4px; max-height: 200px; overflow-y: auto; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"></div>
-                    </div>
-                    <button onclick="searchDevice()" class="btn btn-primary" style="padding: 10px 24px; white-space: nowrap;">搜索</button>
+            <div class="card-body" style="padding: 12px;">
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
+                    <a href="{{ url_for('pc_device_list', type='car') }}" style="text-decoration: none; text-align: center; padding: 10px 4px; background: #f5f5f5; border-radius: 6px; border: 1px solid #d9d9d9; transition: all 0.2s;" onmouseover="this.style.background='#e6f7ff'; this.style.borderColor='#1890ff';" onmouseout="this.style.background='#f5f5f5'; this.style.borderColor='#d9d9d9';">
+                        <div style="font-size: 20px;">🚗</div>
+                        <div style="font-size: 11px; color: #666; margin-top: 2px;">车机</div>
+                    </a>
+                    <a href="{{ url_for('pc_device_list', type='phone') }}" style="text-decoration: none; text-align: center; padding: 10px 4px; background: #f5f5f5; border-radius: 6px; border: 1px solid #d9d9d9; transition: all 0.2s;" onmouseover="this.style.background='#e6f7ff'; this.style.borderColor='#1890ff';" onmouseout="this.style.background='#f5f5f5'; this.style.borderColor='#d9d9d9';">
+                        <div style="font-size: 20px;">📱</div>
+                        <div style="font-size: 11px; color: #666; margin-top: 2px;">手机</div>
+                    </a>
+                    <a href="{{ url_for('pc_device_list', type='instrument') }}" style="text-decoration: none; text-align: center; padding: 10px 4px; background: #f5f5f5; border-radius: 6px; border: 1px solid #d9d9d9; transition: all 0.2s;" onmouseover="this.style.background='#e6f7ff'; this.style.borderColor='#1890ff';" onmouseout="this.style.background='#f5f5f5'; this.style.borderColor='#d9d9d9';">
+                        <div style="font-size: 20px;">📊</div>
+                        <div style="font-size: 11px; color: #666; margin-top: 2px;">仪表</div>
+                    </a>
+                    <a href="{{ url_for('pc_device_list', type='simcard') }}" style="text-decoration: none; text-align: center; padding: 10px 4px; background: #f5f5f5; border-radius: 6px; border: 1px solid #d9d9d9; transition: all 0.2s;" onmouseover="this.style.background='#e6f7ff'; this.style.borderColor='#1890ff';" onmouseout="this.style.background='#f5f5f5'; this.style.borderColor='#d9d9d9';">
+                        <div style="font-size: 20px;">📲</div>
+                        <div style="font-size: 11px; color: #666; margin-top: 2px;">手机卡</div>
+                    </a>
+                    <a href="{{ url_for('pc_device_list', type='other') }}" style="text-decoration: none; text-align: center; padding: 10px 4px; background: #f5f5f5; border-radius: 6px; border: 1px solid #d9d9d9; transition: all 0.2s;" onmouseover="this.style.background='#e6f7ff'; this.style.borderColor='#1890ff';" onmouseout="this.style.background='#f5f5f5'; this.style.borderColor='#d9d9d9';">
+                        <div style="font-size: 20px;">🔧</div>
+                        <div style="font-size: 11px; color: #666; margin-top: 2px;">其它</div>
+                    </a>
+                    <a href="{{ url_for('pc_records') }}" style="text-decoration: none; text-align: center; padding: 10px 4px; background: #f5f5f5; border-radius: 6px; border: 1px solid #d9d9d9; transition: all 0.2s;" onmouseover="this.style.background='#e6f7ff'; this.style.borderColor='#1890ff';" onmouseout="this.style.background='#f5f5f5'; this.style.borderColor='#d9d9d9';">
+                        <div style="font-size: 20px;">📋</div>
+                        <div style="font-size: 11px; color: #666; margin-top: 2px;">记录</div>
+                    </a>
                 </div>
             </div>
         </div>
+    </div>
 
-        <!-- 我的借用设备 -->
-<div class="card">
-    <div class="card-header">
-        <span class="card-title">
-            📱 我的借用设备
-            {% if my_borrowed_count > 0 %}
-            <span style="font-size: 14px; color: #666; font-weight: normal;">
-                （共{{ my_borrowed_count }}台
-                {%- for type, count in my_borrowed_type_counts.items() -%}
-                    {{ '、' if loop.first else '' }}{{ type }}{{ count }}台{{ '、' if not loop.last else '' }}
-                {%- endfor -%}
-                ）
-            </span>
-            {% endif %}
-        </span>
-        <a href="{{ url_for('pc_device_list') }}" class="btn btn-default btn-sm">查看全部</a>
-    </div>
-    <div class="card-body">
-        {% if my_borrowed_devices %}
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>设备名称</th>
-                    <th>类型</th>
-                    <th>借用时间</th>
-                    <th>预计归还</th>
-                    <th>剩余时间</th>
-                    <th>状态</th>
-                    <th>操作</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for device in my_borrowed_devices %}
-                <tr {% if device.is_overdue and device.status.value not in ['丢失', '已损坏'] %}style="background: #fff1f0;"{% endif %}>
-                    <td>
-                        <span class="device-icon">{% if device.device_type.value == '车机' %}🚗{% elif device.device_type.value == '手机' %}📱{% elif device.device_type.value == '仪表' %}📊{% elif device.device_type.value == '手机卡' %}📲{% elif device.device_type.value == '其它设备' %}🔧{% else %}📦{% endif %}</span>
-                        <a href="{{ url_for('pc_device_detail', device_id=device.id, device_type=device.device_type.value) }}" class="device-name" style="color: #1890ff; font-weight: 500; text-decoration: none;">{{ device.name }}</a>
-                    </td>
-                    <td class="device-type">{{ device.device_type.value }}</td>
-                    <td>{{ device.borrow_time }}</td>
-                    <td>
-                        {% if device.status.value == '丢失' or device.status.value == '已损坏' %}
-                            -
-                        {% elif device.expected_return_date %}
-                            {{ device.expected_return_date.strftime('%Y-%m-%d %H:%M') }}
-                        {% else %}
-                            -
-                        {% endif %}
-                    </td>
-                    <td {% if device.is_overdue and device.status.value not in ['丢失', '已损坏'] %}style="color: #ff4d4f; font-weight: 500;"{% endif %}>
-                        {% if device.status.value == '丢失' %}
-                            -
-                        {% elif device.status.value == '已损坏' %}
-                            -
-                        {% elif device.is_overdue %}
-                        ⚠️ 逾期 {% if device.overdue_hours < 24 %}{{ device.overdue_hours }} 小时{% else %}{{ device.overdue_days }} 天{% endif %}
-                        {% else %}
-                        {% if device.remaining_days > 0 %}⏰ {{ device.remaining_days }} 天{% else %}⏰ {{ device.remaining_hours }} 小时{% endif %}
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if device.status.value == '丢失' %}
-                        <span class="status-tag status-lost">丢失</span>
-                        {% elif device.status.value == '已损坏' %}
-                        <span class="status-tag status-damaged">已损坏</span>
-                        {% elif device.is_overdue %}
-                        <span class="status-tag status-lost">已逾期</span>
-                        {% else %}
-                        <span class="status-tag status-borrowed">借用中</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                            {% if device.status.value not in ['丢失', '已损坏'] %}
-                            <button onclick="openReturnModal('{{ device.id }}')" class="btn btn-success btn-sm">归还</button>
-                            <button onclick="openTransferModal('{{ device.id }}')" class="btn btn-info btn-sm">转借</button>
-                            {% if device.can_renew %}
-                            <button onclick="openRenewModal('{{ device.id }}')" class="btn btn-info btn-sm">续借</button>
-                            {% else %}
-                            <button onclick="showToast('{{ device.renew_disabled_reason }}')" class="btn btn-sm" style="background: #d9d9d9; border-color: #d9d9d9; color: #8c8c8c; cursor: not-allowed;" title="{{ device.renew_disabled_reason }}">续借</button>
-                            {% endif %}
-                            {% endif %}
-                            <a href="{{ url_for('pc_device_detail', device_id=device.id) }}" class="btn btn-primary btn-sm">查看详情</a>
-                        </div>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        {% else %}
-        <div class="empty-state">
-            <div class="empty-icon">📭</div>
-            <p class="empty-title">您当前没有借用设备</p>
-            <a href="{{ url_for('pc_device_list') }}" class="btn btn-primary">去借设备</a>
+    <!-- 第二行：我的借用设备和我的预约并排显示 -->
+    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 16px;">
+        
+        <!-- 左侧：我的借用设备 -->
+        <div class="card" style="margin-bottom: 0;">
+            <div class="card-header">
+                <span class="card-title">
+                    📱 我的借用设备
+                    {% if my_borrowed_count > 0 %}
+                    <span style="font-size: 14px; color: #666; font-weight: normal;">
+                        （共{{ my_borrowed_count }}台）
+                    </span>
+                    {% endif %}
+                </span>
+                <a href="{{ url_for('pc_device_list') }}" class="btn btn-default btn-sm">查看全部</a>
+            </div>
+            <div class="card-body" style="padding: 12px;">
+                {% if my_borrowed_devices %}
+                <table class="data-table" style="font-size: 16px;">
+                    <thead>
+                        <tr>
+                            <th style="font-size: 15px; padding: 12px 8px;">设备名称</th>
+                            <th style="font-size: 15px; padding: 12px 8px;">类型</th>
+                            <th style="font-size: 15px; padding: 12px 8px;">借用时间</th>
+                            <th style="font-size: 15px; padding: 12px 8px;">预计归还</th>
+                            <th style="font-size: 15px; padding: 12px 8px;">状态</th>
+                            <th style="font-size: 15px; padding: 12px 8px;">剩余时间</th>
+                            <th style="font-size: 15px; padding: 12px 8px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for device in my_borrowed_devices %}
+                        <tr {% if device.is_overdue and device.status.value not in ['丢失', '已损坏'] %}style="background: #fff1f0;"{% endif %}>
+                            <td style="padding: 12px 8px;">
+                                <a href="{{ url_for('pc_device_detail', device_id=device.id, device_type=device.device_type.value) }}" style="color: #1890ff; text-decoration: none; font-weight: 500; font-size: 15px;">
+                                    {{ device.name }}
+                                </a>
+                            </td>
+                            <td style="font-size: 14px; padding: 12px 8px;">{{ device.device_type.value }}</td>
+                            <td style="font-size: 14px; padding: 12px 8px;">{{ device.borrow_time }}</td>
+                            <td style="font-size: 14px; padding: 12px 8px;">
+                                {% if device.status.value == '丢失' or device.status.value == '已损坏' %}
+                                    -
+                                {% elif device.expected_return_date %}
+                                    {{ device.expected_return_date.strftime('%m-%d %H:%M') }}
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td style="font-size: 14px; padding: 12px 8px;">
+                                {% if device.status.value == '丢失' %}
+                                    <span style="color: #ff4d4f; padding: 6px 10px; background: #fff1f0; border-radius: 4px; font-size: 13px; font-weight: 500;">丢失</span>
+                                {% elif device.status.value == '已损坏' %}
+                                    <span style="color: #ff4d4f; padding: 6px 10px; background: #fff1f0; border-radius: 4px; font-size: 13px; font-weight: 500;">已损坏</span>
+                                {% elif device.is_overdue %}
+                                    <span style="color: #ff4d4f; font-weight: 600; font-size: 14px;">已逾期</span>
+                                {% else %}
+                                    <span style="color: #52c41a; padding: 6px 10px; background: #f6ffed; border-radius: 4px; font-size: 13px; font-weight: 500;">借用中</span>
+                                {% endif %}
+                            </td>
+                            <td style="font-size: 14px; padding: 12px 8px;">
+                                {% if device.status.value == '丢失' %}
+                                    -
+                                {% elif device.status.value == '已损坏' %}
+                                    -
+                                {% elif device.is_overdue %}
+                                    <span style="color: #ff4d4f; font-weight: 600;">{% if device.overdue_hours < 24 %}{{ device.overdue_hours }} 小时{% else %}{{ device.overdue_days }} 天{% endif %}</span>
+                                {% else %}
+                                    <span style="color: #8c8c8c;">{{ device.remaining_time_display }}</span>
+                                {% endif %}
+                            </td>
+                            <td style="padding: 12px 8px;">
+                                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                    {% if device.status.value not in ['丢失', '已损坏'] %}
+                                    <button onclick="openReturnModal('{{ device.id }}')" class="btn btn-success btn-sm" style="font-size: 13px; padding: 6px 12px;">归还</button>
+                                    <button onclick="openTransferModal('{{ device.id }}')" class="btn btn-info btn-sm" style="font-size: 13px; padding: 6px 12px;">转借</button>
+                                    {% if device.can_renew %}
+                                    <button onclick="openRenewModal('{{ device.id }}')" class="btn btn-info btn-sm" style="font-size: 13px; padding: 6px 12px;">续借</button>
+                                    {% else %}
+                                    <button onclick="showToast('{{ device.renew_disabled_reason }}')" class="btn btn-sm" style="font-size: 13px; padding: 6px 12px; background: #d9d9d9; border-color: #d9d9d9; color: #8c8c8c; cursor: not-allowed;" title="{{ device.renew_disabled_reason }}">续借</button>
+                                    {% endif %}
+                                    {% endif %}
+                                    <a href="{{ url_for('pc_device_detail', device_id=device.id) }}" class="btn btn-primary btn-sm" style="font-size: 13px; padding: 6px 12px;">详情</a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="empty-state" style="padding: 24px;">
+                    <div class="empty-icon" style="font-size: 32px;">📭</div>
+                    <p class="empty-title" style="font-size: 13px;">您当前没有借用设备</p>
+                    <a href="{{ url_for('pc_device_list') }}" class="btn btn-primary btn-sm">去借设备</a>
+                </div>
+                {% endif %}
+            </div>
         </div>
-        {% endif %}
+
+        <!-- 右侧：我的预约 -->
+        <div class="card" style="margin-bottom: 0;">
+            <div class="card-header">
+                <span class="card-title">
+                    📅 我的预约
+                    {% if my_reservation_count > 0 %}
+                    <span style="font-size: 14px; color: #666; font-weight: normal;">
+                        （共{{ my_reservation_count }}个）
+                    </span>
+                    {% endif %}
+                </span>
+                <a href="{{ url_for('pc_my_reservations') }}" class="btn btn-default btn-sm">查看全部</a>
+            </div>
+            <div class="card-body" style="padding: 12px;">
+                {% if my_reservations %}
+                <table class="data-table" style="font-size: 13px;">
+                    <thead>
+                        <tr>
+                            <th>设备名称</th>
+                            <th>预约时间</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for reservation in my_reservations %}
+                        <tr>
+                            <td>
+                                <a href="{{ url_for('pc_device_detail', device_id=reservation.device_id) }}" style="color: #1890ff; text-decoration: none;">
+                                    {{ reservation.device_name }}
+                                </a>
+                            </td>
+                            <td>
+                                <span style="font-size: 12px;">
+                                    {{ reservation.start_time.strftime('%m-%d') if reservation.start_time else '-' }} 
+                                    至 
+                                    {{ reservation.end_time.strftime('%m-%d') if reservation.end_time else '-' }}
+                                </span>
+                            </td>
+                            <td>
+                                {% if reservation.status == '已同意' %}
+                                <span style="color: #52c41a; font-size: 11px; padding: 2px 6px; background: #f6ffed; border-radius: 4px;">已同意</span>
+                                {% elif reservation.status in ['待保管人确认', '待借用人确认', '待2人确认'] %}
+                                <span style="color: #fa8c16; font-size: 11px; padding: 2px 6px; background: #fff7e6; border-radius: 4px;">{{ reservation.status }}</span>
+                                {% elif reservation.status == '已拒绝' %}
+                                <span style="color: #ff4d4f; font-size: 11px; padding: 2px 6px; background: #fff1f0; border-radius: 4px;">已拒绝</span>
+                                {% elif reservation.status == '已取消' %}
+                                <span style="color: #8c8c8c; font-size: 11px; padding: 2px 6px; background: #f5f5f5; border-radius: 4px;">已取消</span>
+                                {% elif reservation.status == '已转借用' %}
+                                <span style="color: #1890ff; font-size: 11px; padding: 2px 6px; background: #e6f7ff; border-radius: 4px;">已转借用</span>
+                                {% else %}
+                                <span style="color: #8c8c8c; font-size: 11px;">{{ reservation.status }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                                    {% if reservation.status in ['待保管人确认', '待借用人确认', '待2人确认', '已同意'] %}
+                                    <button onclick="cancelReservation('{{ reservation.id }}')" class="btn btn-sm" style="font-size: 11px; padding: 4px 8px; background: #ff4d4f; color: white; border: none;">取消</button>
+                                    {% endif %}
+                                    {% if reservation.status == '已拒绝' %}
+                                    <button onclick="rebookReservation('{{ reservation.device_id }}', '{{ reservation.device_type }}')" class="btn btn-sm" style="font-size: 11px; padding: 4px 8px; background: #52c41a; color: white; border: none;">再次预约</button>
+                                    {% endif %}
+                                    <a href="{{ url_for('pc_device_detail', device_id=reservation.device_id) }}" class="btn btn-primary btn-sm" style="font-size: 11px; padding: 4px 8px;">详情</a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="empty-state" style="padding: 24px;">
+                    <div class="empty-icon" style="font-size: 32px;">📭</div>
+                    <p class="empty-title" style="font-size: 13px;">您当前没有预约</p>
+                    <a href="{{ url_for('pc_device_list') }}" class="btn btn-primary btn-sm">去预约设备</a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
     </div>
-</div>
-</div>
-<!-- 右侧结束 -->
+<!-- 布局结束 -->
+
+<!-- 称号特效样式 -->
+<style>
+/* 首页排行称号样式 */
+.dashboard-ranking-title {
+    font-size: 10px;
+    color: #fff;
+    font-weight: 600;
+    padding: 2px 6px;
+    background: rgba(255,255,255,0.25);
+    border-radius: 4px;
+    display: inline-block;
+    white-space: nowrap;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+
+/* 前三名称号闪烁特效 */
+.dashboard-ranking-title.top1 {
+    background: linear-gradient(90deg, #ffd700, #ffed4e, #ffd700, #ffed4e);
+    background-size: 200% 100%;
+    color: #8b4513;
+    animation: dashboardShine 1.5s linear infinite;
+    font-weight: 700;
+    box-shadow: 0 0 8px rgba(255, 215, 0, 0.6);
+}
+
+.dashboard-ranking-title.top2 {
+    background: linear-gradient(90deg, #c0c0c0, #e8e8e8, #c0c0c0, #e8e8e8);
+    background-size: 200% 100%;
+    color: #4a4a4a;
+    animation: dashboardShine 1.5s linear infinite;
+    font-weight: 700;
+    box-shadow: 0 0 6px rgba(192, 192, 192, 0.6);
+}
+
+.dashboard-ranking-title.top3 {
+    background: linear-gradient(90deg, #cd7f32, #daa520, #cd7f32, #daa520);
+    background-size: 200% 100%;
+    color: #fff;
+    animation: dashboardShine 1.5s linear infinite;
+    font-weight: 700;
+    box-shadow: 0 0 6px rgba(205, 127, 50, 0.6);
+}
+
+@keyframes dashboardShine {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* 第4-10名称号微发光特效 */
+.dashboard-ranking-title.top4 {
+    background: linear-gradient(135deg, #a8b5f0 0%, #b8a8d8 100%);
+    color: #333;
+    font-weight: 600;
+    box-shadow: 0 0 4px rgba(102, 126, 234, 0.5);
+}
+
+.dashboard-ranking-title.top5 {
+    background: linear-gradient(135deg, #7dd3c0 0%, #7ee8a0 100%);
+    color: #333;
+    font-weight: 600;
+    box-shadow: 0 0 4px rgba(17, 153, 142, 0.5);
+}
+
+.dashboard-ranking-title.top6 {
+    background: linear-gradient(135deg, #ffb3c1 0%, #a8b8ff 100%);
+    color: #333;
+    font-weight: 600;
+    box-shadow: 0 0 4px rgba(252, 70, 107, 0.5);
+}
+
+.dashboard-ranking-title.top7 {
+    background: linear-gradient(135deg, #f5c3f5 0%, #ffb8c0 100%);
+    color: #333;
+    font-weight: 600;
+    box-shadow: 0 0 4px rgba(240, 147, 251, 0.5);
+}
+
+.dashboard-ranking-title.top8 {
+    background: linear-gradient(135deg, #a8d8ff 0%, #7ee8f5 100%);
+    color: #333;
+    font-weight: 600;
+    box-shadow: 0 0 4px rgba(79, 172, 254, 0.5);
+}
+
+.dashboard-ranking-title.top9 {
+    background: linear-gradient(135deg, #7af0a8 0%, #7efce8 100%);
+    color: #333;
+    font-weight: 600;
+    box-shadow: 0 0 4px rgba(67, 233, 123, 0.5);
+}
+
+.dashboard-ranking-title.top10 {
+    background: linear-gradient(135deg, #ffc3d8 0%, #fff5a8 100%);
+    color: #333;
+    font-weight: 600;
+    box-shadow: 0 0 4px rgba(250, 112, 154, 0.5);
+}
+
+/* 无称号样式 */
+.dashboard-ranking-title.no-title {
+    background: rgba(255,255,255,0.15);
+    color: rgba(255,255,255,0.7);
+    font-weight: 400;
+    font-style: italic;
+    border: 1px dashed rgba(255,255,255,0.3);
+}
+</style>
 
 <!-- 弹窗：归还 -->
 <div class="modal-overlay" id="returnModal">
@@ -456,14 +633,21 @@ function submitTransfer() {
 function submitRenew() {
     const dateEl = document.getElementById('renewDate');
     if (!dateEl || !dateEl.value) { showToast('请选择续期日期'); return; }
-    const date = dateEl.value;
-    const today = new Date().toISOString().split('T')[0];
-    if (date < today) { showToast('续期日期不能早于今天'); return; }
+    const selectedDate = new Date(dateEl.value);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    if (selectedDate < today) { showToast('续期日期不能早于今天'); return; }
+    
+    // 计算续借天数（从当前时间到选择日期的天数差）
+    const diffTime = selectedDate - today;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const days = diffDays > 0 ? diffDays : 1;
 
     fetch('/api/renew', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({device_id: currentDeviceId, new_return_date: date})
+        body: JSON.stringify({device_id: currentDeviceId, days: days})
     }).then(r => r.json()).then(data => {
         if (data.success) { showToast('续期成功'); setTimeout(() => location.reload(), 1000); }
         else { showToast(data.message || '续期失败'); }
@@ -482,15 +666,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // ==================== 设备搜索功能 ====================
 let searchTimeout = null;
-let allDevices = [];
+let dashboardDevices = [];
 
 // 加载所有设备数据
-function loadAllDevices() {
+function loadDashboardDevices() {
     fetch('/api/search?keyword=')
         .then(r => r.json())
         .then(data => {
             if (data.success) {
-                allDevices = data.devices || [];
+                dashboardDevices = data.devices || [];
             }
         })
         .catch(() => {});
@@ -508,7 +692,7 @@ function handleDeviceSearchInput(keyword) {
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
         const keywordLower = keyword.toLowerCase().replace(/\s+/g, '');
-        const matched = allDevices.filter(d => {
+        const matched = dashboardDevices.filter(d => {
             const deviceName = (d.name || '').toLowerCase().replace(/\s+/g, '');
             const deviceModel = (d.model || '').toLowerCase().replace(/\s+/g, '');
             return deviceName.includes(keywordLower) || deviceModel.includes(keywordLower);
@@ -669,7 +853,194 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// ==================== 取消预约功能 ====================
+async function cancelReservation(reservationId) {
+    if (!confirm('确定要取消这个预约吗？')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/reservations/${reservationId}/cancel`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({})  // 发送空JSON对象
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            showToast('预约已取消');
+            // 刷新页面
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '取消失败');
+        }
+    } catch (e) {
+        showToast('取消失败，请重试');
+    }
+}
+
+// ==================== 再次预约功能 ====================
+function rebookReservation(deviceId, deviceType) {
+    console.log('再次预约 - deviceId:', deviceId, 'deviceType:', deviceType);
+    if (!deviceId) {
+        showToast('设备ID不能为空');
+        return;
+    }
+    // 跳转到设备详情页
+    const url = `/pc/device/${deviceId}?device_type=${encodeURIComponent(deviceType || '')}`;
+    console.log('跳转URL:', url);
+    window.location.href = url;
+}
+
 // 页面加载时获取设备数据
-loadAllDevices();
+loadDashboardDevices();
+
+// ==================== 预约确认弹窗功能 ====================
+
+// 页面加载完成后立即检查待确认的预约（已在base_pc.html中定义，这里只保留页面特定的逻辑）
+document.addEventListener('DOMContentLoaded', function() {
+    // 页面获得焦点时再次检查（从其他页面返回时）
+    document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'visible') {
+            // 调用全局函数
+            if (typeof checkAllPendingReservations === 'function') {
+                checkAllPendingReservations();
+            }
+        }
+    });
+});
+
+// ==================== 再次预约功能（首页弹窗） ====================
+let rebookDeviceId = null;
+let rebookDeviceType = null;
+
+function rebookReservation(deviceId, deviceType) {
+    console.log('再次预约 - deviceId:', deviceId, 'deviceType:', deviceType);
+    if (!deviceId) {
+        showToast('设备ID不能为空');
+        return;
+    }
+    
+    // 保存设备信息
+    rebookDeviceId = deviceId;
+    rebookDeviceType = deviceType;
+    
+    // 设置默认时间
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    const startTime = now.toISOString().slice(0, 16);
+    
+    const endTime = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    endTime.setMinutes(endTime.getMinutes() - endTime.getTimezoneOffset());
+    const endTimeStr = endTime.toISOString().slice(0, 16);
+    
+    document.getElementById('rebookStartTime').value = startTime;
+    document.getElementById('rebookEndTime').value = endTimeStr;
+    
+    // 显示弹窗
+    document.getElementById('rebookModal').style.display = 'flex';
+}
+
+function closeRebookModal() {
+    document.getElementById('rebookModal').style.display = 'none';
+    rebookDeviceId = null;
+    rebookDeviceType = null;
+}
+
+async function submitRebook() {
+    if (!rebookDeviceId) {
+        showToast('设备信息丢失，请重试');
+        return;
+    }
+    
+    const startTime = document.getElementById('rebookStartTime').value;
+    const endTime = document.getElementById('rebookEndTime').value;
+    const reason = document.querySelector('input[name="rebookReason"]:checked')?.value || '测试';
+    
+    if (!startTime || !endTime) {
+        showToast('请选择预约时间');
+        return;
+    }
+    
+    if (new Date(startTime) >= new Date(endTime)) {
+        showToast('结束时间必须晚于开始时间');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/reservations/create', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                device_id: rebookDeviceId,
+                device_type: rebookDeviceType,
+                start_time: startTime,
+                end_time: endTime,
+                reason: reason
+            })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            showToast('预约成功');
+            closeRebookModal();
+            // 刷新页面
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '预约失败');
+        }
+    } catch (e) {
+        showToast('预约失败，请重试');
+    }
+}
+
 </script>
+
+<!-- 再次预约弹窗 -->
+<div id="rebookModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; justify-content: center; align-items: center;">
+    <div style="background: white; border-radius: 12px; padding: 24px; max-width: 450px; width: 90%; box-shadow: 0 4px 20px rgba(0,0,0,0.15);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0; font-size: 18px;">📅 再次预约</h3>
+            <button onclick="closeRebookModal()" style="background: none; border: none; font-size: 20px; cursor: pointer;">×</button>
+        </div>
+        
+        <div style="margin-bottom: 16px;">
+            <label style="display: block; font-size: 14px; color: #666; margin-bottom: 8px;">预约原因</label>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                    <input type="radio" name="rebookReason" value="测试" checked>
+                    <span>测试</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                    <input type="radio" name="rebookReason" value="开发">
+                    <span>开发</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                    <input type="radio" name="rebookReason" value="演示">
+                    <span>演示</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                    <input type="radio" name="rebookReason" value="出差">
+                    <span>出差</span>
+                </label>
+            </div>
+        </div>
+        
+        <div style="margin-bottom: 16px;">
+            <label style="display: block; font-size: 14px; color: #666; margin-bottom: 8px;">预约开始时间</label>
+            <input type="datetime-local" id="rebookStartTime" style="width: 100%; padding: 10px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px;">
+        </div>
+        
+        <div style="margin-bottom: 20px;">
+            <label style="display: block; font-size: 14px; color: #666; margin-bottom: 8px;">预约结束时间</label>
+            <input type="datetime-local" id="rebookEndTime" style="width: 100%; padding: 10px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px;">
+        </div>
+        
+        <div style="display: flex; gap: 12px;">
+            <button onclick="closeRebookModal()" style="flex: 1; padding: 12px; border: 1px solid #d9d9d9; background: white; border-radius: 6px; cursor: pointer; font-size: 14px;">取消</button>
+            <button onclick="submitRebook()" style="flex: 1; padding: 12px; border: none; background: #52c41a; color: white; border-radius: 6px; cursor: pointer; font-size: 14px;">确认预约</button>
+        </div>
+    </div>
+</div>
+
 {% endblock %}

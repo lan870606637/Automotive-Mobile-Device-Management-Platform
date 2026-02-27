@@ -10,8 +10,8 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 from contextlib import contextmanager
 
-from .models import Device, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, OperationLog, Admin, Notification, Announcement, UserLike
-from .models import DeviceStatus, DeviceType, OperationType
+from .models import Device, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, OperationLog, Admin, Notification, Announcement, UserLike, Reservation
+from .models import DeviceStatus, DeviceType, OperationType, ReservationStatus
 
 # 导入配置
 from .config import DB_TYPE, SQLITE_DB_PATH, MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE
@@ -174,6 +174,8 @@ def init_database():
         _migrate_mysql_add_asset_fields()
         # 检查并添加 custodian_id 列（如果不存在）
         _migrate_mysql_add_custodian_id()
+        # 创建 reservations 表
+        _migrate_mysql_create_reservations()
         return
 
     # SQLite初始化逻辑...
@@ -242,6 +244,9 @@ def init_database():
 
         # 检查并添加 custodian_id 列
         _migrate_sqlite_add_custodian_id(cursor)
+
+        # 创建 reservations 表
+        _migrate_sqlite_create_reservations(cursor)
 
         # 创建其他表...
         # (省略其他表的创建代码，保持原有逻辑)
@@ -364,6 +369,96 @@ def _migrate_mysql_add_custodian_id():
                 print("✓ MySQL: 已添加 custodian_id 列到 devices 表")
     except Exception as e:
         print(f"⚠ MySQL custodian_id 迁移警告: {e}")
+
+
+def _migrate_sqlite_create_reservations(cursor):
+    """SQLite: 创建 reservations 表"""
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS reservations (
+            id TEXT PRIMARY KEY,
+            device_id TEXT NOT NULL,
+            device_type TEXT NOT NULL,
+            device_name TEXT NOT NULL,
+            reserver_id TEXT NOT NULL,
+            reserver_name TEXT NOT NULL,
+            start_time TIMESTAMP NOT NULL,
+            end_time TIMESTAMP NOT NULL,
+            status TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            custodian_approved INTEGER DEFAULT 0,
+            custodian_approved_at TIMESTAMP,
+            borrower_approved INTEGER DEFAULT 0,
+            borrower_approved_at TIMESTAMP,
+            custodian_notified INTEGER DEFAULT 0,
+            borrower_notified INTEGER DEFAULT 0,
+            cancelled_by TEXT,
+            cancelled_at TIMESTAMP,
+            cancel_reason TEXT,
+            rejected_by TEXT,
+            rejected_at TIMESTAMP,
+            converted_to_borrow INTEGER DEFAULT 0,
+            converted_at TIMESTAMP,
+            custodian_id TEXT,
+            current_borrower_id TEXT,
+            current_borrower_name TEXT,
+            reason TEXT
+        )
+    ''')
+    
+    # 创建索引
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_reservations_device ON reservations(device_id, device_type)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_reservations_reserver ON reservations(reserver_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_reservations_status ON reservations(status)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_reservations_time ON reservations(start_time, end_time)')
+    print("✓ SQLite: 已创建 reservations 表")
+
+
+def _migrate_mysql_create_reservations():
+    """MySQL: 创建 reservations 表"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS reservations (
+                    id VARCHAR(64) PRIMARY KEY,
+                    device_id VARCHAR(64) NOT NULL,
+                    device_type VARCHAR(32) NOT NULL,
+                    device_name VARCHAR(255) NOT NULL,
+                    reserver_id VARCHAR(64) NOT NULL,
+                    reserver_name VARCHAR(255) NOT NULL,
+                    start_time DATETIME NOT NULL,
+                    end_time DATETIME NOT NULL,
+                    status VARCHAR(32) NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    custodian_approved TINYINT DEFAULT 0,
+                    custodian_approved_at DATETIME,
+                    borrower_approved TINYINT DEFAULT 0,
+                    borrower_approved_at DATETIME,
+                    custodian_notified TINYINT DEFAULT 0,
+                    borrower_notified TINYINT DEFAULT 0,
+                    cancelled_by VARCHAR(64),
+                    cancelled_at DATETIME,
+                    cancel_reason VARCHAR(500),
+                    rejected_by VARCHAR(64),
+                    rejected_at DATETIME,
+                    converted_to_borrow TINYINT DEFAULT 0,
+                    converted_at DATETIME,
+                    custodian_id VARCHAR(64),
+                    current_borrower_id VARCHAR(64),
+                    current_borrower_name VARCHAR(255),
+                    reason VARCHAR(500),
+                    INDEX idx_device (device_id, device_type),
+                    INDEX idx_reserver (reserver_id),
+                    INDEX idx_status (status),
+                    INDEX idx_time (start_time, end_time)
+                )
+            ''')
+            conn.commit()
+            print("✓ MySQL: 已创建 reservations 表")
+    except Exception as e:
+        print(f"⚠ MySQL reservations 表迁移警告: {e}")
 
 
 class DatabaseStore:
@@ -929,3 +1024,293 @@ class DatabaseStore:
             )
             cursor.execute(sql, params)
             return True
+    
+    # ========== 预约相关操作 ==========
+    
+    def get_reservation_by_id(self, reservation_id: str) -> Optional[Reservation]:
+        """根据ID获取预约"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM reservations WHERE id = %s" if IS_MYSQL else
+                "SELECT * FROM reservations WHERE id = ?",
+                (reservation_id,)
+            )
+            row = cursor.fetchone()
+            if row:
+                return Reservation.from_dict(row_to_dict(row))
+            return None
+    
+    def get_reservations_by_device(self, device_id: str, device_type: str = None, 
+                                   status: str = None, active_only: bool = False) -> List[Reservation]:
+        """获取设备的预约列表"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            sql = "SELECT * FROM reservations WHERE device_id = %s" if IS_MYSQL else "SELECT * FROM reservations WHERE device_id = ?"
+            params = [device_id]
+            
+            if device_type:
+                sql += " AND device_type = %s" if IS_MYSQL else " AND device_type = ?"
+                params.append(device_type)
+            
+            if status:
+                if isinstance(status, list):
+                    placeholders = ','.join(['%s' if IS_MYSQL else '?'] * len(status))
+                    sql += f" AND status IN ({placeholders})"
+                    params.extend(status)
+                else:
+                    sql += " AND status = %s" if IS_MYSQL else " AND status = ?"
+                    params.append(status)
+            
+            if active_only:
+                # 只获取未结束的有效预约
+                sql += " AND end_time > %s AND status NOT IN ('已取消', '已拒绝', '已过期')" if IS_MYSQL else " AND end_time > ? AND status NOT IN ('已取消', '已拒绝', '已过期')"
+                params.append(format_datetime(datetime.now()))
+            
+            sql += " ORDER BY start_time ASC"
+            
+            cursor.execute(sql, tuple(params))
+            rows = cursor.fetchall()
+            return [Reservation.from_dict(row_to_dict(row)) for row in rows]
+    
+    def get_reservations_by_reserver(self, reserver_id: str, status: str = None) -> List[Reservation]:
+        """获取预约人的预约列表"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            sql = "SELECT * FROM reservations WHERE reserver_id = %s" if IS_MYSQL else "SELECT * FROM reservations WHERE reserver_id = ?"
+            params = [reserver_id]
+            
+            if status:
+                sql += " AND status = %s" if IS_MYSQL else " AND status = ?"
+                params.append(status)
+            
+            sql += " ORDER BY created_at DESC"
+            
+            cursor.execute(sql, tuple(params))
+            rows = cursor.fetchall()
+            return [Reservation.from_dict(row_to_dict(row)) for row in rows]
+    
+    def get_reservations_by_custodian(self, custodian_id: str, pending_only: bool = False) -> List[Reservation]:
+        """获取保管人需要处理的预约"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            if pending_only:
+                sql = """SELECT * FROM reservations 
+                        WHERE custodian_id = %s 
+                        AND status IN ('待保管人确认', '待2人确认')
+                        AND custodian_approved = 0""" if IS_MYSQL else """SELECT * FROM reservations 
+                        WHERE custodian_id = ? 
+                        AND status IN ('待保管人确认', '待2人确认')
+                        AND custodian_approved = 0"""
+            else:
+                sql = "SELECT * FROM reservations WHERE custodian_id = %s" if IS_MYSQL else "SELECT * FROM reservations WHERE custodian_id = ?"
+            
+            cursor.execute(sql, (custodian_id,))
+            rows = cursor.fetchall()
+            return [Reservation.from_dict(row_to_dict(row)) for row in rows]
+    
+    def get_reservations_by_borrower(self, borrower_id: str, pending_only: bool = False) -> List[Reservation]:
+        """获取借用人需要处理的预约"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            if pending_only:
+                sql = """SELECT * FROM reservations 
+                        WHERE current_borrower_id = %s 
+                        AND status IN ('待借用人确认', '待2人确认')
+                        AND borrower_approved = 0""" if IS_MYSQL else """SELECT * FROM reservations 
+                        WHERE current_borrower_id = ? 
+                        AND status IN ('待借用人确认', '待2人确认')
+                        AND borrower_approved = 0"""
+            else:
+                sql = "SELECT * FROM reservations WHERE current_borrower_id = %s" if IS_MYSQL else "SELECT * FROM reservations WHERE current_borrower_id = ?"
+            
+            cursor.execute(sql, (borrower_id,))
+            rows = cursor.fetchall()
+            return [Reservation.from_dict(row_to_dict(row)) for row in rows]
+    
+    def save_reservation(self, reservation: Reservation) -> bool:
+        """保存预约"""
+        with get_db_transaction() as conn:
+            cursor = conn.cursor()
+            
+            # 检查是否存在
+            cursor.execute(
+                "SELECT id FROM reservations WHERE id = %s" if IS_MYSQL else
+                "SELECT id FROM reservations WHERE id = ?",
+                (reservation.id,)
+            )
+            exists = cursor.fetchone()
+            
+            if exists:
+                # 更新
+                sql = """UPDATE reservations SET
+                    device_id = %s, device_type = %s, device_name = %s,
+                    reserver_id = %s, reserver_name = %s,
+                    start_time = %s, end_time = %s, status = %s,
+                    updated_at = %s,
+                    custodian_approved = %s, custodian_approved_at = %s,
+                    borrower_approved = %s, borrower_approved_at = %s,
+                    custodian_notified = %s, borrower_notified = %s,
+                    cancelled_by = %s, cancelled_at = %s, cancel_reason = %s,
+                    rejected_by = %s, rejected_at = %s,
+                    converted_to_borrow = %s, converted_at = %s,
+                    custodian_id = %s, current_borrower_id = %s, current_borrower_name = %s,
+                    reason = %s
+                    WHERE id = %s
+                """ if IS_MYSQL else """UPDATE reservations SET
+                    device_id = ?, device_type = ?, device_name = ?,
+                    reserver_id = ?, reserver_name = ?,
+                    start_time = ?, end_time = ?, status = ?,
+                    updated_at = ?,
+                    custodian_approved = ?, custodian_approved_at = ?,
+                    borrower_approved = ?, borrower_approved_at = ?,
+                    custodian_notified = ?, borrower_notified = ?,
+                    cancelled_by = ?, cancelled_at = ?, cancel_reason = ?,
+                    rejected_by = ?, rejected_at = ?,
+                    converted_to_borrow = ?, converted_at = ?,
+                    custodian_id = ?, current_borrower_id = ?, current_borrower_name = ?,
+                    reason = ?
+                    WHERE id = ?
+                """
+                params = (
+                    reservation.device_id, reservation.device_type, reservation.device_name,
+                    reservation.reserver_id, reservation.reserver_name,
+                    format_datetime(reservation.start_time), format_datetime(reservation.end_time), reservation.status,
+                    format_datetime(datetime.now()),
+                    1 if reservation.custodian_approved else 0, format_datetime(reservation.custodian_approved_at),
+                    1 if reservation.borrower_approved else 0, format_datetime(reservation.borrower_approved_at),
+                    1 if reservation.custodian_notified else 0, 1 if reservation.borrower_notified else 0,
+                    reservation.cancelled_by, format_datetime(reservation.cancelled_at), reservation.cancel_reason,
+                    reservation.rejected_by, format_datetime(reservation.rejected_at),
+                    1 if reservation.converted_to_borrow else 0, format_datetime(reservation.converted_at),
+                    reservation.custodian_id, reservation.current_borrower_id, reservation.current_borrower_name,
+                    reservation.reason, reservation.id
+                )
+            else:
+                # 插入
+                sql = """INSERT INTO reservations (
+                    id, device_id, device_type, device_name,
+                    reserver_id, reserver_name,
+                    start_time, end_time, status,
+                    created_at, updated_at,
+                    custodian_approved, custodian_approved_at,
+                    borrower_approved, borrower_approved_at,
+                    custodian_notified, borrower_notified,
+                    cancelled_by, cancelled_at, cancel_reason,
+                    rejected_by, rejected_at,
+                    converted_to_borrow, converted_at,
+                    custodian_id, current_borrower_id, current_borrower_name,
+                    reason
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """ if IS_MYSQL else """INSERT INTO reservations (
+                    id, device_id, device_type, device_name,
+                    reserver_id, reserver_name,
+                    start_time, end_time, status,
+                    created_at, updated_at,
+                    custodian_approved, custodian_approved_at,
+                    borrower_approved, borrower_approved_at,
+                    custodian_notified, borrower_notified,
+                    cancelled_by, cancelled_at, cancel_reason,
+                    rejected_by, rejected_at,
+                    converted_to_borrow, converted_at,
+                    custodian_id, current_borrower_id, current_borrower_name,
+                    reason
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """
+                params = (
+                    reservation.id, reservation.device_id, reservation.device_type, reservation.device_name,
+                    reservation.reserver_id, reservation.reserver_name,
+                    format_datetime(reservation.start_time), format_datetime(reservation.end_time), reservation.status,
+                    format_datetime(reservation.created_at), format_datetime(reservation.updated_at),
+                    1 if reservation.custodian_approved else 0, format_datetime(reservation.custodian_approved_at),
+                    1 if reservation.borrower_approved else 0, format_datetime(reservation.borrower_approved_at),
+                    1 if reservation.custodian_notified else 0, 1 if reservation.borrower_notified else 0,
+                    reservation.cancelled_by, format_datetime(reservation.cancelled_at), reservation.cancel_reason,
+                    reservation.rejected_by, format_datetime(reservation.rejected_at),
+                    1 if reservation.converted_to_borrow else 0, format_datetime(reservation.converted_at),
+                    reservation.custodian_id, reservation.current_borrower_id, reservation.current_borrower_name,
+                    reservation.reason
+                )
+            
+            cursor.execute(sql, params)
+            return True
+    
+    def delete_reservation(self, reservation_id: str) -> bool:
+        """删除预约"""
+        with get_db_transaction() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM reservations WHERE id = %s" if IS_MYSQL else
+                "DELETE FROM reservations WHERE id = ?",
+                (reservation_id,)
+            )
+            return cursor.rowcount > 0
+    
+    def get_pending_reservations_to_convert(self) -> List[Reservation]:
+        """获取需要转为借用的已同意预约（定时任务用）"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            now = format_datetime(datetime.now())
+            cursor.execute(
+                """SELECT * FROM reservations 
+                   WHERE status = '已同意' 
+                   AND start_time <= %s 
+                   AND converted_to_borrow = 0""" if IS_MYSQL else
+                """SELECT * FROM reservations 
+                   WHERE status = '已同意' 
+                   AND start_time <= ? 
+                   AND converted_to_borrow = 0""",
+                (now,)
+            )
+            rows = cursor.fetchall()
+            return [Reservation.from_dict(row_to_dict(row)) for row in rows]
+    
+    def get_reservations_to_cleanup(self, cutoff_date: datetime) -> List[Reservation]:
+        """获取需要清理的旧预约记录（已结束超过指定时间的）"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cutoff = format_datetime(cutoff_date)
+            cursor.execute(
+                """SELECT * FROM reservations 
+                   WHERE end_time <= %s 
+                   AND status IN ('已取消', '已拒绝', '已过期', '已转借用')""" if IS_MYSQL else
+                """SELECT * FROM reservations 
+                   WHERE end_time <= ? 
+                   AND status IN ('已取消', '已拒绝', '已过期', '已转借用')""",
+                (cutoff,)
+            )
+            rows = cursor.fetchall()
+            return [Reservation.from_dict(row_to_dict(row)) for row in rows]
+
+    def get_expired_pending_reservations(self) -> List[Reservation]:
+        """获取已过期的待确认预约（定时任务用）"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            now = format_datetime(datetime.now())
+            cursor.execute(
+                """SELECT * FROM reservations 
+                   WHERE status IN ('待保管人确认', '待借用人确认', '待2人确认')
+                   AND start_time <= %s""" if IS_MYSQL else
+                """SELECT * FROM reservations 
+                   WHERE status IN ('待保管人确认', '待借用人确认', '待2人确认')
+                   AND start_time <= ?""",
+                (now,)
+            )
+            rows = cursor.fetchall()
+            return [Reservation.from_dict(row_to_dict(row)) for row in rows]
+    
+    def get_reservations_by_status(self, status: str) -> List[Reservation]:
+        """根据状态获取预约列表"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM reservations WHERE status = %s" if IS_MYSQL else
+                "SELECT * FROM reservations WHERE status = ?",
+                (status,)
+            )
+            rows = cursor.fetchall()
+            return [Reservation.from_dict(row_to_dict(row)) for row in rows]
