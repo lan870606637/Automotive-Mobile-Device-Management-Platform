@@ -96,7 +96,11 @@ class Device:
     pre_ship_borrow_time: Optional[datetime] = None
     pre_ship_expected_return_date: Optional[datetime] = None
     pre_ship_reason: str = ""
-    
+
+    # 资产信息
+    asset_number: str = ""  # 固定资产编号
+    purchase_amount: float = 0.0  # 购买金额（元）
+
     # 丢失/损坏信息
     lost_time: Optional[datetime] = None
     damage_reason: str = ""
@@ -224,7 +228,9 @@ class Device:
             os_platform=data.get('os_platform', ''),
             product_name=data.get('product_name', ''),
             screen_orientation=data.get('screen_orientation', ''),
-            screen_resolution=data.get('screen_resolution', '')
+            screen_resolution=data.get('screen_resolution', ''),
+            asset_number=data.get('asset_number', ''),
+            purchase_amount=float(data.get('purchase_amount', 0)) if data.get('purchase_amount') else 0.0
         )
         return device
 
@@ -422,6 +428,7 @@ class User:
     email: str                # 邮箱（用于登录，唯一）
     password: str = "123456"  # 默认密码
     borrower_name: str = ""   # 借用人名称（必填，唯一）
+    avatar: str = ""          # 头像URL或路径
     borrow_count: int = 0     # 借用次数
     return_count: int = 0     # 归还次数
     is_frozen: bool = False   # 是否冻结
@@ -453,6 +460,7 @@ class User:
             email=data.get('email', ''),
             password=data.get('password', '123456'),
             borrower_name=data.get('borrower_name', ''),
+            avatar=data.get('avatar', ''),
             borrow_count=int(data.get('borrow_count', 0)),
             return_count=int(data.get('return_count', 0)),
             is_frozen=bool(data.get('is_frozen', 0)),
@@ -468,6 +476,7 @@ class User:
             "email": self.email,
             "password": self.password,
             "borrower_name": self.borrower_name,
+            "avatar": self.avatar,
             "borrow_count": self.borrow_count,
             "return_count": self.return_count,
             "is_frozen": "已冻结" if self.is_frozen else "正常",

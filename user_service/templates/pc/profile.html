@@ -1,0 +1,220 @@
+{% extends "pc/base_pc.html" %}
+
+{% block title %}个人资料 - 设备管理系统{% endblock %}
+
+{% set active_nav = 'profile' %}
+
+{% block content %}
+<h1 class="page-title">👤 个人资料</h1>
+
+<div class="profile-container" style="max-width: 600px; margin: 0 auto;">
+    <!-- 头像卡片 -->
+    <div class="profile-card" style="background: white; border-radius: 16px; padding: 32px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); text-align: center; margin-bottom: 24px;">
+        <div class="avatar-wrapper" style="position: relative; display: inline-block; margin-bottom: 20px;">
+            <div class="avatar-preview" id="avatarPreview" style="width: 120px; height: 120px; border-radius: 50%; overflow: hidden; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); display: flex; align-items: center; justify-content: center; font-size: 48px; color: white; cursor: pointer; transition: all 0.3s ease; border: 4px solid #f0f0f0;">
+                {% if full_user and full_user.avatar %}
+                <img src="{{ full_user.avatar }}" alt="头像" style="width: 100%; height: 100%; object-fit: cover;">
+                {% else %}
+                <span id="avatarText">{{ user.borrower_name[0] if user.borrower_name else '?' }}</span>
+                {% endif %}
+            </div>
+            <div class="avatar-overlay" onclick="document.getElementById('avatarInput').click()" style="position: absolute; bottom: 0; right: 0; width: 36px; height: 36px; background: #667eea; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4); transition: all 0.3s ease;">
+                <span style="font-size: 16px;">📷</span>
+            </div>
+            <input type="file" id="avatarInput" accept="image/*" style="display: none;" onchange="handleAvatarUpload(this)">
+        </div>
+
+        <h2 style="font-size: 24px; font-weight: 600; color: #333; margin: 0 0 8px 0;">{{ user.borrower_name or '未设置' }}</h2>
+        <p style="font-size: 14px; color: #666; margin: 0;">{{ user.email }}</p>
+
+        <div style="margin-top: 20px;">
+            <button type="button" class="btn btn-primary" onclick="document.getElementById('avatarInput').click()" style="padding: 10px 24px; border-radius: 8px; font-size: 14px;">
+                📷 更换头像
+            </button>
+        </div>
+    </div>
+
+    <!-- 基本信息卡片 -->
+    <div class="profile-card" style="background: white; border-radius: 16px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); margin-bottom: 24px;">
+        <h3 style="font-size: 16px; font-weight: 600; color: #333; margin: 0 0 20px 0; padding-bottom: 12px; border-bottom: 1px solid #f0f0f0;">📋 基本信息</h3>
+
+        <div class="info-item" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f8f8f8;">
+            <span style="color: #666; font-size: 14px;">用户ID</span>
+            <span style="color: #333; font-size: 14px; font-family: monospace;">{{ user.user_id[:8] }}...</span>
+        </div>
+
+        <div class="info-item" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f8f8f8;">
+            <span style="color: #666; font-size: 14px;">借用人名称</span>
+            <span style="color: #333; font-size: 14px;">{{ user.borrower_name or '未设置' }}</span>
+        </div>
+
+        <div class="info-item" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f8f8f8;">
+            <span style="color: #666; font-size: 14px;">邮箱</span>
+            <span style="color: #333; font-size: 14px;">{{ user.email }}</span>
+        </div>
+
+        <div class="info-item" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0;">
+            <span style="color: #666; font-size: 14px;">管理员权限</span>
+            <span style="color: #333; font-size: 14px;">{{ '是' if user.is_admin else '否' }}</span>
+        </div>
+    </div>
+
+    <!-- 快捷操作卡片 -->
+    <div class="profile-card" style="background: white; border-radius: 16px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.08);">
+        <h3 style="font-size: 16px; font-weight: 600; color: #333; margin: 0 0 20px 0; padding-bottom: 12px; border-bottom: 1px solid #f0f0f0;">⚙️ 快捷操作</h3>
+
+        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+            <a href="{{ url_for('change_password') }}" class="btn btn-default" style="flex: 1; min-width: 140px; text-align: center; padding: 12px; border-radius: 8px; text-decoration: none;">
+                🔐 修改密码
+            </a>
+            <a href="{{ url_for('logout') }}" class="btn btn-danger" style="flex: 1; min-width: 140px; text-align: center; padding: 12px; border-radius: 8px; text-decoration: none; background: #ff4d4f; color: white;">
+                🚪 退出登录
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- 头像裁剪弹窗 -->
+<div id="avatarCropModal" class="pc-modal" style="display: none;">
+    <div class="pc-modal-content" style="max-width: 400px;">
+        <div class="pc-modal-header">
+            <h3>预览头像</h3>
+            <button class="pc-modal-close" onclick="closeAvatarCropModal()">&times;</button>
+        </div>
+        <div class="pc-modal-body" style="text-align: center; padding: 24px;">
+            <div id="avatarCropPreview" style="width: 200px; height: 200px; border-radius: 50%; overflow: hidden; margin: 0 auto 20px; background: #f5f5f5; display: flex; align-items: center; justify-content: center;">
+                <img id="cropImage" src="" alt="预览" style="max-width: 100%; max-height: 100%; object-fit: cover;">
+            </div>
+            <p style="color: #666; font-size: 14px; margin: 0;">图片将自动压缩为 300x300 像素</p>
+        </div>
+        <div class="pc-modal-footer">
+            <button type="button" class="btn btn-default" onclick="closeAvatarCropModal()">取消</button>
+            <button type="button" class="btn btn-primary" onclick="confirmAvatarUpload()">确认上传</button>
+        </div>
+    </div>
+</div>
+
+<style>
+.avatar-wrapper:hover .avatar-preview {
+    transform: scale(1.05);
+    box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
+}
+
+.avatar-overlay:hover {
+    transform: scale(1.1);
+    background: #5a6fd6 !important;
+}
+
+.btn-danger {
+    background: #ff4d4f;
+    color: white;
+    border: none;
+}
+
+.btn-danger:hover {
+    background: #ff7875;
+}
+
+.profile-card {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.profile-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+}
+</style>
+
+<script>
+let currentAvatarFile = null;
+
+// 处理头像上传
+function handleAvatarUpload(input) {
+    const file = input.files[0];
+    if (!file) return;
+
+    // 检查文件类型
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+        showToast('只支持 jpg, png, gif, webp 格式的图片', 'error');
+        return;
+    }
+
+    // 检查文件大小 (最大 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+        showToast('图片大小不能超过 5MB', 'error');
+        return;
+    }
+
+    currentAvatarFile = file;
+
+    // 显示预览
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        document.getElementById('cropImage').src = e.target.result;
+        document.getElementById('avatarCropModal').style.display = 'flex';
+    };
+    reader.readAsDataURL(file);
+}
+
+// 关闭裁剪弹窗
+function closeAvatarCropModal() {
+    document.getElementById('avatarCropModal').style.display = 'none';
+    currentAvatarFile = null;
+    document.getElementById('avatarInput').value = '';
+}
+
+// 确认上传头像
+async function confirmAvatarUpload() {
+    if (!currentAvatarFile) return;
+
+    const formData = new FormData();
+    formData.append('avatar', currentAvatarFile);
+
+    try {
+        showToast('正在上传...', 'info');
+
+        const response = await fetch('/api/upload-avatar', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast('头像上传成功', 'success');
+
+            // 更新头像显示
+            const avatarPreview = document.getElementById('avatarPreview');
+            avatarPreview.innerHTML = `<img src="${data.avatar_url}" alt="头像" style="width: 100%; height: 100%; object-fit: cover;">`;
+
+            // 更新侧边栏头像
+            const sidebarAvatar = document.querySelector('.user-avatar-mini');
+            if (sidebarAvatar) {
+                sidebarAvatar.innerHTML = `<img src="${data.avatar_url}" alt="头像" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">`;
+            }
+
+            closeAvatarCropModal();
+        } else {
+            showToast(data.message || '上传失败', 'error');
+        }
+    } catch (error) {
+        console.error('上传头像失败:', error);
+        showToast('上传失败，请重试', 'error');
+    }
+}
+
+// Toast 提示函数
+function showToast(message, type = 'info') {
+    const toast = document.getElementById('toast');
+    if (!toast) return;
+
+    toast.textContent = message;
+    toast.className = 'pc-toast show ' + type;
+
+    setTimeout(() => {
+        toast.classList.remove('show');
+    }, 3000);
+}
+</script>
+{% endblock %}

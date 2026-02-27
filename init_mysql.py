@@ -146,6 +146,7 @@ def create_tables():
                 email VARCHAR(255) UNIQUE,
                 password VARCHAR(255) NOT NULL DEFAULT '123456',
                 borrower_name VARCHAR(100),
+                avatar VARCHAR(500) DEFAULT '',
                 borrow_count INT DEFAULT 0,
                 return_count INT DEFAULT 0,
                 is_frozen INT DEFAULT 0,

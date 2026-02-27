@@ -139,6 +139,8 @@
                     <th>IMEI</th>
                     <th>SN码</th>
                     <th>运营商</th>
+                    <th>固定资产编号</th>
+                    <th>购买金额(元)</th>
                     {% elif device_type == 'simcard' %}
                     <th>号码</th>
                     <th>运营商</th>
@@ -185,20 +187,26 @@
                     <td>{{ device.screen_orientation or '-' }}</td>
                     <td>{{ device.screen_resolution or '-' }}</td>
                     {% elif device_type == 'phone' %}
-                    <td>{{ device.system_version or '-' }}</td>
-                    <td style="font-size: 12px;" title="{{ device.imei or '' }}">{{ device.imei[:15] + '...' if device.imei and device.imei|length > 15 else device.imei or '-' }}</td>
-                    <td style="font-size: 12px;" title="{{ device.sn or '' }}">{{ device.sn[:15] + '...' if device.sn and device.sn|length > 15 else device.sn or '-' }}</td>
-                    <td>{{ device.carrier or '-' }}</td>
+                    <td>{{ device.system_version if device.system_version and device.system_version != 'nan' else '-' }}</td>
+                    <td style="font-size: 12px;" title="{{ device.imei or '' }}">{{ device.imei[:15] + '...' if device.imei and device.imei != 'nan' and device.imei|length > 15 else (device.imei if device.imei and device.imei != 'nan' else '-') }}</td>
+                    <td style="font-size: 12px;" title="{{ device.sn or '' }}">{{ device.sn[:15] + '...' if device.sn and device.sn != 'nan' and device.sn|length > 15 else (device.sn if device.sn and device.sn != 'nan' else '-') }}</td>
+                    <td>{{ device.carrier if device.carrier and device.carrier != 'nan' else '-' }}</td>
+                    <td>{{ device.asset_number if device.asset_number and device.asset_number != 'nan' else '-' }}</td>
+                    <td>{{ device.purchase_amount if device.purchase_amount and device.purchase_amount != 'nan' else '-' }}</td>
                     {% elif device_type == 'simcard' %}
-                    <td>{{ device.model or '-' }}</td>
-                    <td>{{ device.carrier or '-' }}</td>
+                    <td>{{ device.model if device.model and device.model != 'nan' else '-' }}</td>
+                    <td>{{ device.carrier if device.carrier and device.carrier != 'nan' else '-' }}</td>
                     {% else %}
                     <td class="device-type">{{ device.device_type.value }}</td>
-                    <td style="color: #8c8c8c; font-size: 13px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ device.remark or '' }}">{{ device.remark or '-' }}</td>
+                    <td style="color: #8c8c8c; font-size: 13px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ device.remark or '' }}">{{ device.remark if device.remark and device.remark != 'nan' else '-' }}</td>
                     {% endif %}
                     <td>
                         {% if device.no_cabinet %}
-                        <span class="status-tag status-no-cabinet">无柜号</span>
+                            {% if device.is_custodian_type %}
+                            <span class="status-tag status-no-cabinet">无保管人</span>
+                            {% else %}
+                            <span class="status-tag status-no-cabinet">无柜号</span>
+                            {% endif %}
                         {% elif device.is_circulating %}
                         <span class="status-tag status-circulating">流通</span>
                         {% elif device.is_sealed %}
@@ -351,25 +359,29 @@ function renderSearchResults(devices) {
             `;
         } else if (isPhone) {
             // 手机显示额外字段
-            const imei = device.imei || '';
-            const sn = device.sn || '';
+            const imei = formatField(device.imei);
+            const sn = formatField(device.sn);
+            const imeiRaw = device.imei || '';
+            const snRaw = device.sn || '';
             extraCols = `
-                <td>${device.system_version || '-'}</td>
-                <td style="font-size: 12px;" title="${imei}">${imei.length > 15 ? imei.substring(0, 15) + '...' : imei || '-'}</td>
-                <td style="font-size: 12px;" title="${sn}">${sn.length > 15 ? sn.substring(0, 15) + '...' : sn || '-'}</td>
-                <td>${device.carrier || '-'}</td>
+                <td>${formatField(device.system_version)}</td>
+                <td style="font-size: 12px;" title="${imeiRaw}">${imei.length > 15 ? imei.substring(0, 15) + '...' : imei}</td>
+                <td style="font-size: 12px;" title="${snRaw}">${sn.length > 15 ? sn.substring(0, 15) + '...' : sn}</td>
+                <td>${formatField(device.carrier)}</td>
+                <td>${formatField(device.asset_number)}</td>
+                <td>${formatField(device.purchase_amount)}</td>
             `;
         } else if (isSimcard) {
             // 手机卡显示额外字段
             extraCols = `
-                <td>${device.model || '-'}</td>
-                <td>${device.carrier || '-'}</td>
+                <td>${formatField(device.model)}</td>
+                <td>${formatField(device.carrier)}</td>
             `;
         } else {
             // 默认显示类型和备注
             extraCols = `
                 <td class="device-type">${device.device_type}</td>
-                <td style="color: #8c8c8c; font-size: 13px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${device.remark || ''}">${device.remark || '-'}</td>
+                <td style="color: #8c8c8c; font-size: 13px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${device.remark || ''}">${formatField(device.remark)}</td>
             `;
         }
         
@@ -392,7 +404,7 @@ function renderSearchResults(devices) {
             ${extraCols}
             <td>
                 ${device.no_cabinet
-                    ? '<span class="status-tag status-no-cabinet">无柜号</span>'
+                    ? `<span class="status-tag status-no-cabinet">${device.is_custodian_type ? '无保管人' : '无柜号'}</span>`
                     : device.is_circulating
                         ? '<span class="status-tag status-circulating">流通</span>'
                         : device.is_sealed
@@ -432,6 +444,12 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// 处理字段显示，将空值或'nan'转换为'-'
+function formatField(value) {
+    if (!value || value === 'nan' || value === 'NaN') return '-';
+    return value;
 }
 
 // ==================== 组合筛选功能 ====================

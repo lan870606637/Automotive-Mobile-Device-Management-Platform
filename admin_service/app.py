@@ -1326,13 +1326,26 @@ def api_devices():
             # 获取设备类型字符串
             device_type_str = get_device_type_str(device)
             
+            # 判断是否为使用保管人的设备类型
+            is_custodian_type = device.device_type in [DeviceType.PHONE, DeviceType.SIM_CARD, DeviceType.OTHER_DEVICE]
+            
+            # 根据设备类型判断状态显示
+            if is_custodian_type and device.status == DeviceStatus.NO_CABINET:
+                # 手机、手机卡、其它设备：检查custodian_id
+                if not device.custodian_id:
+                    status_display = '无保管人'
+                else:
+                    status_display = '保管中'
+            else:
+                status_display = device.status.value
+            
             device_data = {
                 'id': device.id,
                 'device_name': device.name,
                 'device_type': device_type_str,
                 'model': device.model,
                 'cabinet': device.cabinet_number,
-                'status': device.status.value,
+                'status': status_display,
                 'borrower': device.borrower,
                 'phone': device.phone,
                 'borrow_time': device.borrow_time.strftime('%Y-%m-%d %H:%M') if device.borrow_time else '',
@@ -1348,6 +1361,8 @@ def api_devices():
                 device_data['imei'] = device.imei
                 device_data['sn'] = device.sn
                 device_data['carrier'] = device.carrier
+                device_data['asset_number'] = device.asset_number
+                device_data['purchase_amount'] = device.purchase_amount
             
             # 车机和仪表特有字段（JIRA地址后）
             if device_type_str in ('车机', '仪表'):
@@ -1425,6 +1440,50 @@ def api_device_detail(device_id):
             return jsonify({'success': True})
         except Exception as e:
             return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/devices/<device_id>/permanent-delete', methods=['DELETE'])
+@admin_required
+def api_permanent_delete_device(device_id):
+    """物理删除设备API - 彻底从数据库删除"""
+    try:
+        from common.db_store import get_db_transaction
+        
+        with get_db_transaction() as conn:
+            cursor = conn.cursor()
+            
+            # 先查询设备信息用于日志
+            cursor.execute(
+                "SELECT name, device_type FROM devices WHERE id = %s" if hasattr(cursor, 'executemany') else 
+                "SELECT name, device_type FROM devices WHERE id = ?",
+                (device_id,)
+            )
+            row = cursor.fetchone()
+            
+            if not row:
+                return jsonify({'success': False, 'message': '设备不存在'})
+            
+            device_name = row[0] if not isinstance(row, dict) else row['name']
+            device_type = row[1] if not isinstance(row, dict) else row['device_type']
+            
+            # 物理删除设备
+            cursor.execute(
+                "DELETE FROM devices WHERE id = %s" if hasattr(cursor, 'executemany') else 
+                "DELETE FROM devices WHERE id = ?",
+                (device_id,)
+            )
+            
+            conn.commit()
+        
+        # 记录操作日志
+        api_client.add_operation_log(
+            f"彻底删除设备: {device_name}",
+            f"{device_type}管理"
+        )
+        
+        return jsonify({'success': True, 'message': '设备已彻底删除'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'删除失败: {str(e)}'})
 
 
 @app.route('/api/devices/<device_id>/borrow', methods=['POST'])
@@ -1901,8 +1960,8 @@ def download_template(device_type):
             'example': [['JIRA-002', 'Model-B', '仪表-001', 'B-01', '项目B', 'CAN', 'Linux', 'Linux', '产品Y', '芯片B', '竖屏', '1280x720']]
         },
         'phone': {
-            'columns': ['jira地址', '型号', '设备名称', '保管人', '系统版本', 'IMEI', 'SN码', '运营商'],
-            'example': [['JIRA-003', 'iPhone 14', '手机-001', '张三', 'iOS 16', '123456789012345', 'SN123456', '移动']]
+            'columns': ['jira地址', '型号', '设备名称', '保管人', '状态', '系统版本', 'IMEI', 'SN码', '运营商', '固定资产编号', '购买金额(元)'],
+            'example': [['JIRA-003', 'iPhone 14', '手机-001', '张三', '保管中', 'iOS 16', '123456789012345', 'SN123456', '移动', 'ZC-2024-001', '5999']]
         },
         'sim': {
             'columns': ['jira地址', '号码', '设备名称', '保管人', '运营商', '套餐类型'],
@@ -2039,17 +2098,38 @@ def api_import_devices():
                 elif device_type == 'phone':
                     # 手机导入
                     cabinet = str(row.get('保管人', '')).strip()
+                    # 读取状态列，如果没有则根据保管人判断
+                    status_str = str(row.get('状态', '')).strip()
+                    if status_str:
+                        try:
+                            device_status = DeviceStatus(status_str)
+                        except ValueError:
+                            # 状态值无效，根据保管人判断
+                            device_status = DeviceStatus.IN_CUSTODY if cabinet else DeviceStatus.NO_CABINET
+                    else:
+                        # 手机设备：有保管人就是保管中，无保管人就是无保管人
+                        device_status = DeviceStatus.IN_CUSTODY if cabinet else DeviceStatus.NO_CABINET
+                    # 读取购买金额
+                    purchase_amount_str = str(row.get('购买金额(元)', '')).strip()
+                    purchase_amount = 0.0
+                    if purchase_amount_str:
+                        try:
+                            purchase_amount = float(purchase_amount_str)
+                        except ValueError:
+                            purchase_amount = 0.0
                     device = Phone(
                         id=str(uuid.uuid4()),
                         name=str(row.get('设备名称', '')).strip(),
                         model=str(row.get('型号', '')).strip(),
                         cabinet_number=cabinet,
-                        status=get_status_from_cabinet(cabinet),
+                        status=device_status,
                         jira_address=str(row.get('jira地址', '')).strip(),
                         system_version=str(row.get('系统版本', '')).strip(),
                         imei=str(row.get('IMEI', '')).strip(),
                         sn=str(row.get('SN码', '')).strip(),
                         carrier=str(row.get('运营商', '')).strip(),
+                        asset_number=str(row.get('固定资产编号', '')).strip(),
+                        purchase_amount=purchase_amount,
                         entry_source='批量导入'
                     )
                     api_client._db.save_device(device)

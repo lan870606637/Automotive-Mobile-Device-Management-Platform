@@ -15,7 +15,8 @@
         • <strong>归还排名：</strong>根据归还设备次数排序，前10名获得专属称号，其余按星级显示<br>
         • <strong>星级规则：</strong>⭐ 0-10次 | ⭐⭐ 11-50次 | ⭐⭐⭐ 51-100次 | ⭐⭐⭐⭐ 101-200次 | ⭐⭐⭐⭐⭐ 201-500次 | ⭐⭐⭐⭐⭐⭐ 501-1000次 | ⭐⭐⭐⭐⭐⭐⭐ 1001次+<br>
         • <strong>彩色星星：</strong>5星及以上显示彩色星星，彰显实力！<br>
-        • <strong>点赞规则：</strong>每人每天可点赞5次，给优秀的同事加油！
+        • <strong>点赞规则：</strong>每人每天可点赞5次，给优秀的同事加油！<br>
+        • <strong>更新时间：</strong>⏰ 每天凌晨0点更新排行榜数据
     </div>
 </div>
 
@@ -491,10 +492,15 @@ function renderRankings() {
             levelHtml = `<div class="ranking-stars">${starsHtml}</div>`;
         }
 
+        // 头像显示
+        const avatarHtml = user.avatar
+            ? `<img src="${user.avatar}" alt="头像" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">`
+            : avatarText;
+
         top10Html += `
             <div class="ranking-card ${topClass}">
                 <div class="ranking-number ${numberClass}">${user.rank}</div>
-                <div class="ranking-avatar">${avatarText}</div>
+                <div class="ranking-avatar">${avatarHtml}</div>
                 <div class="ranking-info">
                     <div class="ranking-name">${user.user_name} ${isSelf ? '<span style="color: #1890ff; font-size: 12px;">(你)</span>' : ''}</div>
                     ${levelHtml}
@@ -549,12 +555,17 @@ function renderRankings() {
                 levelHtml = `<span style="font-size: 14px;">${starsHtml}</span>`;
             }
 
+            // 头像显示
+            const avatarHtml = user.avatar
+                ? `<img src="${user.avatar}" alt="头像" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">`
+                : avatarText;
+
             othersHtml += `
                 <tr>
                     <td><span style="display: inline-block; width: 28px; height: 28px; line-height: 28px; text-align: center; background: #f0f0f0; color: #666; border-radius: 50%; font-weight: 600; font-size: 13px;">${user.rank}</span></td>
                     <td>
                         <div style="display: flex; align-items: center; gap: 10px;">
-                            <div style="width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 600; font-size: 14px;">${avatarText}</div>
+                            <div style="width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 600; font-size: 14px; overflow: hidden;">${avatarHtml}</div>
                             <span style="font-weight: 500;">${user.user_name} ${isSelf ? '<span style="color: #1890ff; font-size: 12px;">(你)</span>' : ''}</span>
                         </div>
                     </td>

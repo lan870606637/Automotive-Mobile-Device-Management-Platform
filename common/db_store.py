@@ -168,6 +168,12 @@ def init_database():
         # MySQL表已经通过init_mysql.py创建
         # 检查并添加 borrower_id 列（如果不存在）
         _migrate_mysql_add_borrower_id()
+        # 检查并添加 avatar 列（如果不存在）
+        _migrate_mysql_add_avatar()
+        # 检查并添加 asset_number 和 purchase_amount 列（如果不存在）
+        _migrate_mysql_add_asset_fields()
+        # 检查并添加 custodian_id 列（如果不存在）
+        _migrate_mysql_add_custodian_id()
         return
 
     # SQLite初始化逻辑...
@@ -189,6 +195,7 @@ def init_database():
                 create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 borrower TEXT,
                 borrower_id TEXT,
+                custodian_id TEXT,
                 phone TEXT,
                 borrow_time TIMESTAMP,
                 location TEXT,
@@ -218,12 +225,23 @@ def init_database():
                 os_platform TEXT,
                 product_name TEXT,
                 screen_orientation TEXT,
-                screen_resolution TEXT
+                screen_resolution TEXT,
+                asset_number TEXT,
+                purchase_amount REAL DEFAULT 0
             )
         ''')
 
         # 检查并添加 borrower_id 列（如果表已存在但缺少该列）
         _migrate_sqlite_add_borrower_id(cursor)
+
+        # 检查并添加 avatar 列到 users 表（如果表已存在但缺少该列）
+        _migrate_sqlite_add_avatar(cursor)
+
+        # 检查并添加 asset_number 和 purchase_amount 列
+        _migrate_sqlite_add_asset_fields(cursor)
+
+        # 检查并添加 custodian_id 列
+        _migrate_sqlite_add_custodian_id(cursor)
 
         # 创建其他表...
         # (省略其他表的创建代码，保持原有逻辑)
@@ -253,6 +271,99 @@ def _migrate_mysql_add_borrower_id():
                 print("✓ MySQL: 已添加 borrower_id 列到 devices 表")
     except Exception as e:
         print(f"⚠ MySQL 迁移警告: {e}")
+
+
+def _migrate_sqlite_add_avatar(cursor):
+    """SQLite: 检查并添加 avatar 列到 users 表"""
+    try:
+        cursor.execute("SELECT avatar FROM users LIMIT 1")
+    except sqlite3.OperationalError:
+        # 列不存在，添加它
+        cursor.execute("ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT ''")
+        print("✓ SQLite: 已添加 avatar 列到 users 表")
+
+
+def _migrate_mysql_add_avatar():
+    """MySQL: 检查并添加 avatar 列到 users 表"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT avatar FROM users LIMIT 1")
+            except Exception:
+                # 列不存在，添加它
+                cursor.execute("ALTER TABLE users ADD COLUMN avatar VARCHAR(500) DEFAULT ''")
+                conn.commit()
+                print("✓ MySQL: 已添加 avatar 列到 users 表")
+    except Exception as e:
+        print(f"⚠ MySQL avatar 迁移警告: {e}")
+
+
+def _migrate_sqlite_add_asset_fields(cursor):
+    """SQLite: 检查并添加 asset_number 和 purchase_amount 列到 devices 表"""
+    try:
+        cursor.execute("SELECT asset_number FROM devices LIMIT 1")
+    except sqlite3.OperationalError:
+        # 列不存在，添加它
+        cursor.execute("ALTER TABLE devices ADD COLUMN asset_number TEXT")
+        print("✓ SQLite: 已添加 asset_number 列到 devices 表")
+
+    try:
+        cursor.execute("SELECT purchase_amount FROM devices LIMIT 1")
+    except sqlite3.OperationalError:
+        # 列不存在，添加它
+        cursor.execute("ALTER TABLE devices ADD COLUMN purchase_amount REAL DEFAULT 0")
+        print("✓ SQLite: 已添加 purchase_amount 列到 devices 表")
+
+
+def _migrate_mysql_add_asset_fields():
+    """MySQL: 检查并添加 asset_number 和 purchase_amount 列到 devices 表"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT asset_number FROM devices LIMIT 1")
+            except Exception:
+                # 列不存在，添加它
+                cursor.execute("ALTER TABLE devices ADD COLUMN asset_number VARCHAR(100)")
+                conn.commit()
+                print("✓ MySQL: 已添加 asset_number 列到 devices 表")
+
+            try:
+                cursor.execute("SELECT purchase_amount FROM devices LIMIT 1")
+            except Exception:
+                # 列不存在，添加它
+                cursor.execute("ALTER TABLE devices ADD COLUMN purchase_amount DECIMAL(10,2) DEFAULT 0")
+                conn.commit()
+                print("✓ MySQL: 已添加 purchase_amount 列到 devices 表")
+    except Exception as e:
+        print(f"⚠ MySQL asset fields 迁移警告: {e}")
+
+
+def _migrate_sqlite_add_custodian_id(cursor):
+    """SQLite: 检查并添加 custodian_id 列到 devices 表"""
+    try:
+        cursor.execute("SELECT custodian_id FROM devices LIMIT 1")
+    except sqlite3.OperationalError:
+        # 列不存在，添加它
+        cursor.execute("ALTER TABLE devices ADD COLUMN custodian_id TEXT")
+        print("✓ SQLite: 已添加 custodian_id 列到 devices 表")
+
+
+def _migrate_mysql_add_custodian_id():
+    """MySQL: 检查并添加 custodian_id 列到 devices 表"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT custodian_id FROM devices LIMIT 1")
+            except Exception:
+                # 列不存在，添加它
+                cursor.execute("ALTER TABLE devices ADD COLUMN custodian_id VARCHAR(64)")
+                conn.commit()
+                print("✓ MySQL: 已添加 custodian_id 列到 devices 表")
+    except Exception as e:
+        print(f"⚠ MySQL custodian_id 迁移警告: {e}")
 
 
 class DatabaseStore:
@@ -326,7 +437,8 @@ class DatabaseStore:
                     software_version = %s, hardware_version = %s,
                     project_attribute = %s, connection_method = %s,
                     os_version = %s, os_platform = %s, product_name = %s,
-                    screen_orientation = %s, screen_resolution = %s
+                    screen_orientation = %s, screen_resolution = %s,
+                    asset_number = %s, purchase_amount = %s
                     WHERE id = %s
                 """ if IS_MYSQL else """UPDATE devices SET
                     name = ?, device_type = ?, model = ?, cabinet_number = ?,
@@ -341,7 +453,8 @@ class DatabaseStore:
                     software_version = ?, hardware_version = ?,
                     project_attribute = ?, connection_method = ?,
                     os_version = ?, os_platform = ?, product_name = ?,
-                    screen_orientation = ?, screen_resolution = ?
+                    screen_orientation = ?, screen_resolution = ?,
+                    asset_number = ?, purchase_amount = ?
                     WHERE id = ?
                 """
 
@@ -361,6 +474,7 @@ class DatabaseStore:
                     device.project_attribute, device.connection_method,
                     device.os_version, device.os_platform, device.product_name,
                     device.screen_orientation, device.screen_resolution,
+                    device.asset_number, device.purchase_amount,
                     device.id
                 )
                 cursor.execute(sql, params)
@@ -375,10 +489,10 @@ class DatabaseStore:
                     damage_time, previous_borrower, sn, system_version, imei,
                     carrier, software_version, hardware_version, project_attribute,
                     connection_method, os_version, os_platform, product_name,
-                    screen_orientation, screen_resolution, is_deleted, create_time
+                    screen_orientation, screen_resolution, asset_number, purchase_amount
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, CURRENT_TIMESTAMP)
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """ if IS_MYSQL else """INSERT INTO devices (
                     id, name, device_type, model, cabinet_number, status, remark,
                     jira_address, borrower, borrower_id, custodian_id, phone, borrow_time, location, reason,
@@ -388,9 +502,9 @@ class DatabaseStore:
                     damage_time, previous_borrower, sn, system_version, imei,
                     carrier, software_version, hardware_version, project_attribute,
                     connection_method, os_version, os_platform, product_name,
-                    screen_orientation, screen_resolution, is_deleted, create_time
+                    screen_orientation, screen_resolution, asset_number, purchase_amount
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
 
                 params = (
@@ -409,7 +523,8 @@ class DatabaseStore:
                     device.software_version, device.hardware_version,
                     device.project_attribute, device.connection_method,
                     device.os_version, device.os_platform, device.product_name,
-                    device.screen_orientation, device.screen_resolution
+                    device.screen_orientation, device.screen_resolution,
+                    device.asset_number, device.purchase_amount
                 )
                 cursor.execute(sql, params)
             
@@ -478,16 +593,16 @@ class DatabaseStore:
             
             if exists:
                 sql = """UPDATE users SET
-                    email = %s, password = %s, borrower_name = %s,
+                    email = %s, password = %s, borrower_name = %s, avatar = %s,
                     borrow_count = %s, return_count = %s, is_frozen = %s, is_admin = %s, is_deleted = %s, is_first_login = %s
                     WHERE id = %s
                 """ if IS_MYSQL else """UPDATE users SET
-                    email = ?, password = ?, borrower_name = ?,
+                    email = ?, password = ?, borrower_name = ?, avatar = ?,
                     borrow_count = ?, return_count = ?, is_frozen = ?, is_admin = ?, is_deleted = ?, is_first_login = ?
                     WHERE id = ?
                 """
                 params = (
-                    user.email, user.password, user.borrower_name,
+                    user.email, user.password, user.borrower_name, user.avatar,
                     user.borrow_count, user.return_count,
                     1 if user.is_frozen else 0,
                     1 if user.is_admin else 0,
@@ -498,17 +613,17 @@ class DatabaseStore:
                 cursor.execute(sql, params)
             else:
                 sql = """INSERT INTO users (
-                    id, email, password, borrower_name, borrow_count,
+                    id, email, password, borrower_name, avatar, borrow_count,
                     return_count, is_frozen, is_admin, is_deleted, is_first_login, create_time
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0, %s, CURRENT_TIMESTAMP)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, %s, CURRENT_TIMESTAMP)
                 """ if IS_MYSQL else """INSERT INTO users (
-                    id, email, password, borrower_name, borrow_count,
+                    id, email, password, borrower_name, avatar, borrow_count,
                     return_count, is_frozen, is_admin, is_deleted, is_first_login, create_time
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, CURRENT_TIMESTAMP)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, CURRENT_TIMESTAMP)
                 """
                 params = (
                     user.id, user.email, user.password,
-                    user.borrower_name, user.borrow_count, user.return_count,
+                    user.borrower_name, user.avatar, user.borrow_count, user.return_count,
                     1 if user.is_frozen else 0,
                     1 if user.is_admin else 0,
                     1 if user.is_first_login else 0

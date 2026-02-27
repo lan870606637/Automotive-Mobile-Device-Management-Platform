@@ -7,7 +7,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>设备管理 - 车载测试设备管理系统</title>
+    <title>设备管理 - Carbit测试设备管理系统</title>
     <link rel="stylesheet" href="/static/admin/admin_pc.css">
     <style>
         /* 可调整列宽的表格样式 */
@@ -104,6 +104,7 @@
         .status-tag.status-流通 { background: #f6ffed; color: #52c41a; }
         .status-tag.status-封存 { background: #fff0f6; color: #eb2f96; }
         .status-tag.status-无柜号 { background: #e6f7ff; color: #1890ff; }
+        .status-tag.status-无保管人 { background: #e6f7ff; color: #1890ff; }
         .status-tag.status-丢失 { background: #fff1f0; color: #ff4d4f; }
         .table-actions .btn {
             padding: 2px 6px;
@@ -283,6 +284,8 @@
                             <th id="screenResolutionHeader" style="width: 10%; display: none;">车机分辨率<span class="resizer"></span></th>
                             <th id="systemVersionHeader" style="width: 8%; display: none;">系统版本<span class="resizer"></span></th>
                             <th id="imeiHeader" style="width: 10%; display: none;">IMEI<span class="resizer"></span></th>
+                            <th id="assetNumberHeader" style="width: 10%; display: none;">固定资产编号<span class="resizer"></span></th>
+                            <th id="purchaseAmountHeader" style="width: 8%; display: none;">购买金额(元)<span class="resizer"></span></th>
                             <th style="width: 7%;">状态<span class="resizer"></span></th>
                             <th style="width: 7%;">借用人<span class="resizer"></span></th>
                             <th id="locationHeader" style="width: 7%;">柜号/保管人<span class="resizer"></span></th>
@@ -324,9 +327,11 @@
                             <!-- 手机特有字段（在"全部"视图下隐藏） -->
                             <td class="phone-field" style="display: none;">{{ device.system_version or '-' }}</td>
                             <td class="phone-field" style="display: none; font-size: 12px; font-family: monospace;">{{ device.imei or '-' }}</td>
+                            <td class="phone-field" style="display: none;">{{ device.asset_number or '-' }}</td>
+                            <td class="phone-field" style="display: none;">{{ device.purchase_amount or '-' }}</td>
                             <td><span class="status-tag status-{{ device.status }}">{{ device.status }}</span></td>
                             <td>{{ device.borrower or '-' }}</td>
-                            <td class="location-cell">{{ device.cabinet or device.custodian or '-' }}</td>
+                            <td class="location-cell">{{ device.cabinet or '-' }}</td>
                             <td style="color: {{ '#ff4d4f' if device.is_overdue else '#666' }}">{{ device.expect_return_time or '-' }}</td>
                             <td>
                                 <div class="table-actions">
@@ -338,6 +343,7 @@
                                     <button class="btn btn-sm btn-warning" onclick="showTransferModal('{{ device.id }}')">转借</button>
                                     {% endif %}
                                     <button class="btn btn-sm btn-danger" onclick="deleteDevice('{{ device.id }}')">删除</button>
+                                    <button class="btn btn-sm btn-danger" style="background: #ff0000;" onclick="permanentDeleteDevice('{{ device.id }}')" title="彻底删除，不可恢复">彻底删除</button>
                                 </div>
                             </td>
                         </tr>
@@ -546,22 +552,24 @@
         function updatePhoneSpecificColumns() {
             const systemVersionHeader = document.getElementById('systemVersionHeader');
             const imeiHeader = document.getElementById('imeiHeader');
+            const assetNumberHeader = document.getElementById('assetNumberHeader');
+            const purchaseAmountHeader = document.getElementById('purchaseAmountHeader');
             const carAttrHeader = document.getElementById('carAttrHeader');
             const connMethodHeader = document.getElementById('connMethodHeader');
             const osVerHeader = document.getElementById('osVerHeader');
             const osPlatformHeader = document.getElementById('osPlatformHeader');
             const prodNameHeader = document.getElementById('prodNameHeader');
-            
+
             if (!systemVersionHeader || !imeiHeader) return;
 
             // 获取所有表头
             const headers = systemVersionHeader.parentElement.children;
-            
+
             // 判断当前筛选类型
             const isCarOrInstrument = currentTypeFilter === '车机' || currentTypeFilter === '仪表';
             const isPhone = currentTypeFilter === '手机';
             const isAll = currentTypeFilter === '';
-            
+
             // 控制车机/仪表特有列表头显示
             if (carAttrHeader) carAttrHeader.style.display = isCarOrInstrument ? '' : 'none';
             if (connMethodHeader) connMethodHeader.style.display = isCarOrInstrument ? '' : 'none';
@@ -572,10 +580,12 @@
             const screenResolutionHeader = document.getElementById('screenResolutionHeader');
             if (screenOrientationHeader) screenOrientationHeader.style.display = isCarOrInstrument ? '' : 'none';
             if (screenResolutionHeader) screenResolutionHeader.style.display = isCarOrInstrument ? '' : 'none';
-            
+
             // 控制手机特有列表头显示
             systemVersionHeader.style.display = isPhone ? '' : 'none';
             imeiHeader.style.display = isPhone ? '' : 'none';
+            if (assetNumberHeader) assetNumberHeader.style.display = isPhone ? '' : 'none';
+            if (purchaseAmountHeader) purchaseAmountHeader.style.display = isPhone ? '' : 'none';
 
             // 控制类型列显示（全部视图显示，其他隐藏）
             const typeHeader = document.getElementById('typeHeader');
@@ -785,9 +795,11 @@
                     <td class="car-field" style="display: ${showCarFields ? '' : 'none'};">${showCarData ? (device.product_name || '-') : '-'}</td>
                     <td class="car-field" style="display: ${showCarFields ? '' : 'none'};">${showCarData ? (device.screen_orientation || '-') : '-'}</td>
                     <td class="car-field" style="display: ${showCarFields ? '' : 'none'};">${showCarData ? (device.screen_resolution || '-') : '-'}</td>
-                    <!-- 手机特有字段 (第13-14列) -->
+                    <!-- 手机特有字段 (第13-16列) -->
                     <td class="phone-field" style="display: ${showPhoneFields ? '' : 'none'};">${showPhoneData ? (device.system_version || '-') : '-'}</td>
                     <td class="phone-field" style="display: ${showPhoneFields ? '' : 'none'}; font-size: 12px; font-family: monospace;">${showPhoneData ? (device.imei || '-') : '-'}</td>
+                    <td class="phone-field" style="display: ${showPhoneFields ? '' : 'none'};">${showPhoneData ? (device.asset_number || '-') : '-'}</td>
+                    <td class="phone-field" style="display: ${showPhoneFields ? '' : 'none'};">${showPhoneData ? (device.purchase_amount || '-') : '-'}</td>
                     <td><span class="status-tag status-${device.status}">${device.status}</span></td>
                     <td>${device.borrower || '-'}</td>
                     <td class="location-cell">${getDeviceLocation(device)}</td>
@@ -797,6 +809,7 @@
                             <a href="/admin/pc/device/${device.id}" class="btn btn-sm btn-secondary">编辑</a>
                             ${getActionButtons(device)}
                             <button class="btn btn-sm btn-danger" onclick="deleteDevice('${device.id}')">删除</button>
+                            <button class="btn btn-sm btn-danger" style="background: #ff0000;" onclick="permanentDeleteDevice('${device.id}')" title="彻底删除，不可恢复">彻底删除</button>
                         </div>
                     </td>
                 </tr>
@@ -860,14 +873,23 @@
                 statusCounts[d.status] = (statusCounts[d.status] || 0) + 1;
             });
 
+            // 判断是否为保管人类型设备
+            const custodianTypes = ['手机', '手机卡', '其它设备'];
+            const isCustodianType = custodianTypes.includes(currentTypeFilter);
+
             // 所有可能的状态列表
-            const allStatuses = ['在库', '保管中', '借出', '已寄出', '维修中', '已损坏', '报废', '流通', '封存', '无柜号', '丢失'];
+            const allStatuses = ['在库', '保管中', '借出', '已寄出', '维修中', '已损坏', '报废', '流通', '封存', '无柜号', '无保管人', '丢失'];
 
             // 重新构建下拉框选项
             let optionsHtml = '<option value="">全部</option>';
             allStatuses.forEach(status => {
                 if (statusCounts[status]) {
-                    optionsHtml += `<option value="${status}">${status} (${statusCounts[status]})</option>`;
+                    // 对于保管人类型设备，将"无柜号"显示为"无保管人"
+                    let displayStatus = status;
+                    if (isCustodianType && status === '无柜号') {
+                        displayStatus = '无保管人';
+                    }
+                    optionsHtml += `<option value="${status}">${displayStatus} (${statusCounts[status]})</option>`;
                 }
             });
 
@@ -1151,9 +1173,9 @@
             }
         }
 
-        // 删除设备
+        // 删除设备（软删除）
         async function deleteDevice(deviceId) {
-            if (!confirm('确定要删除该设备吗？此操作不可恢复。')) return;
+            if (!confirm('确定要删除该设备吗？删除后可在回收站恢复。')) return;
 
             try {
                 const response = await fetch(`/api/devices/${deviceId}`, {
@@ -1163,6 +1185,34 @@
                 const result = await response.json();
                 if (result.success) {
                     showToast('删除成功', 'success');
+                    loadDevices();
+                } else {
+                    showToast(result.message || '删除失败', 'error');
+                }
+            } catch (error) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        // 彻底删除设备（物理删除）
+        async function permanentDeleteDevice(deviceId) {
+            if (!confirm('⚠️ 警告：彻底删除后数据将无法恢复！\n\n确定要彻底删除该设备吗？')) return;
+            if (!confirm('再次确认：此操作将永久删除设备数据，不可恢复！\n\n请输入"确认删除"以继续：')) {
+                const confirmText = prompt('请输入"确认删除"以彻底删除该设备：');
+                if (confirmText !== '确认删除') {
+                    showToast('取消删除', 'info');
+                    return;
+                }
+            }
+
+            try {
+                const response = await fetch(`/api/devices/${deviceId}/permanent-delete`, {
+                    method: 'DELETE'
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    showToast('设备已彻底删除', 'success');
                     loadDevices();
                 } else {
                     showToast(result.message || '删除失败', 'error');

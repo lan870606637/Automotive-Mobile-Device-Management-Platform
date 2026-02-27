@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}车载测试设备管理系统{% endblock %}</title>
+    <title>{% block title %}Carbit测试设备管理系统{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='pc/pc_style.css') }}">
     {% block extra_css %}{% endblock %}
 </head>
@@ -54,12 +54,24 @@
                     <span class="nav-icon">🏆</span>
                     <span class="nav-text">用户排行榜</span>
                 </a>
+                <a href="{{ url_for('pc_profile') }}" class="nav-item {% if active_nav == 'profile' %}active{% endif %}">
+                    <span class="nav-icon">👤</span>
+                    <span class="nav-text">个人资料</span>
+                </a>
             </nav>
             <div class="sidebar-footer">
-                <div class="user-info-mini">
-                    <span class="user-avatar-mini">{{ user.borrower_name[0] if user.borrower_name else '?' }}</span>
-                    <span class="user-name">{{ user.borrower_name or '未设置' }}</span>
-                </div>
+                <a href="{{ url_for('pc_profile') }}" style="text-decoration: none; display: flex; align-items: center; gap: 10px; flex: 1;">
+                    <div class="user-info-mini">
+                        <span class="user-avatar-mini">
+                            {% if user.avatar %}
+                            <img src="{{ user.avatar }}" alt="头像" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">
+                            {% else %}
+                            {{ user.borrower_name[0] if user.borrower_name else '?' }}
+                            {% endif %}
+                        </span>
+                        <span class="user-name">{{ user.borrower_name or '未设置' }}</span>
+                    </div>
+                </a>
                 <a href="{{ url_for('logout') }}" class="logout-link">退出登录</a>
             </div>
         </aside>

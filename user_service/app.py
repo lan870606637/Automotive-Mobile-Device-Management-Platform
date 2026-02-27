@@ -69,12 +69,13 @@ def get_current_user():
         if u.id == user_id:
             user = u
             break
-    
+
     if user:
         return {
             'user_id': user.id,
             'email': user.email,
             'borrower_name': user.borrower_name,
+            'avatar': user.avatar,
             'is_admin': user.is_admin,
         }
     return {}
@@ -266,7 +267,12 @@ def pc_login():
         else:
             return render_template('pc/login.html', error='邮箱或密码错误，或账号已被冻结')
 
-    return render_template('pc/login.html')
+    # 获取预填充的邮箱（从URL参数或session中）
+    prefilled_email = request.args.get('email', '') or session.get('prefilled_email', '')
+    # 如果使用了session中的预填充邮箱，使用后清除
+    if 'prefilled_email' in session:
+        session.pop('prefilled_email', None)
+    return render_template('pc/login.html', prefilled_email=prefilled_email)
 
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -410,12 +416,11 @@ def change_password():
         # 修改密码
         success = api_client.change_user_password(user_id, new_password)
         if success:
-            # 根据登录设备类型跳转到不同页面
-            login_device_type = session.get('login_device_type', 'pc')
-            if login_device_type == 'pc':
-                return redirect(url_for('pc_dashboard'))
-            else:
-                return redirect(url_for('home'))
+            # 密码修改成功后，保存邮箱并清除session，要求重新登录
+            user_email = session.get('email', '')
+            session.clear()
+            session['prefilled_email'] = user_email
+            return redirect(url_for('pc_login'))
         else:
             return render_template('change_password.html', error='修改密码失败', is_first_login=user.is_first_login)
     
@@ -1018,11 +1023,20 @@ def pc_device_list():
     # 处理设备列表，添加 no_cabinet 和 is_circulating 属性
     device_list = []
     for device in devices:
-        is_no_cabinet = device.status == DeviceStatus.NO_CABINET
         is_circulating = device.status == DeviceStatus.CIRCULATING
         is_sealed = device.status == DeviceStatus.SEALED
+        
+        # 判断是否为使用保管人的设备类型（手机、手机卡、其它设备）
+        is_custodian_type = device.device_type in [DeviceType.PHONE, DeviceType.SIM_CARD, DeviceType.OTHER_DEVICE]
 
-        # 如果是无柜号筛选，只显示柜号为空的设备
+        if is_custodian_type:
+            # 手机、手机卡、其它设备：根据custodian_id判断是否有保管人
+            is_no_cabinet = not device.custodian_id or device.custodian_id.strip() == ''
+        else:
+            # 车机、仪表：根据status判断是否为无柜号状态
+            is_no_cabinet = device.status == DeviceStatus.NO_CABINET
+
+        # 如果是无柜号筛选，只显示柜号/保管人为空的设备
         if no_cabinet == '1':
             if not is_no_cabinet:
                 continue
@@ -1031,6 +1045,7 @@ def pc_device_list():
         device.no_cabinet = is_no_cabinet
         device.is_circulating = is_circulating
         device.is_sealed = is_sealed
+        device.is_custodian_type = is_custodian_type
         device_list.append(device)
 
     # 分页
@@ -2146,9 +2161,18 @@ def api_search():
                     system_version_match or imei_match or sn_match or carrier_match):
                 continue
         
-        cabinet = device.cabinet_number or ''
-        is_no_cabinet = not cabinet.strip() or cabinet.strip() == '无'
-        is_circulating = cabinet.strip() == '流转'
+        # 判断是否为使用保管人的设备类型（手机、手机卡、其它设备）
+        is_custodian_type = device.device_type in [DeviceType.PHONE, DeviceType.SIM_CARD, DeviceType.OTHER_DEVICE]
+
+        if is_custodian_type:
+            # 手机、手机卡、其它设备：根据custodian_id判断是否有保管人
+            is_no_cabinet = not device.custodian_id or device.custodian_id.strip() == ''
+            is_circulating = False  # 保管人设备不支持流通状态
+        else:
+            # 车机、仪表：根据cabinet_number判断
+            cabinet = device.cabinet_number or ''
+            is_no_cabinet = not cabinet.strip() or cabinet.strip() == '无'
+            is_circulating = cabinet.strip() == '流转'
         is_sealed = device.status == DeviceStatus.SEALED
 
         results.append({
@@ -2162,6 +2186,7 @@ def api_search():
             'no_cabinet': is_no_cabinet,
             'is_circulating': is_circulating,
             'is_sealed': is_sealed,
+            'is_custodian_type': is_custodian_type,
             # 车机和仪表字段
             'jira_address': device.jira_address or '',
             'project_attribute': device.project_attribute or '',
@@ -2175,7 +2200,9 @@ def api_search():
             'system_version': device.system_version or '',
             'imei': device.imei or '',
             'sn': device.sn or '',
-            'carrier': device.carrier or ''
+            'carrier': device.carrier or '',
+            'asset_number': device.asset_number or '',
+            'purchase_amount': device.purchase_amount or ''
         })
     
     return jsonify({'success': True, 'devices': results})
@@ -3216,6 +3243,121 @@ def api_user_like():
         })
     else:
         return jsonify({'success': False, 'message': message})
+
+
+# ==================== 个人资料API ====================
+
+@app.route('/pc/profile')
+@login_required
+def pc_profile():
+    """PC端个人资料页面"""
+    api_client.reload_data()
+    user = get_current_user()
+
+    # 获取完整用户信息（包含头像）
+    full_user = None
+    for u in api_client._users:
+        if u.id == user['user_id']:
+            full_user = u
+            break
+
+    # 获取设备统计数据（用于侧边栏显示）
+    stats = get_device_stats()
+
+    return render_template('pc/profile.html',
+                         user=user,
+                         full_user=full_user,
+                         **stats)
+
+
+@app.route('/api/upload-avatar', methods=['POST'])
+@login_required
+def api_upload_avatar():
+    """上传头像API"""
+    user = get_current_user()
+
+    if 'avatar' not in request.files:
+        return jsonify({'success': False, 'message': '请选择要上传的图片'})
+
+    file = request.files['avatar']
+    if file.filename == '':
+        return jsonify({'success': False, 'message': '请选择要上传的图片'})
+
+    # 检查文件类型
+    allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+    file_ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
+    if file_ext not in allowed_extensions:
+        return jsonify({'success': False, 'message': '只支持 png, jpg, jpeg, gif, webp 格式的图片'})
+
+    try:
+        from PIL import Image
+        import io
+
+        # 读取图片
+        image = Image.open(file.stream)
+
+        # 转换为RGB模式（处理RGBA、P模式等）
+        if image.mode in ('RGBA', 'P'):
+            image = image.convert('RGB')
+
+        # 压缩图片到最大 300x300
+        max_size = (300, 300)
+        image.thumbnail(max_size, Image.Resampling.LANCZOS)
+
+        # 生成文件名
+        filename = f"avatar_{user['user_id']}_{int(datetime.now().timestamp())}.jpg"
+
+        # 确保上传目录存在
+        upload_dir = os.path.join(app.root_path, 'static', 'uploads', 'avatars')
+        os.makedirs(upload_dir, exist_ok=True)
+
+        # 保存图片
+        filepath = os.path.join(upload_dir, filename)
+        image.save(filepath, 'JPEG', quality=85)
+
+        # 更新用户头像路径
+        avatar_url = f"/static/uploads/avatars/{filename}"
+
+        # 查找并更新用户
+        for u in api_client._users:
+            if u.id == user['user_id']:
+                u.avatar = avatar_url
+                api_client._db.save_user(u)
+                break
+
+        return jsonify({
+            'success': True,
+            'message': '头像上传成功',
+            'avatar_url': avatar_url
+        })
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'上传失败: {str(e)}'})
+
+
+@app.route('/api/update-avatar', methods=['POST'])
+@login_required
+def api_update_avatar():
+    """更新头像URL API（用于外部图片链接）"""
+    user = get_current_user()
+    data = request.json
+    avatar_url = data.get('avatar_url', '').strip()
+
+    if not avatar_url:
+        return jsonify({'success': False, 'message': '头像URL不能为空'})
+
+    # 查找并更新用户
+    for u in api_client._users:
+        if u.id == user['user_id']:
+            u.avatar = avatar_url
+            api_client._db.save_user(u)
+            break
+
+    return jsonify({
+        'success': True,
+        'message': '头像更新成功',
+        'avatar_url': avatar_url
+    })
 
 
 # ==================== 错误处理 ====================

@@ -95,6 +95,7 @@ class APIClient:
                 'rank': rank,
                 'user_id': user.id,
                 'user_name': user.borrower_name,
+                'avatar': user.avatar,
                 'count': count,
                 'title': title,
                 'star_level': star_level,
@@ -791,6 +792,16 @@ class APIClient:
             device.cabinet_number = data['cabinet']
             if device.cabinet_number != original_custodian:
                 custodian_changed = True
+            # 根据保管人名称查找并更新custodian_id
+            if device.cabinet_number:
+                for user in self._users:
+                    if user.borrower_name == device.cabinet_number:
+                        device.custodian_id = user.id
+                        break
+                else:
+                    device.custodian_id = ""
+            else:
+                device.custodian_id = ""
         if 'status' in data:
             new_status = DeviceStatus(data['status'])
             if new_status != original_status:
