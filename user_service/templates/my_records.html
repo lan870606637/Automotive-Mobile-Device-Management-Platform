@@ -61,11 +61,11 @@
                         {% endif %}
                     {% endif %}
                 {% endif %}
-                <div class="timeline-dot {% if '借出' in op_type %}dot-borrow{% elif '被转借' in op_type %}dot-return{% else %}dot-return{% endif %}"></div>
+                <div class="timeline-dot {% if '借出' in op_type %}dot-borrow{% elif '被转借' in op_type %}dot-return{% elif '悬赏' in op_type %}dot-bounty{% else %}dot-return{% endif %}"></div>
                 <div class="timeline-content">
                     <div class="record-header">
                         <span class="record-device">{{ record.device_name }}</span>
-                        <span class="record-type-badge {% if '借出' in op_type %}badge-borrow{% elif '被转借' in op_type %}badge-return{% else %}badge-return{% endif %}">
+                        <span class="record-type-badge {% if '借出' in op_type %}badge-borrow{% elif '被转借' in op_type %}badge-return{% elif '悬赏' in op_type %}badge-bounty{% else %}badge-return{% endif %}">
                             {{ op_type }}
                         </span>
                     </div>

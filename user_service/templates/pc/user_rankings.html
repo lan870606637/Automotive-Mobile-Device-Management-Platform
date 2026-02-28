@@ -13,6 +13,8 @@
         <strong>📋 排行榜规则：</strong><br>
         • <strong>借用排名：</strong>根据借用设备次数排序，前10名获得专属称号，其余按星级显示<br>
         • <strong>归还排名：</strong>根据归还设备次数排序，前10名获得专属称号，其余按星级显示<br>
+        • <strong>积分排名：</strong>根据累计积分排序，累计积分越高排名越前<br>
+        • <strong>积分规则：</strong>首次登录+50分 | 借用+5分 | 归还+10分 | 逾期-15分 | 我已找到+10分 | 我已修好+10分<br>
         • <strong>星级规则：</strong>⭐ 0-10次 | ⭐⭐ 11-50次 | ⭐⭐⭐ 51-100次 | ⭐⭐⭐⭐ 101-200次 | ⭐⭐⭐⭐⭐ 201-500次 | ⭐⭐⭐⭐⭐⭐ 501-1000次 | ⭐⭐⭐⭐⭐⭐⭐ 1001次+<br>
         • <strong>彩色星星：</strong>5星及以上显示彩色星星，彰显实力！<br>
         • <strong>点赞规则：</strong>每人每天可点赞5次，给优秀的同事加油！<br>
@@ -27,6 +29,7 @@
         <div style="display: flex; gap: 8px;">
             <button class="btn btn-sm {{ 'btn-primary' if ranking_type == 'borrow' else 'btn-default' }}" onclick="switchRanking('borrow')">借用排名</button>
             <button class="btn btn-sm {{ 'btn-primary' if ranking_type == 'return' else 'btn-default' }}" onclick="switchRanking('return')">归还排名</button>
+            <button class="btn btn-sm {{ 'btn-primary' if ranking_type == 'points' else 'btn-default' }}" onclick="switchRanking('points')">积分排名</button>
         </div>
     </div>
     <div class="card-body">
@@ -257,6 +260,18 @@
     margin-top: 2px;
 }
 
+.ranking-signature {
+    font-size: 12px;
+    color: #888;
+    font-style: italic;
+    margin-top: 4px;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: 1.4;
+}
+
 .ranking-like {
     display: flex;
     flex-direction: column;
@@ -446,7 +461,9 @@ function renderRankings() {
 
     // 显示提示
     let hintHtml = '';
-    if (remainingLikes > 0) {
+    if (currentRankingType === 'points') {
+        hintHtml = `<div class="ranking-hint">💰 积分排名根据积分多少排序，积分可正可负，积分越高排名越前</div>`;
+    } else if (remainingLikes > 0) {
         hintHtml = `<div class="ranking-hint">👍 你今天还可以点赞 <strong>${remainingLikes}</strong> 次，给优秀的同事点个赞吧！</div>`;
     } else {
         hintHtml = `<div class="ranking-hint">💤 今天的点赞次数已用完，明天再来吧！</div>`;
@@ -462,16 +479,18 @@ function renderRankings() {
         const topClass = user.rank <= 3 ? `top-${user.rank}` : 'normal';
         const numberClass = user.rank <= 3 ? `top-${user.rank}` : 'normal';
 
-        // 生成星星（5星及以上显示彩色）
+        // 生成星星（5星及以上显示彩色）- 仅用于借用/归还排名
         let starsHtml = '';
-        if (user.star_level >= 5) {
-            // 彩色星星 - 5-7星显示深彩虹色
-            const starColors = ['#c41e3a', '#e65100', '#f9a825', '#2e7d32', '#0277bd', '#1565c0', '#6a1b9a'];
-            for (let i = 0; i < user.star_level && i < 7; i++) {
-                starsHtml += `<span style="color: ${starColors[i]};">★</span>`;
+        if (currentRankingType !== 'points' && user.star_level) {
+            if (user.star_level >= 5) {
+                // 彩色星星 - 5-7星显示深彩虹色
+                const starColors = ['#c41e3a', '#e65100', '#f9a825', '#2e7d32', '#0277bd', '#1565c0', '#6a1b9a'];
+                for (let i = 0; i < user.star_level && i < 7; i++) {
+                    starsHtml += `<span style="color: ${starColors[i]};">★</span>`;
+                }
+            } else {
+                starsHtml = '⭐'.repeat(user.star_level);
             }
-        } else {
-            starsHtml = '⭐'.repeat(user.star_level);
         }
 
         // 获取用户名首字
@@ -479,11 +498,24 @@ function renderRankings() {
 
         // 检查是否是自己
         const isSelf = user.user_id === currentUserId;
-        const likeDisabled = remainingLikes <= 0 || isSelf;
+        const likeDisabled = remainingLikes <= 0 || isSelf || currentRankingType === 'points';
 
         // 前10名显示等级（称号+星级）
         let levelHtml = '';
-        if (user.title) {
+        if (currentRankingType === 'points') {
+            // 积分排名显示累计积分和称号
+            const pointsColor = user.points >= 0 ? '#52c41a' : '#ff4d4f';
+            if (user.title) {
+                // 前10名显示发光称号
+                const titleClass = `top${user.rank}`;
+                levelHtml = `<div class="ranking-title ${titleClass}">${user.title}</div>`;
+                levelHtml += `<div style="margin-top: 4px; font-size: 13px; color: ${pointsColor}; font-weight: 600;">${user.points} 累计积分</div>`;
+            } else {
+                // 10名以后只显示累计积分
+                levelHtml = `<div class="ranking-title-placeholder" style="height: 22px; margin-bottom: 2px;"></div>`;
+                levelHtml += `<div style="font-size: 13px; color: ${pointsColor}; font-weight: 600;">${user.points} 累计积分</div>`;
+            }
+        } else if (user.title) {
             // 前10名称号添加特效class
             const titleClass = `top${user.rank}`;
             levelHtml = `<div class="ranking-title ${titleClass}">${user.title}</div>`;
@@ -499,6 +531,19 @@ function renderRankings() {
             ? `<img src="${user.avatar}" alt="头像" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">`
             : avatarText;
 
+        // 个性签名显示
+        const signatureHtml = user.signature
+            ? `<div class="ranking-signature" title="${user.signature}">💬 ${user.signature}</div>`
+            : '';
+
+        // 统计信息显示
+        let countHtml = '';
+        if (currentRankingType === 'points') {
+            countHtml = `<div class="ranking-count">累计获得: ${user.total_earned || 0} | 累计消费: ${user.total_spent || 0}</div>`;
+        } else {
+            countHtml = `<div class="ranking-count">${currentRankingType === 'borrow' ? '借用' : '归还'} ${user.count} 次</div>`;
+        }
+
         top10Html += `
             <div class="ranking-card ${topClass}">
                 <div class="ranking-number ${numberClass}">${user.rank}</div>
@@ -506,8 +551,10 @@ function renderRankings() {
                 <div class="ranking-info">
                     <div class="ranking-name">${user.user_name} ${isSelf ? '<span style="color: #1890ff; font-size: 12px;">(你)</span>' : ''}</div>
                     ${levelHtml}
-                    <div class="ranking-count">${currentRankingType === 'borrow' ? '借用' : '归还'} ${user.count} 次</div>
+                    ${signatureHtml}
+                    ${countHtml}
                 </div>
+                ${currentRankingType !== 'points' ? `
                 <div class="ranking-like">
                     <button class="like-btn ${user.liked ? 'liked' : ''}"
                             onclick="handleLike('${user.user_id}', this)"
@@ -517,6 +564,7 @@ function renderRankings() {
                     </button>
                     <div class="like-count">${user.like_count || 0}</div>
                 </div>
+                ` : ''}
             </div>
         `;
     });
@@ -526,19 +574,21 @@ function renderRankings() {
 
     // 渲染10名以后（列表样式）
     if (others.length > 0) {
-        let othersHtml = '<table class="data-table" style="width: 100%;"><thead><tr><th style="width: 60px;">排名</th><th>用户</th><th style="width: 150px;">等级</th><th style="width: 120px;">次数</th><th style="width: 100px;">点赞</th></tr></thead><tbody>';
+        let othersHtml = '<table class="data-table" style="width: 100%;"><thead><tr><th style="width: 60px;">排名</th><th>用户</th><th style="width: 150px;">' + (currentRankingType === 'points' ? '积分' : '等级') + '</th><th style="width: 120px;">' + (currentRankingType === 'points' ? '详情' : '次数') + '</th>' + (currentRankingType !== 'points' ? '<th style="width: 100px;">点赞</th>' : '') + '</tr></thead><tbody>';
 
         others.forEach(user => {
-            // 生成星星（5星及以上显示彩色）
+            // 生成星星（5星及以上显示彩色）- 仅用于借用/归还排名
             let starsHtml = '';
-            if (user.star_level >= 5) {
-            // 彩色星星 - 5-7星显示深彩虹色
-            const starColors = ['#c41e3a', '#e65100', '#f9a825', '#2e7d32', '#0277bd', '#1565c0', '#6a1b9a'];
-            for (let i = 0; i < user.star_level && i < 7; i++) {
-                starsHtml += `<span style="color: ${starColors[i]}; font-size: 16px;">★</span>`;
-            }
-            } else {
-                starsHtml = '⭐'.repeat(user.star_level);
+            if (currentRankingType !== 'points' && user.star_level) {
+                if (user.star_level >= 5) {
+                    // 彩色星星 - 5-7星显示深彩虹色
+                    const starColors = ['#c41e3a', '#e65100', '#f9a825', '#2e7d32', '#0277bd', '#1565c0', '#6a1b9a'];
+                    for (let i = 0; i < user.star_level && i < 7; i++) {
+                        starsHtml += `<span style="color: ${starColors[i]}; font-size: 16px;">★</span>`;
+                    }
+                } else {
+                    starsHtml = '⭐'.repeat(user.star_level);
+                }
             }
 
             // 获取用户名首字
@@ -546,11 +596,23 @@ function renderRankings() {
 
             // 检查是否是自己
             const isSelf = user.user_id === currentUserId;
-            const likeDisabled = remainingLikes <= 0 || isSelf;
+            const likeDisabled = remainingLikes <= 0 || isSelf || currentRankingType === 'points';
 
             // 等级显示（称号+星级）
             let levelHtml = '';
-            if (user.title) {
+            if (currentRankingType === 'points') {
+                // 积分排名显示积分和称号
+                const pointsColor = user.points >= 0 ? '#52c41a' : '#ff4d4f';
+                if (user.title) {
+                    // 前10名显示称号
+                    levelHtml = `<span style="font-size: 12px; color: #1890ff; font-weight: 600; padding: 2px 8px; background: #e6f7ff; border-radius: 4px;">${user.title}</span>`;
+                    levelHtml += `<div style="margin-top: 4px; font-size: 13px; color: ${pointsColor}; font-weight: 600;">${user.points} 积分</div>`;
+                } else {
+                    // 10名以后只显示积分
+                    levelHtml = `<div style="height: 20px; margin-bottom: 2px;"></div>`;
+                    levelHtml += `<span style="font-size: 14px; color: ${pointsColor}; font-weight: 600;">${user.points} 积分</span>`;
+                }
+            } else if (user.title) {
                 levelHtml = `<span style="font-size: 12px; color: #1890ff; font-weight: 600; padding: 2px 8px; background: #e6f7ff; border-radius: 4px;">${user.title}</span>`;
                 levelHtml += `<div style="margin-top: 4px;">${starsHtml}</div>`;
             } else {
@@ -564,17 +626,34 @@ function renderRankings() {
                 ? `<img src="${user.avatar}" alt="头像" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">`
                 : avatarText;
 
+            // 个性签名显示
+            const signatureHtml = user.signature
+                ? `<div style="font-size: 11px; color: #999; font-style: italic; margin-top: 2px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">💬 ${user.signature}</div>`
+                : '';
+
+            // 统计信息显示
+            let countHtml = '';
+            if (currentRankingType === 'points') {
+                countHtml = `获得: ${user.total_earned || 0} / 消费: ${user.total_spent || 0}`;
+            } else {
+                countHtml = `${user.count} 次`;
+            }
+
             othersHtml += `
                 <tr>
                     <td><span style="display: inline-block; width: 28px; height: 28px; line-height: 28px; text-align: center; background: #f0f0f0; color: #666; border-radius: 50%; font-weight: 600; font-size: 13px;">${user.rank}</span></td>
                     <td>
                         <div style="display: flex; align-items: center; gap: 10px;">
                             <div style="width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 600; font-size: 14px; overflow: hidden;">${avatarHtml}</div>
-                            <span style="font-weight: 500;">${user.user_name} ${isSelf ? '<span style="color: #1890ff; font-size: 12px;">(你)</span>' : ''}</span>
+                            <div>
+                                <span style="font-weight: 500;">${user.user_name} ${isSelf ? '<span style="color: #1890ff; font-size: 12px;">(你)</span>' : ''}</span>
+                                ${signatureHtml}
+                            </div>
                         </div>
                     </td>
                     <td>${levelHtml}</td>
-                    <td style="color: #8c8c8c;">${user.count} 次</td>
+                    <td style="color: #8c8c8c;">${countHtml}</td>
+                    ${currentRankingType !== 'points' ? `
                     <td>
                         <div style="display: flex; align-items: center; gap: 6px;">
                             <button class="like-btn ${user.liked ? 'liked' : ''}"
@@ -586,6 +665,7 @@ function renderRankings() {
                             <span style="font-size: 13px; color: #666; font-weight: 600;">${user.like_count || 0}</span>
                         </div>
                     </td>
+                    ` : ''}
                 </tr>
             `;
         });

@@ -27,6 +27,31 @@
         <h2 style="font-size: 24px; font-weight: 600; color: #333; margin: 0 0 8px 0;">{{ user.borrower_name or '未设置' }}</h2>
         <p style="font-size: 14px; color: #666; margin: 0;">{{ user.email }}</p>
 
+        <!-- 个性签名显示/编辑区域 -->
+        <div style="margin-top: 16px; padding: 0 20px;">
+            <div id="signatureDisplay" style="display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;">
+                <span id="signatureText" style="font-size: 14px; color: #888; font-style: italic; max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    {{ full_user.signature or '✏️ 点击添加个性签名' }}
+                </span>
+                <button type="button" class="btn btn-sm btn-default" onclick="editSignature()" style="padding: 4px 12px; font-size: 12px;">
+                    编辑
+                </button>
+            </div>
+            <div id="signatureEdit" style="display: none; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;">
+                <input type="text" id="signatureInput" maxlength="100" placeholder="输入你的个性签名（最多100字）" value="{{ full_user.signature or '' }}"
+                       style="padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px; width: 300px; max-width: 100%;">
+                <div style="display: flex; gap: 6px;">
+                    <button type="button" class="btn btn-sm btn-primary" onclick="saveSignature()" style="padding: 4px 12px; font-size: 12px;">
+                        保存
+                    </button>
+                    <button type="button" class="btn btn-sm btn-default" onclick="cancelEditSignature()" style="padding: 4px 12px; font-size: 12px;">
+                        取消
+                    </button>
+                </div>
+            </div>
+            <div id="signatureHint" style="font-size: 12px; color: #999; margin-top: 4px; display: none;">最多100个字符</div>
+        </div>
+
         <div style="margin-top: 20px;">
             <button type="button" class="btn btn-primary" onclick="document.getElementById('avatarInput').click()" style="padding: 10px 24px; border-radius: 8px; font-size: 14px;">
                 📷 更换头像
@@ -215,6 +240,87 @@ function showToast(message, type = 'info') {
     setTimeout(() => {
         toast.classList.remove('show');
     }, 3000);
+}
+
+// ==================== 个性签名功能 ====================
+
+// 进入编辑模式
+function editSignature() {
+    document.getElementById('signatureDisplay').style.display = 'none';
+    document.getElementById('signatureEdit').style.display = 'flex';
+    document.getElementById('signatureHint').style.display = 'block';
+    document.getElementById('signatureInput').focus();
+}
+
+// 取消编辑
+function cancelEditSignature() {
+    document.getElementById('signatureDisplay').style.display = 'flex';
+    document.getElementById('signatureEdit').style.display = 'none';
+    document.getElementById('signatureHint').style.display = 'none';
+    // 恢复原始值
+    const originalValue = document.getElementById('signatureText').textContent.trim();
+    if (originalValue === '✏️ 点击添加个性签名') {
+        document.getElementById('signatureInput').value = '';
+    } else {
+        document.getElementById('signatureInput').value = originalValue;
+    }
+}
+
+// 保存签名
+async function saveSignature() {
+    const signatureInput = document.getElementById('signatureInput');
+    const signature = signatureInput.value.trim();
+
+    // 检查长度
+    if (signature.length > 100) {
+        showToast('签名长度不能超过100个字符', 'error');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/update-signature', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ signature: signature })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            // 更新显示
+            const signatureText = document.getElementById('signatureText');
+            if (signature) {
+                signatureText.textContent = signature;
+                signatureText.style.color = '#666';
+                signatureText.style.fontStyle = 'normal';
+            } else {
+                signatureText.textContent = '✏️ 点击添加个性签名';
+                signatureText.style.color = '#888';
+                signatureText.style.fontStyle = 'italic';
+            }
+
+            // 切换回显示模式
+            document.getElementById('signatureDisplay').style.display = 'flex';
+            document.getElementById('signatureEdit').style.display = 'none';
+            document.getElementById('signatureHint').style.display = 'none';
+
+            showToast('签名更新成功', 'success');
+        } else {
+            showToast(data.message || '保存失败', 'error');
+        }
+    } catch (error) {
+        console.error('保存签名失败:', error);
+        showToast('保存失败，请重试', 'error');
+    }
+}
+
+// 监听回车键保存
+if (document.getElementById('signatureInput')) {
+    document.getElementById('signatureInput').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            saveSignature();
+        }
+    });
 }
 </script>
 {% endblock %}

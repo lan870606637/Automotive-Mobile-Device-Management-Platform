@@ -493,12 +493,12 @@ function confirmCancel() {
         body: JSON.stringify({})
     }).then(r => r.json()).then(data => {
         if (data.success) {
-            showToast('预约已取消');
+            showToast('预约已取消', 4000);
             setTimeout(() => location.reload(), 1000);
         } else {
-            showToast(data.message || '取消失败');
+            showToast(data.message || '取消失败', 4000);
         }
-    }).catch(() => showToast('操作失败，请重试'));
+    }).catch(() => showToast('操作失败，请重试', 4000));
 
     closeModal('cancelConfirmModal');
     currentReservationId = null;
@@ -520,12 +520,12 @@ function confirmDelete() {
         body: JSON.stringify({})
     }).then(r => r.json()).then(data => {
         if (data.success) {
-            showToast('预约已删除');
+            showToast('预约已删除', 4000);
             setTimeout(() => location.reload(), 1000);
         } else {
-            showToast(data.message || '删除失败');
+            showToast(data.message || '删除失败', 4000);
         }
-    }).catch(() => showToast('操作失败，请重试'));
+    }).catch(() => showToast('操作失败，请重试', 4000));
 
     closeModal('deleteConfirmModal');
     currentReservationId = null;

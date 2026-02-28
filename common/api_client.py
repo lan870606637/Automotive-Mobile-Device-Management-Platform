@@ -72,6 +72,9 @@ class APIClient:
         self._rankings_cache['borrow'] = self._calculate_rankings('borrow')
         self._rankings_cache['return'] = self._calculate_rankings('return')
         self._rankings_cache['last_update'] = datetime.now()
+        
+        # 发放排行榜前十积分奖励
+        self._distribute_ranking_rewards()
 
     def _calculate_rankings(self, ranking_type: str = 'borrow') -> List[dict]:
         """计算排行榜数据（内部方法）"""
@@ -102,6 +105,7 @@ class APIClient:
                 'user_id': user.id,
                 'user_name': user.borrower_name,
                 'avatar': user.avatar,
+                'signature': user.signature,
                 'count': count,
                 'title': title,
                 'star_level': star_level,
@@ -109,6 +113,57 @@ class APIClient:
             })
 
         return rankings
+
+    def _distribute_ranking_rewards(self):
+        """发放排行榜前十积分奖励"""
+        from .points_service import points_service
+        from .models import PointsTransactionType
+        
+        # 获取借用和归还排行榜
+        borrow_rankings = self._rankings_cache.get('borrow', [])
+        return_rankings = self._rankings_cache.get('return', [])
+        
+        # 发放借用排行榜奖励
+        for ranking in borrow_rankings[:10]:
+            user_id = ranking['user_id']
+            rank = ranking['rank']
+            
+            # 检查今天是否已经发放过该排行榜奖励
+            today = datetime.now().strftime('%Y-%m-%d')
+            records = self._db.get_points_records(user_id)
+            already_rewarded = False
+            
+            for record in records:
+                if record.transaction_type == PointsTransactionType.RANKING_REWARD:
+                    if record.create_time:
+                        record_date = record.create_time.strftime('%Y-%m-%d') if isinstance(record.create_time, datetime) else str(record.create_time)[:10]
+                        if record_date == today and '借用' in record.description:
+                            already_rewarded = True
+                            break
+            
+            if not already_rewarded:
+                points_service.ranking_reward(user_id, rank, '借用排行')
+        
+        # 发放归还排行榜奖励
+        for ranking in return_rankings[:10]:
+            user_id = ranking['user_id']
+            rank = ranking['rank']
+            
+            # 检查今天是否已经发放过该排行榜奖励
+            today = datetime.now().strftime('%Y-%m-%d')
+            records = self._db.get_points_records(user_id)
+            already_rewarded = False
+            
+            for record in records:
+                if record.transaction_type == PointsTransactionType.RANKING_REWARD:
+                    if record.create_time:
+                        record_date = record.create_time.strftime('%Y-%m-%d') if isinstance(record.create_time, datetime) else str(record.create_time)[:10]
+                        if record_date == today and '归还' in record.description:
+                            already_rewarded = True
+                            break
+            
+            if not already_rewarded:
+                points_service.ranking_reward(user_id, rank, '归还排行')
 
     @property
     def _users(self):
@@ -1861,8 +1916,8 @@ class APIClient:
     # ==================== 用户排名和点赞功能 ====================
 
     BORROW_TITLES = [
-        "⚔️ 借物至尊", "🔥 借物霸主", "⚡ 借物狂魔", "💀 借物死神", "🌟 借物王者",
-        "🗡️ 借物战将", "🛡️ 借物勇士", "🏹 借物猎手", "🎯 借物先锋", "🔥 借物新星"
+        "👑 借物真神", "⚔️ 借物至尊", "🔥 借物霸主", "⚡ 借物狂魔", "💀 借物死神",
+        "🌟 借物王者", "🗡️ 借物战将", "🛡️ 借物勇士", "🏹 借物猎手", "🎯 借物先锋"
     ]
 
     RETURN_TITLES = [
@@ -1895,7 +1950,16 @@ class APIClient:
 
         # 返回缓存数据
         cache_key = 'borrow' if ranking_type == 'borrow' else 'return'
-        return self._rankings_cache.get(cache_key, []) or []
+        rankings = self._rankings_cache.get(cache_key, []) or []
+
+        # 实时更新签名（签名可能经常变化，从最新用户数据中获取）
+        users_map = {u.id: u for u in self._db.get_all_users()}
+        for ranking in rankings:
+            user = users_map.get(ranking['user_id'])
+            if user:
+                ranking['signature'] = user.signature
+
+        return rankings
 
     def get_user_like_count(self, user_id: str) -> int:
         """获取用户的被点赞数"""
@@ -1956,9 +2020,6 @@ class APIClient:
         
         for r in existing_reservations:
             if exclude_id and r.id == exclude_id:
-                continue
-            # 如果是自己的预约，不视为冲突
-            if current_user_id and r.reserver_id == current_user_id:
                 continue
             # 时间重叠检测
             if not (end_time <= r.start_time or start_time >= r.end_time):
@@ -2768,82 +2829,176 @@ class APIClient:
             print(f"已清理 {cleanup_count} 条旧预约记录")
     
     def send_overdue_email_reminders(self):
-        """发送逾期3天提醒邮件"""
+        """
+        发送逾期提醒邮件
+        逻辑：
+        1. 逾期前1小时发送第一次提醒
+        2. 逾期前10分钟发送第二次提醒
+        3. 逾期后每24小时发送一次提醒
+        4. 如果借用时间小于1小时，只在逾期前10分钟发送一次
+        """
         from datetime import timedelta
-        
-        # 获取所有借用中的设备
+
         all_devices = self.get_all_devices()
         now = datetime.now()
-        
-        # 按借用人分组逾期设备
-        overdue_devices_by_user: Dict[str, List[dict]] = {}
-        
+
         for device in all_devices:
-            if (device.status == DeviceStatus.BORROWED and 
-                device.expected_return_date and 
+            if (device.status == DeviceStatus.BORROWED and
+                device.expected_return_date and
                 device.borrower_id):
-                
-                # 计算逾期天数
+
+                user = self._db.get_user_by_id(device.borrower_id)
+                if not user or not user.email:
+                    continue
+
+                # 计算借用时长（从借出到预计归还的时间）
+                if device.borrow_time:
+                    borrow_duration = device.expected_return_date - device.borrow_time
+                    borrow_duration_hours = borrow_duration.total_seconds() / 3600
+                else:
+                    borrow_duration_hours = 24  # 默认24小时
+
+                # 计算距离逾期的时间差
+                time_until_overdue = device.expected_return_date - now
+                minutes_until_overdue = time_until_overdue.total_seconds() / 60
+
+                # 计算已逾期的时间
+                if now > device.expected_return_date:
+                    overdue_duration = now - device.expected_return_date
+                    overdue_hours = overdue_duration.total_seconds() / 3600
+                else:
+                    overdue_hours = 0
+
+                should_send = False
+                email_type = None
+                email_content = None
+
+                # 情况1：借用时间小于1小时，只在逾期前10分钟发送
+                if borrow_duration_hours < 1:
+                    if 5 <= minutes_until_overdue <= 10:
+                        # 检查是否已经发送过10分钟提醒
+                        if not self._db.has_email_sent_within_hours(
+                            user.id, 'overdue_10min', device.id):
+                            should_send = True
+                            email_type = 'overdue_10min'
+                            email_content = f"设备 {device.name} 将在10分钟内逾期"
+
+                else:
+                    # 情况2：借用时间大于等于1小时
+
+                    # 逾期前1小时提醒
+                    if 55 <= minutes_until_overdue <= 60:
+                        if not self._db.has_email_sent_within_hours(
+                            user.id, 'overdue_1hour', device.id):
+                            should_send = True
+                            email_type = 'overdue_1hour'
+                            email_content = f"设备 {device.name} 将在1小时内逾期"
+
+                    # 逾期前10分钟提醒
+                    elif 5 <= minutes_until_overdue <= 10:
+                        if not self._db.has_email_sent_within_hours(
+                            user.id, 'overdue_10min', device.id):
+                            should_send = True
+                            email_type = 'overdue_10min'
+                            email_content = f"设备 {device.name} 将在10分钟内逾期"
+
+                    # 逾期后每24小时提醒
+                    elif overdue_hours > 0:
+                        # 检查是否是24小时的整数倍（允许5分钟误差）
+                        hours_mod = overdue_hours % 24
+                        if hours_mod <= 0.5 or hours_mod >= 23.5:
+                            if not self._db.has_email_sent_today(
+                                user.id, 'overdue_daily', device.id):
+                                should_send = True
+                                email_type = 'overdue_daily'
+                                email_content = f"设备 {device.name} 已逾期{int(overdue_hours)}小时"
+
+                if should_send and email_type:
+                    self._send_overdue_email_async(
+                        user, device, email_type, email_content
+                    )
+
+    def _send_overdue_email_async(self, user, device, email_type: str, content: str):
+        """异步发送逾期提醒邮件"""
+        def send_email():
+            try:
+                # 计算逾期信息
+                now = datetime.now()
                 if now > device.expected_return_date:
                     overdue_days = (now.date() - device.expected_return_date.date()).days
-                    
-                    # 只处理逾期3天及以上的
-                    if overdue_days >= 3:
-                        if device.borrower_id not in overdue_devices_by_user:
-                            overdue_devices_by_user[device.borrower_id] = []
-                        
-                        overdue_devices_by_user[device.borrower_id].append({
-                            'name': device.name,
-                            'device_type': self._get_device_type_str(device),
-                            'overdue_days': overdue_days
-                        })
-        
-        # 异步发送邮件
-        def send_overdue_email(user, devices_list):
-            try:
+                    overdue_hours = int((now - device.expected_return_date).total_seconds() // 3600)
+                else:
+                    overdue_days = 0
+                    overdue_hours = 0
+
+                # 根据邮件类型确定提醒类型
+                if email_type == 'overdue_1hour':
+                    reminder_type = '1hour'
+                elif email_type == 'overdue_10min':
+                    reminder_type = '10min'
+                else:
+                    reminder_type = 'daily'
+
+                devices_data = [{
+                    'name': device.name,
+                    'device_type': self._get_device_type_str(device),
+                    'overdue_days': overdue_days if overdue_days > 0 else 1
+                }]
+
                 success = email_sender.send_overdue_reminder(
                     to_email=user.email,
                     borrower_name=user.borrower_name,
-                    devices=devices_list
+                    devices=devices_data,
+                    reminder_type=reminder_type
                 )
+
                 if success:
-                    print(f"逾期提醒邮件发送成功: {user.email}")
+                    # 记录邮件发送日志
+                    self._db.save_email_log(
+                        user_id=user.id,
+                        user_email=user.email,
+                        email_type=email_type,
+                        related_id=device.id,
+                        related_type='device',
+                        status='sent',
+                        content=content
+                    )
+                    print(f"逾期提醒邮件发送成功: {user.email} - {email_type}")
+                else:
+                    print(f"逾期提醒邮件发送失败: {user.email} - {email_type}")
+
             except Exception as e:
                 print(f"发送逾期提醒邮件失败 {user.email}: {e}")
-        
-        sent_count = 0
-        for user_id, devices in overdue_devices_by_user.items():
-            user = self._db.get_user_by_id(user_id)
-            if user and user.email:
-                # 使用线程池异步发送邮件
-                email_executor.submit(send_overdue_email, user, devices)
-                sent_count += 1
-        
-        if sent_count > 0:
-            print(f"已提交 {sent_count} 封逾期提醒邮件发送任务")
+
+        email_executor.submit(send_email)
     
     def send_reservation_pending_email_reminders(self):
-        """发送预约待确认提醒邮件"""
+        """
+        发送预约待确认提醒邮件
+        逻辑：
+        1. 预约创建后立即发送邮件
+        2. 如果未处理，每24小时后发送一次提醒
+        """
         from datetime import timedelta
-        
+
         # 获取所有待确认的预约
         pending_reservations = []
-        
+
         # 待保管人确认
         pending_reservations.extend(
             self._db.get_reservations_by_status(ReservationStatus.PENDING_CUSTODIAN.value)
         )
-        
+
         # 待借用人确认
         pending_reservations.extend(
             self._db.get_reservations_by_status(ReservationStatus.PENDING_BORROWER.value)
         )
-        
+
         # 待2人确认
         pending_reservations.extend(
             self._db.get_reservations_by_status(ReservationStatus.PENDING_BOTH.value)
         )
-        
+
         # 去重：使用预约ID去重
         seen_ids = set()
         unique_reservations = []
@@ -2851,30 +3006,7 @@ class APIClient:
             if r.id not in seen_ids:
                 seen_ids.add(r.id)
                 unique_reservations.append(r)
-        
-        # 记录已发送的邮箱，避免同一分钟内重复发送
-        sent_emails = set()
-        sent_count = 0
-        
-        # 定义异步发送邮件函数
-        def send_pending_email_async(to_email, recipient_name, device_name, device_type,
-                                     start_time, end_time, reserver_name, role):
-            try:
-                success = email_sender.send_reservation_pending_reminder(
-                    to_email=to_email,
-                    recipient_name=recipient_name,
-                    device_name=device_name,
-                    device_type=device_type,
-                    start_time=start_time,
-                    end_time=end_time,
-                    reserver_name=reserver_name,
-                    role=role
-                )
-                if success:
-                    print(f"预约确认提醒邮件发送成功: {to_email}")
-            except Exception as e:
-                print(f"发送预约确认提醒邮件失败 {to_email}: {e}")
-        
+
         for reservation in unique_reservations:
             try:
                 # 根据状态确定需要通知谁
@@ -2883,96 +3015,100 @@ class APIClient:
                     if reservation.custodian_id:
                         custodian = self._db.get_user_by_id(reservation.custodian_id)
                         if custodian and custodian.email:
-                            # 检查是否已发送过
-                            if custodian.email in sent_emails:
-                                continue
-                            # 异步发送邮件
-                            email_executor.submit(
-                                send_pending_email_async,
-                                custodian.email,
-                                custodian.borrower_name,
-                                reservation.device_name,
-                                reservation.device_type,
-                                reservation.start_time,
-                                reservation.end_time,
-                                reservation.reserver_name,
-                                'custodian'
+                            self._send_reservation_email_if_needed(
+                                custodian, reservation, 'custodian'
                             )
-                            sent_count += 1
-                            sent_emails.add(custodian.email)
-                
+
                 elif reservation.status == ReservationStatus.PENDING_BORROWER.value:
                     # 通知当前借用人
                     if reservation.current_borrower_id:
                         borrower = self._db.get_user_by_id(reservation.current_borrower_id)
                         if borrower and borrower.email:
-                            # 检查是否已发送过
-                            if borrower.email in sent_emails:
-                                continue
-                            # 异步发送邮件
-                            email_executor.submit(
-                                send_pending_email_async,
-                                borrower.email,
-                                borrower.borrower_name,
-                                reservation.device_name,
-                                reservation.device_type,
-                                reservation.start_time,
-                                reservation.end_time,
-                                reservation.reserver_name,
-                                'borrower'
+                            self._send_reservation_email_if_needed(
+                                borrower, reservation, 'borrower'
                             )
-                            sent_count += 1
-                            sent_emails.add(borrower.email)
-                
+
                 elif reservation.status == ReservationStatus.PENDING_BOTH.value:
                     # 通知双方
                     # 通知保管人
                     if reservation.custodian_id:
                         custodian = self._db.get_user_by_id(reservation.custodian_id)
                         if custodian and custodian.email:
-                            # 检查是否已发送过
-                            if custodian.email not in sent_emails:
-                                # 异步发送邮件
-                                email_executor.submit(
-                                    send_pending_email_async,
-                                    custodian.email,
-                                    custodian.borrower_name,
-                                    reservation.device_name,
-                                    reservation.device_type,
-                                    reservation.start_time,
-                                    reservation.end_time,
-                                    reservation.reserver_name,
-                                    'custodian'
-                                )
-                                sent_count += 1
-                                sent_emails.add(custodian.email)
+                            self._send_reservation_email_if_needed(
+                                custodian, reservation, 'custodian'
+                            )
 
                     # 通知借用人
                     if reservation.current_borrower_id:
                         borrower = self._db.get_user_by_id(reservation.current_borrower_id)
                         if borrower and borrower.email:
-                            # 检查是否已发送过
-                            if borrower.email not in sent_emails:
-                                # 异步发送邮件
-                                email_executor.submit(
-                                    send_pending_email_async,
-                                    borrower.email,
-                                    borrower.borrower_name,
-                                    reservation.device_name,
-                                    reservation.device_type,
-                                    reservation.start_time,
-                                    reservation.end_time,
-                                    reservation.reserver_name,
-                                    'borrower'
-                                )
-                                sent_count += 1
-                                sent_emails.add(borrower.email)
-            
+                            self._send_reservation_email_if_needed(
+                                borrower, reservation, 'borrower'
+                            )
+
             except Exception as e:
                 print(f"发送预约待确认提醒邮件失败 {reservation.id}: {e}")
-        
-        if sent_count > 0:
-            print(f"已提交 {sent_count} 封预约待确认提醒邮件发送任务")
+
+    def _send_reservation_email_if_needed(self, user, reservation, role: str):
+        """
+        检查并发送预约邮件
+        逻辑：
+        1. 如果从未发送过，立即发送
+        2. 如果已发送过，每24小时发送一次
+        """
+        email_type = f'reservation_pending_{role}'
+
+        # 检查是否已经发送过
+        last_sent = self._db.get_last_email_sent_time(user.id, email_type, reservation.id)
+
+        should_send = False
+        if not last_sent:
+            # 从未发送过，立即发送
+            should_send = True
+        else:
+            # 检查是否已经过了24小时
+            time_since_last = datetime.now() - last_sent
+            if time_since_last.total_seconds() >= 24 * 3600:
+                should_send = True
+
+        if should_send:
+            self._send_reservation_email_async(user, reservation, role, email_type)
+
+    def _send_reservation_email_async(self, user, reservation, role: str, email_type: str):
+        """异步发送预约提醒邮件"""
+        def send_email():
+            try:
+                success = email_sender.send_reservation_pending_reminder(
+                    to_email=user.email,
+                    recipient_name=user.borrower_name,
+                    device_name=reservation.device_name,
+                    device_type=reservation.device_type,
+                    start_time=reservation.start_time,
+                    end_time=reservation.end_time,
+                    reserver_name=reservation.reserver_name,
+                    role=role
+                )
+
+                if success:
+                    # 记录邮件发送日志
+                    content = f"预约确认提醒：{reservation.reserver_name} 预约了 {reservation.device_name}"
+                    self._db.save_email_log(
+                        user_id=user.id,
+                        user_email=user.email,
+                        email_type=email_type,
+                        related_id=reservation.id,
+                        related_type='reservation',
+                        status='sent',
+                        content=content
+                    )
+                    print(f"预约确认提醒邮件发送成功: {user.email} - {role}")
+                else:
+                    print(f"预约确认提醒邮件发送失败: {user.email} - {role}")
+
+            except Exception as e:
+                print(f"发送预约确认提醒邮件失败 {user.email}: {e}")
+
+        email_executor.submit(send_email)
 
 
 # 全局 API 客户端实例

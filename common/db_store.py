@@ -6,12 +6,13 @@
 import os
 import sqlite3
 import threading
+import uuid
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from contextlib import contextmanager
 
-from .models import Device, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, OperationLog, Admin, Notification, Announcement, UserLike, Reservation
-from .models import DeviceStatus, DeviceType, OperationType, ReservationStatus
+from .models import Device, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, OperationLog, Admin, Notification, Announcement, UserLike, Reservation, UserPoints, PointsRecord, Bounty
+from .models import DeviceStatus, DeviceType, OperationType, ReservationStatus, PointsTransactionType, BountyStatus
 
 # 导入配置
 from .config import DB_TYPE, SQLITE_DB_PATH, MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE
@@ -170,12 +171,22 @@ def init_database():
         _migrate_mysql_add_borrower_id()
         # 检查并添加 avatar 列（如果不存在）
         _migrate_mysql_add_avatar()
+        # 检查并添加 signature 列（如果不存在）
+        _migrate_mysql_add_signature()
         # 检查并添加 asset_number 和 purchase_amount 列（如果不存在）
         _migrate_mysql_add_asset_fields()
         # 检查并添加 custodian_id 列（如果不存在）
         _migrate_mysql_add_custodian_id()
+        # 检查并添加 previous_status 列（如果不存在）
+        _migrate_mysql_add_previous_status()
         # 创建 reservations 表
         _migrate_mysql_create_reservations()
+        # 创建邮件发送记录表
+        _migrate_mysql_create_email_logs()
+        # 创建积分相关表
+        _migrate_mysql_create_points_tables()
+        # 创建悬赏表
+        _migrate_mysql_create_bounties_table()
         return
 
     # SQLite初始化逻辑...
@@ -239,14 +250,29 @@ def init_database():
         # 检查并添加 avatar 列到 users 表（如果表已存在但缺少该列）
         _migrate_sqlite_add_avatar(cursor)
 
+        # 检查并添加 signature 列到 users 表（如果表已存在但缺少该列）
+        _migrate_sqlite_add_signature(cursor)
+
         # 检查并添加 asset_number 和 purchase_amount 列
         _migrate_sqlite_add_asset_fields(cursor)
 
         # 检查并添加 custodian_id 列
         _migrate_sqlite_add_custodian_id(cursor)
 
+        # 检查并添加 previous_status 列
+        _migrate_sqlite_add_previous_status(cursor)
+
         # 创建 reservations 表
         _migrate_sqlite_create_reservations(cursor)
+
+        # 创建邮件发送记录表
+        _migrate_sqlite_create_email_logs(cursor)
+
+        # 创建积分相关表
+        _migrate_sqlite_create_points_tables(cursor)
+
+        # 创建悬赏表
+        _migrate_sqlite_create_bounties_table(cursor)
 
         # 创建其他表...
         # (省略其他表的创建代码，保持原有逻辑)
@@ -302,6 +328,32 @@ def _migrate_mysql_add_avatar():
                 print("✓ MySQL: 已添加 avatar 列到 users 表")
     except Exception as e:
         print(f"⚠ MySQL avatar 迁移警告: {e}")
+
+
+def _migrate_sqlite_add_signature(cursor):
+    """SQLite: 检查并添加 signature 列到 users 表"""
+    try:
+        cursor.execute("SELECT signature FROM users LIMIT 1")
+    except sqlite3.OperationalError:
+        # 列不存在，添加它
+        cursor.execute("ALTER TABLE users ADD COLUMN signature TEXT DEFAULT ''")
+        print("✓ SQLite: 已添加 signature 列到 users 表")
+
+
+def _migrate_mysql_add_signature():
+    """MySQL: 检查并添加 signature 列到 users 表"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT signature FROM users LIMIT 1")
+            except Exception:
+                # 列不存在，添加它
+                cursor.execute("ALTER TABLE users ADD COLUMN signature VARCHAR(255) DEFAULT ''")
+                conn.commit()
+                print("✓ MySQL: 已添加 signature 列到 users 表")
+    except Exception as e:
+        print(f"⚠ MySQL signature 迁移警告: {e}")
 
 
 def _migrate_sqlite_add_asset_fields(cursor):
@@ -369,6 +421,32 @@ def _migrate_mysql_add_custodian_id():
                 print("✓ MySQL: 已添加 custodian_id 列到 devices 表")
     except Exception as e:
         print(f"⚠ MySQL custodian_id 迁移警告: {e}")
+
+
+def _migrate_sqlite_add_previous_status(cursor):
+    """SQLite: 检查并添加 previous_status 列到 devices 表"""
+    try:
+        cursor.execute("SELECT previous_status FROM devices LIMIT 1")
+    except sqlite3.OperationalError:
+        # 列不存在，添加它
+        cursor.execute("ALTER TABLE devices ADD COLUMN previous_status TEXT")
+        print("✓ SQLite: 已添加 previous_status 列到 devices 表")
+
+
+def _migrate_mysql_add_previous_status():
+    """MySQL: 检查并添加 previous_status 列到 devices 表"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT previous_status FROM devices LIMIT 1")
+            except Exception:
+                # 列不存在，添加它
+                cursor.execute("ALTER TABLE devices ADD COLUMN previous_status VARCHAR(32)")
+                conn.commit()
+                print("✓ MySQL: 已添加 previous_status 列到 devices 表")
+    except Exception as e:
+        print(f"⚠ MySQL previous_status 迁移警告: {e}")
 
 
 def _migrate_sqlite_create_reservations(cursor):
@@ -461,6 +539,54 @@ def _migrate_mysql_create_reservations():
         print(f"⚠ MySQL reservations 表迁移警告: {e}")
 
 
+def _migrate_sqlite_create_email_logs(cursor):
+    """SQLite: 创建邮件发送记录表"""
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS email_logs (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            user_email TEXT NOT NULL,
+            email_type TEXT NOT NULL,
+            related_id TEXT,
+            related_type TEXT,
+            sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            status TEXT DEFAULT 'sent',
+            content TEXT
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_email_logs_user ON email_logs(user_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_email_logs_type ON email_logs(email_type)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_email_logs_sent_at ON email_logs(sent_at)')
+    print("✓ SQLite: 已创建 email_logs 表")
+
+
+def _migrate_mysql_create_email_logs():
+    """MySQL: 创建邮件发送记录表"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS email_logs (
+                    id VARCHAR(64) PRIMARY KEY,
+                    user_id VARCHAR(64) NOT NULL,
+                    user_email VARCHAR(255) NOT NULL,
+                    email_type VARCHAR(32) NOT NULL,
+                    related_id VARCHAR(64),
+                    related_type VARCHAR(32),
+                    sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    status VARCHAR(16) DEFAULT 'sent',
+                    content TEXT,
+                    INDEX idx_user (user_id),
+                    INDEX idx_type (email_type),
+                    INDEX idx_sent_at (sent_at)
+                )
+            ''')
+            conn.commit()
+            print("✓ MySQL: 已创建 email_logs 表")
+    except Exception as e:
+        print(f"⚠ MySQL email_logs 表迁移警告: {e}")
+
+
 class DatabaseStore:
     """数据库存储类"""
     
@@ -527,13 +653,13 @@ class DatabaseStore:
                     ship_time = %s, ship_remark = %s, ship_by = %s,
                     pre_ship_borrower = %s, pre_ship_borrow_time = %s,
                     pre_ship_expected_return_date = %s, lost_time = %s,
-                    damage_reason = %s, damage_time = %s, previous_borrower = %s,
+                    damage_reason = %s, damage_time = %s, previous_borrower = %s, previous_status = %s,
                     sn = %s, system_version = %s, imei = %s, carrier = %s,
                     software_version = %s, hardware_version = %s,
                     project_attribute = %s, connection_method = %s,
                     os_version = %s, os_platform = %s, product_name = %s,
                     screen_orientation = %s, screen_resolution = %s,
-                    asset_number = %s, purchase_amount = %s
+                    asset_number = %s, purchase_amount = %s, is_deleted = %s
                     WHERE id = %s
                 """ if IS_MYSQL else """UPDATE devices SET
                     name = ?, device_type = ?, model = ?, cabinet_number = ?,
@@ -543,13 +669,13 @@ class DatabaseStore:
                     ship_time = ?, ship_remark = ?, ship_by = ?,
                     pre_ship_borrower = ?, pre_ship_borrow_time = ?,
                     pre_ship_expected_return_date = ?, lost_time = ?,
-                    damage_reason = ?, damage_time = ?, previous_borrower = ?,
+                    damage_reason = ?, damage_time = ?, previous_borrower = ?, previous_status = ?,
                     sn = ?, system_version = ?, imei = ?, carrier = ?,
                     software_version = ?, hardware_version = ?,
                     project_attribute = ?, connection_method = ?,
                     os_version = ?, os_platform = ?, product_name = ?,
                     screen_orientation = ?, screen_resolution = ?,
-                    asset_number = ?, purchase_amount = ?
+                    asset_number = ?, purchase_amount = ?, is_deleted = ?
                     WHERE id = ?
                 """
 
@@ -563,13 +689,14 @@ class DatabaseStore:
                     device.pre_ship_borrower, format_datetime(device.pre_ship_borrow_time),
                     format_datetime(device.pre_ship_expected_return_date),
                     format_datetime(device.lost_time), device.damage_reason,
-                    format_datetime(device.damage_time), device.previous_borrower,
+                    format_datetime(device.damage_time), device.previous_borrower, device.previous_status,
                     device.sn, device.system_version, device.imei, device.carrier,
                     device.software_version, device.hardware_version,
                     device.project_attribute, device.connection_method,
                     device.os_version, device.os_platform, device.product_name,
                     device.screen_orientation, device.screen_resolution,
                     device.asset_number, device.purchase_amount,
+                    1 if device.is_deleted else 0,
                     device.id
                 )
                 cursor.execute(sql, params)
@@ -581,25 +708,25 @@ class DatabaseStore:
                     entry_source, expected_return_date, admin_operator, ship_time,
                     ship_remark, ship_by, pre_ship_borrower, pre_ship_borrow_time,
                     pre_ship_expected_return_date, lost_time, damage_reason,
-                    damage_time, previous_borrower, sn, system_version, imei,
+                    damage_time, previous_borrower, previous_status, sn, system_version, imei,
                     carrier, software_version, hardware_version, project_attribute,
                     connection_method, os_version, os_platform, product_name,
-                    screen_orientation, screen_resolution, asset_number, purchase_amount
+                    screen_orientation, screen_resolution, asset_number, purchase_amount, is_deleted
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """ if IS_MYSQL else """INSERT INTO devices (
                     id, name, device_type, model, cabinet_number, status, remark,
                     jira_address, borrower, borrower_id, custodian_id, phone, borrow_time, location, reason,
                     entry_source, expected_return_date, admin_operator, ship_time,
                     ship_remark, ship_by, pre_ship_borrower, pre_ship_borrow_time,
                     pre_ship_expected_return_date, lost_time, damage_reason,
-                    damage_time, previous_borrower, sn, system_version, imei,
+                    damage_time, previous_borrower, previous_status, sn, system_version, imei,
                     carrier, software_version, hardware_version, project_attribute,
                     connection_method, os_version, os_platform, product_name,
-                    screen_orientation, screen_resolution, asset_number, purchase_amount
+                    screen_orientation, screen_resolution, asset_number, purchase_amount, is_deleted
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
 
                 params = (
@@ -613,13 +740,14 @@ class DatabaseStore:
                     format_datetime(device.pre_ship_borrow_time),
                     format_datetime(device.pre_ship_expected_return_date),
                     format_datetime(device.lost_time), device.damage_reason,
-                    format_datetime(device.damage_time), device.previous_borrower,
+                    format_datetime(device.damage_time), device.previous_borrower, device.previous_status,
                     device.sn, device.system_version, device.imei, device.carrier,
                     device.software_version, device.hardware_version,
                     device.project_attribute, device.connection_method,
                     device.os_version, device.os_platform, device.product_name,
                     device.screen_orientation, device.screen_resolution,
-                    device.asset_number, device.purchase_amount
+                    device.asset_number, device.purchase_amount,
+                    1 if device.is_deleted else 0
                 )
                 cursor.execute(sql, params)
             
@@ -688,16 +816,16 @@ class DatabaseStore:
             
             if exists:
                 sql = """UPDATE users SET
-                    email = %s, password = %s, borrower_name = %s, avatar = %s,
+                    email = %s, password = %s, borrower_name = %s, avatar = %s, signature = %s,
                     borrow_count = %s, return_count = %s, is_frozen = %s, is_admin = %s, is_deleted = %s, is_first_login = %s
                     WHERE id = %s
                 """ if IS_MYSQL else """UPDATE users SET
-                    email = ?, password = ?, borrower_name = ?, avatar = ?,
+                    email = ?, password = ?, borrower_name = ?, avatar = ?, signature = ?,
                     borrow_count = ?, return_count = ?, is_frozen = ?, is_admin = ?, is_deleted = ?, is_first_login = ?
                     WHERE id = ?
                 """
                 params = (
-                    user.email, user.password, user.borrower_name, user.avatar,
+                    user.email, user.password, user.borrower_name, user.avatar, user.signature,
                     user.borrow_count, user.return_count,
                     1 if user.is_frozen else 0,
                     1 if user.is_admin else 0,
@@ -708,17 +836,17 @@ class DatabaseStore:
                 cursor.execute(sql, params)
             else:
                 sql = """INSERT INTO users (
-                    id, email, password, borrower_name, avatar, borrow_count,
+                    id, email, password, borrower_name, avatar, signature, borrow_count,
                     return_count, is_frozen, is_admin, is_deleted, is_first_login, create_time
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, %s, CURRENT_TIMESTAMP)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, %s, CURRENT_TIMESTAMP)
                 """ if IS_MYSQL else """INSERT INTO users (
-                    id, email, password, borrower_name, avatar, borrow_count,
+                    id, email, password, borrower_name, avatar, signature, borrow_count,
                     return_count, is_frozen, is_admin, is_deleted, is_first_login, create_time
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, CURRENT_TIMESTAMP)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, CURRENT_TIMESTAMP)
                 """
                 params = (
                     user.id, user.email, user.password,
-                    user.borrower_name, user.avatar, user.borrow_count, user.return_count,
+                    user.borrower_name, user.avatar, user.signature, user.borrow_count, user.return_count,
                     1 if user.is_frozen else 0,
                     1 if user.is_admin else 0,
                     1 if user.is_first_login else 0
@@ -1064,8 +1192,8 @@ class DatabaseStore:
                     params.append(status)
             
             if active_only:
-                # 只获取未结束的有效预约
-                sql += " AND end_time > %s AND status NOT IN ('已取消', '已拒绝', '已过期')" if IS_MYSQL else " AND end_time > ? AND status NOT IN ('已取消', '已拒绝', '已过期')"
+                # 只获取未结束的有效预约（排除已取消、已拒绝、已过期、已转借用的预约）
+                sql += " AND end_time > %s AND status NOT IN ('已取消', '已拒绝', '已过期', '已转借用')" if IS_MYSQL else " AND end_time > ? AND status NOT IN ('已取消', '已拒绝', '已过期', '已转借用')"
                 params.append(format_datetime(datetime.now()))
             
             sql += " ORDER BY start_time ASC"
@@ -1073,6 +1201,109 @@ class DatabaseStore:
             cursor.execute(sql, tuple(params))
             rows = cursor.fetchall()
             return [Reservation.from_dict(row_to_dict(row)) for row in rows]
+
+    # ========== 邮件发送记录相关操作 ==========
+
+    def save_email_log(self, user_id: str, user_email: str, email_type: str,
+                       related_id: str = None, related_type: str = None,
+                       status: str = 'sent', content: str = None) -> bool:
+        """保存邮件发送记录"""
+        with get_db_transaction() as conn:
+            cursor = conn.cursor()
+            email_id = str(uuid.uuid4())
+            sent_at = format_datetime(datetime.now())
+            
+            cursor.execute(
+                """INSERT INTO email_logs 
+                   (id, user_id, user_email, email_type, related_id, related_type, sent_at, status, content)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""" if IS_MYSQL else
+                """INSERT INTO email_logs 
+                   (id, user_id, user_email, email_type, related_id, related_type, sent_at, status, content)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (email_id, user_id, user_email, email_type, related_id, related_type, sent_at, status, content)
+            )
+            return True
+
+    def get_email_logs_by_user(self, user_id: str, email_type: str = None, 
+                                limit: int = None) -> List[Dict[str, Any]]:
+        """获取用户的邮件发送记录"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            if email_type:
+                cursor.execute(
+                    """SELECT * FROM email_logs 
+                       WHERE user_id = %s AND email_type = %s 
+                       ORDER BY sent_at DESC""" if IS_MYSQL else
+                    """SELECT * FROM email_logs 
+                       WHERE user_id = ? AND email_type = ? 
+                       ORDER BY sent_at DESC""",
+                    (user_id, email_type)
+                )
+            else:
+                cursor.execute(
+                    """SELECT * FROM email_logs 
+                       WHERE user_id = %s 
+                       ORDER BY sent_at DESC""" if IS_MYSQL else
+                    """SELECT * FROM email_logs 
+                       WHERE user_id = ? 
+                       ORDER BY sent_at DESC""",
+                    (user_id,)
+                )
+            rows = cursor.fetchall()
+            results = []
+            for row in rows:
+                row_dict = row_to_dict(row)
+                if limit and len(results) >= limit:
+                    break
+                results.append(row_dict)
+            return results
+
+    def get_last_email_sent_time(self, user_id: str, email_type: str, 
+                                  related_id: str = None) -> Optional[datetime]:
+        """获取指定类型邮件的最后发送时间"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            if related_id:
+                cursor.execute(
+                    """SELECT sent_at FROM email_logs 
+                       WHERE user_id = %s AND email_type = %s AND related_id = %s
+                       ORDER BY sent_at DESC LIMIT 1""" if IS_MYSQL else
+                    """SELECT sent_at FROM email_logs 
+                       WHERE user_id = ? AND email_type = ? AND related_id = ?
+                       ORDER BY sent_at DESC LIMIT 1""",
+                    (user_id, email_type, related_id)
+                )
+            else:
+                cursor.execute(
+                    """SELECT sent_at FROM email_logs 
+                       WHERE user_id = %s AND email_type = %s
+                       ORDER BY sent_at DESC LIMIT 1""" if IS_MYSQL else
+                    """SELECT sent_at FROM email_logs 
+                       WHERE user_id = ? AND email_type = ?
+                       ORDER BY sent_at DESC LIMIT 1""",
+                    (user_id, email_type)
+                )
+            row = cursor.fetchone()
+            if row:
+                return parse_datetime(row['sent_at'] if IS_MYSQL else row[0])
+            return None
+
+    def has_email_sent_within_hours(self, user_id: str, email_type: str, 
+                                     hours: int, related_id: str = None) -> bool:
+        """检查指定类型邮件是否在指定小时内已发送"""
+        last_sent = self.get_last_email_sent_time(user_id, email_type, related_id)
+        if not last_sent:
+            return False
+        time_diff = datetime.now() - last_sent
+        return time_diff.total_seconds() < hours * 3600
+
+    def has_email_sent_today(self, user_id: str, email_type: str, 
+                              related_id: str = None) -> bool:
+        """检查指定类型邮件今天是否已发送"""
+        last_sent = self.get_last_email_sent_time(user_id, email_type, related_id)
+        if not last_sent:
+            return False
+        return last_sent.date() == datetime.now().date()
     
     def get_reservations_by_reserver(self, reserver_id: str, status: str = None) -> List[Reservation]:
         """获取预约人的预约列表"""
@@ -1314,3 +1545,423 @@ class DatabaseStore:
             )
             rows = cursor.fetchall()
             return [Reservation.from_dict(row_to_dict(row)) for row in rows]
+    
+    # ========== 积分相关操作 ==========
+    
+    def get_user_points(self, user_id: str) -> Optional[UserPoints]:
+        """获取用户积分"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM user_points WHERE user_id = %s" if IS_MYSQL else
+                "SELECT * FROM user_points WHERE user_id = ?",
+                (user_id,)
+            )
+            row = cursor.fetchone()
+            if row:
+                return UserPoints.from_dict(row_to_dict(row))
+            return None
+    
+    def save_user_points(self, user_points: UserPoints) -> bool:
+        """保存用户积分"""
+        with get_db_transaction() as conn:
+            cursor = conn.cursor()
+            
+            # 检查是否存在
+            cursor.execute(
+                "SELECT id FROM user_points WHERE user_id = %s" if IS_MYSQL else
+                "SELECT id FROM user_points WHERE user_id = ?",
+                (user_points.user_id,)
+            )
+            exists = cursor.fetchone()
+            
+            if exists:
+                sql = """UPDATE user_points SET
+                    points = %s, total_earned = %s, total_spent = %s, update_time = %s
+                    WHERE user_id = %s
+                """ if IS_MYSQL else """UPDATE user_points SET
+                    points = ?, total_earned = ?, total_spent = ?, update_time = ?
+                    WHERE user_id = ?
+                """
+                params = (
+                    user_points.points, user_points.total_earned, user_points.total_spent,
+                    format_datetime(datetime.now()), user_points.user_id
+                )
+            else:
+                sql = """INSERT INTO user_points (
+                    id, user_id, points, total_earned, total_spent, update_time
+                ) VALUES (%s, %s, %s, %s, %s, %s)
+                """ if IS_MYSQL else """INSERT INTO user_points (
+                    id, user_id, points, total_earned, total_spent, update_time
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """
+                params = (
+                    user_points.id, user_points.user_id, user_points.points,
+                    user_points.total_earned, user_points.total_spent, format_datetime(datetime.now())
+                )
+            
+            cursor.execute(sql, params)
+            return True
+    
+    def add_points_record(self, record: PointsRecord) -> bool:
+        """添加积分记录"""
+        with get_db_transaction() as conn:
+            cursor = conn.cursor()
+            sql = """INSERT INTO points_records (
+                id, user_id, transaction_type, points_change, points_after,
+                description, related_id, create_time
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """ if IS_MYSQL else """INSERT INTO points_records (
+                id, user_id, transaction_type, points_change, points_after,
+                description, related_id, create_time
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            params = (
+                record.id, record.user_id,
+                record.transaction_type.value if record.transaction_type else None,
+                record.points_change, record.points_after,
+                record.description, record.related_id, format_datetime(record.create_time)
+            )
+            cursor.execute(sql, params)
+            return True
+    
+    def get_points_records(self, user_id: str, limit: int = None) -> List[PointsRecord]:
+        """获取用户积分记录"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            if limit:
+                cursor.execute(
+                    "SELECT * FROM points_records WHERE user_id = %s ORDER BY create_time DESC LIMIT %s" if IS_MYSQL else
+                    "SELECT * FROM points_records WHERE user_id = ? ORDER BY create_time DESC LIMIT ?",
+                    (user_id, limit)
+                )
+            else:
+                cursor.execute(
+                    "SELECT * FROM points_records WHERE user_id = %s ORDER BY create_time DESC" if IS_MYSQL else
+                    "SELECT * FROM points_records WHERE user_id = ? ORDER BY create_time DESC",
+                    (user_id,)
+                )
+            rows = cursor.fetchall()
+            return [PointsRecord.from_dict(row_to_dict(row)) for row in rows]
+    
+    def get_all_user_points(self) -> List[UserPoints]:
+        """获取所有用户积分（用于排行榜）"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM user_points ORDER BY points DESC")
+            rows = cursor.fetchall()
+            return [UserPoints.from_dict(row_to_dict(row)) for row in rows]
+    
+    # ========== 悬赏相关操作 ==========
+    
+    def get_bounty_by_id(self, bounty_id: str) -> Optional[Bounty]:
+        """根据ID获取悬赏"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM bounties WHERE id = %s" if IS_MYSQL else
+                "SELECT * FROM bounties WHERE id = ?",
+                (bounty_id,)
+            )
+            row = cursor.fetchone()
+            if row:
+                return Bounty.from_dict(row_to_dict(row))
+            return None
+    
+    def get_all_bounties(self, status: str = None, limit: int = None) -> List[Bounty]:
+        """获取所有悬赏"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            sql = "SELECT * FROM bounties"
+            params = []
+            
+            if status:
+                sql += " WHERE status = %s" if IS_MYSQL else " WHERE status = ?"
+                params.append(status)
+            
+            sql += " ORDER BY create_time DESC"
+            
+            if limit:
+                sql += " LIMIT %s" if IS_MYSQL else " LIMIT ?"
+                params.append(limit)
+            
+            cursor.execute(sql, tuple(params) if params else ())
+            rows = cursor.fetchall()
+            return [Bounty.from_dict(row_to_dict(row)) for row in rows]
+    
+    def get_bounties_by_publisher(self, publisher_id: str) -> List[Bounty]:
+        """获取用户发布的悬赏"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM bounties WHERE publisher_id = %s ORDER BY create_time DESC" if IS_MYSQL else
+                "SELECT * FROM bounties WHERE publisher_id = ? ORDER BY create_time DESC",
+                (publisher_id,)
+            )
+            rows = cursor.fetchall()
+            return [Bounty.from_dict(row_to_dict(row)) for row in rows]
+    
+    def get_bounties_by_claimer(self, claimer_id: str) -> List[Bounty]:
+        """获取用户认领的悬赏"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM bounties WHERE claimer_id = %s ORDER BY create_time DESC" if IS_MYSQL else
+                "SELECT * FROM bounties WHERE claimer_id = ? ORDER BY create_time DESC",
+                (claimer_id,)
+            )
+            rows = cursor.fetchall()
+            return [Bounty.from_dict(row_to_dict(row)) for row in rows]
+    
+    def save_bounty(self, bounty: Bounty) -> bool:
+        """保存悬赏"""
+        with get_db_transaction() as conn:
+            cursor = conn.cursor()
+            
+            # 检查是否存在
+            cursor.execute(
+                "SELECT id FROM bounties WHERE id = %s" if IS_MYSQL else
+                "SELECT id FROM bounties WHERE id = ?",
+                (bounty.id,)
+            )
+            exists = cursor.fetchone()
+            
+            if exists:
+                sql = """UPDATE bounties SET
+                    title = %s, description = %s, publisher_id = %s, publisher_name = %s,
+                    reward_points = %s, status = %s, device_name = %s, device_id = %s,
+                    device_previous_status = %s, claim_time = %s, complete_time = %s,
+                    claimer_id = %s, claimer_name = %s, finder_description = %s
+                    WHERE id = %s
+                """ if IS_MYSQL else """UPDATE bounties SET
+                    title = ?, description = ?, publisher_id = ?, publisher_name = ?,
+                    reward_points = ?, status = ?, device_name = ?, device_id = ?,
+                    device_previous_status = ?, claim_time = ?, complete_time = ?,
+                    claimer_id = ?, claimer_name = ?, finder_description = ?
+                    WHERE id = ?
+                """
+                params = (
+                    bounty.title, bounty.description, bounty.publisher_id, bounty.publisher_name,
+                    bounty.reward_points,
+                    bounty.status.value if bounty.status else None,
+                    bounty.device_name, bounty.device_id, bounty.device_previous_status,
+                    format_datetime(bounty.claim_time), format_datetime(bounty.complete_time),
+                    bounty.claimer_id, bounty.claimer_name, bounty.finder_description,
+                    bounty.id
+                )
+            else:
+                sql = """INSERT INTO bounties (
+                    id, title, description, publisher_id, publisher_name, reward_points,
+                    status, device_name, device_id, device_previous_status, create_time,
+                    claim_time, complete_time, claimer_id, claimer_name, finder_description
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """ if IS_MYSQL else """INSERT INTO bounties (
+                    id, title, description, publisher_id, publisher_name, reward_points,
+                    status, device_name, device_id, device_previous_status, create_time,
+                    claim_time, complete_time, claimer_id, claimer_name, finder_description
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """
+                params = (
+                    bounty.id, bounty.title, bounty.description, bounty.publisher_id,
+                    bounty.publisher_name, bounty.reward_points,
+                    bounty.status.value if bounty.status else None,
+                    bounty.device_name, bounty.device_id, bounty.device_previous_status,
+                    format_datetime(bounty.create_time),
+                    format_datetime(bounty.claim_time), format_datetime(bounty.complete_time),
+                    bounty.claimer_id, bounty.claimer_name, bounty.finder_description
+                )
+            
+            cursor.execute(sql, params)
+            return True
+    
+    def delete_bounty(self, bounty_id: str) -> bool:
+        """删除悬赏"""
+        with get_db_transaction() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM bounties WHERE id = %s" if IS_MYSQL else
+                "DELETE FROM bounties WHERE id = ?",
+                (bounty_id,)
+            )
+            return cursor.rowcount > 0
+
+
+# ========== 数据库迁移函数 ==========
+
+def _migrate_sqlite_create_points_tables(cursor):
+    """SQLite: 创建积分相关表"""
+    # 创建用户积分表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_points (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL UNIQUE,
+            points INTEGER DEFAULT 0,
+            total_earned INTEGER DEFAULT 0,
+            total_spent INTEGER DEFAULT 0,
+            update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    ''')
+    
+    # 创建积分记录表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS points_records (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            transaction_type TEXT NOT NULL,
+            points_change INTEGER NOT NULL,
+            points_after INTEGER NOT NULL,
+            description TEXT,
+            related_id TEXT,
+            create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    ''')
+    
+    # 创建索引
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_points_user ON user_points(user_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_points_records_user ON points_records(user_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_points_records_time ON points_records(create_time)')
+    print("✓ SQLite: 已创建积分相关表")
+
+
+def _migrate_mysql_create_points_tables():
+    """MySQL: 创建积分相关表"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            # 创建用户积分表
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS user_points (
+                    id VARCHAR(64) PRIMARY KEY,
+                    user_id VARCHAR(64) NOT NULL UNIQUE,
+                    points INT DEFAULT 0,
+                    total_earned INT DEFAULT 0,
+                    total_spent INT DEFAULT 0,
+                    update_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id),
+                    INDEX idx_user_id (user_id)
+                )
+            ''')
+            
+            # 创建积分记录表
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS points_records (
+                    id VARCHAR(64) PRIMARY KEY,
+                    user_id VARCHAR(64) NOT NULL,
+                    transaction_type VARCHAR(32) NOT NULL,
+                    points_change INT NOT NULL,
+                    points_after INT NOT NULL,
+                    description VARCHAR(500),
+                    related_id VARCHAR(64),
+                    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id),
+                    INDEX idx_user_id (user_id),
+                    INDEX idx_create_time (create_time)
+                )
+            ''')
+            
+            conn.commit()
+            print("✓ MySQL: 已创建积分相关表")
+    except Exception as e:
+        print(f"⚠ MySQL 积分表迁移警告: {e}")
+
+
+def _migrate_sqlite_create_bounties_table(cursor):
+    """SQLite: 创建悬赏表"""
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS bounties (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            description TEXT,
+            publisher_id TEXT NOT NULL,
+            publisher_name TEXT NOT NULL,
+            reward_points INTEGER NOT NULL,
+            status TEXT DEFAULT '待认领',
+            device_name TEXT,
+            device_id TEXT,
+            device_previous_status TEXT,
+            create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            claim_time TIMESTAMP,
+            complete_time TIMESTAMP,
+            claimer_id TEXT,
+            claimer_name TEXT,
+            finder_description TEXT,
+            FOREIGN KEY (publisher_id) REFERENCES users(id)
+        )
+    ''')
+
+    # 创建索引
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_bounties_status ON bounties(status)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_bounties_publisher ON bounties(publisher_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_bounties_claimer ON bounties(claimer_id)')
+    print("✓ SQLite: 已创建悬赏表")
+
+    # 检查并添加 device_id 列
+    try:
+        cursor.execute("SELECT device_id FROM bounties LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE bounties ADD COLUMN device_id TEXT")
+        print("✓ SQLite: 已添加 device_id 列到 bounties 表")
+
+    # 检查并添加 device_previous_status 列
+    try:
+        cursor.execute("SELECT device_previous_status FROM bounties LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE bounties ADD COLUMN device_previous_status TEXT")
+        print("✓ SQLite: 已添加 device_previous_status 列到 bounties 表")
+
+
+def _migrate_mysql_create_bounties_table():
+    """MySQL: 创建悬赏表"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS bounties (
+                    id VARCHAR(64) PRIMARY KEY,
+                    title VARCHAR(255) NOT NULL,
+                    description TEXT,
+                    publisher_id VARCHAR(64) NOT NULL,
+                    publisher_name VARCHAR(255) NOT NULL,
+                    reward_points INT NOT NULL,
+                    status VARCHAR(32) DEFAULT '待认领',
+                    device_name VARCHAR(255),
+                    device_id VARCHAR(64),
+                    device_previous_status VARCHAR(32),
+                    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    claim_time DATETIME,
+                    complete_time DATETIME,
+                    claimer_id VARCHAR(64),
+                    claimer_name VARCHAR(255),
+                    finder_description TEXT,
+                    FOREIGN KEY (publisher_id) REFERENCES users(id),
+                    INDEX idx_status (status),
+                    INDEX idx_publisher (publisher_id),
+                    INDEX idx_claimer (claimer_id)
+                )
+            ''')
+
+            conn.commit()
+            print("✓ MySQL: 已创建悬赏表")
+
+            # 检查并添加 device_id 列
+            try:
+                cursor.execute("SELECT device_id FROM bounties LIMIT 1")
+            except Exception:
+                cursor.execute("ALTER TABLE bounties ADD COLUMN device_id VARCHAR(64)")
+                conn.commit()
+                print("✓ MySQL: 已添加 device_id 列到 bounties 表")
+
+            # 检查并添加 device_previous_status 列
+            try:
+                cursor.execute("SELECT device_previous_status FROM bounties LIMIT 1")
+            except Exception:
+                cursor.execute("ALTER TABLE bounties ADD COLUMN device_previous_status VARCHAR(32)")
+                conn.commit()
+                print("✓ MySQL: 已添加 device_previous_status 列到 bounties 表")
+    except Exception as e:
+        print(f"⚠ MySQL 悬赏表迁移警告: {e}")

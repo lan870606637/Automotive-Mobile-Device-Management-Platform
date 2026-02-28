@@ -1,0 +1,851 @@
+{% extends 'pc/base_pc.html' %}
+
+{% block title %}悬赏榜单 - Carbit测试设备管理系统{% endblock %}
+
+{% block content %}
+<h1 class="page-title" style="margin-bottom: 12px;">🎯 悬赏榜单</h1>
+
+<!-- 积分信息卡片 -->
+<div class="card" style="margin-bottom: 20px;">
+    <div class="card-body" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+        <div style="display: flex; align-items: center; gap: 16px;">
+            <div style="width: 60px; height: 60px; border-radius: 50%; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); display: flex; align-items: center; justify-content: center; color: white; font-size: 28px;">
+                💰
+            </div>
+            <div>
+                <div style="font-size: 14px; color: #666;">我的积分</div>
+                <div style="font-size: 32px; font-weight: 700; color: {{ '#52c41a' if user_points >= 0 else '#ff4d4f' }};">
+                    {{ user_points }}
+                </div>
+            </div>
+        </div>
+        <div style="display: flex; gap: 12px;">
+            <button class="btn btn-primary" onclick="showCreateBountyModal()">
+                <span style="margin-right: 4px;">➕</span>发布悬赏
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- 悬赏规则说明 -->
+<div style="background: linear-gradient(135deg, #fff7e6 0%, #fff1f0 100%); border: 1px solid #ffd591; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
+    <div style="font-size: 14px; color: #ad6800; line-height: 1.8;">
+        <strong>📝 悬赏规则：</strong><br>
+        • <strong>发布悬赏：</strong>需要支付10积分发布费 + 自定义悬赏积分（1-100），悬赏积分将作为奖励给找到设备的人<br>
+        • <strong>认领悬赏：</strong>找到悬赏中的设备后，点击完成悬赏并描述设备位置<br>
+        • <strong>确认完成：</strong>发布人确认后，认领人获得悬赏积分<br>
+        • <strong>取消悬赏：</strong>只能取消待认领的悬赏，取消后退还所有积分<br>
+        • <strong>积分说明：</strong>积分可正可负，发布悬赏前请确保积分充足
+    </div>
+</div>
+
+<!-- 悬赏列表 -->
+<div class="card">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <span class="card-title">📋 悬赏列表</span>
+        <div style="display: flex; gap: 8px;">
+            <button class="btn btn-sm btn-primary" onclick="filterBounties('all')">全部</button>
+            <button class="btn btn-sm btn-default" onclick="filterBounties('pending')">寻找中</button>
+            <button class="btn btn-sm btn-default" onclick="filterBounties('claimed')">待确认</button>
+            <button class="btn btn-sm btn-default" onclick="filterBounties('completed')">已完成</button>
+        </div>
+    </div>
+    <div class="card-body">
+        <div id="bountiesList">
+            {% if bounties %}
+                {% for bounty in bounties %}
+                <div class="bounty-item" data-status="{{ bounty.status.value }}" data-bounty-id="{{ bounty.id }}">
+                    <div class="bounty-header">
+                        <div class="bounty-title">{{ bounty.title }}</div>
+                        <div class="bounty-reward">
+                            <span class="reward-badge">💰 {{ bounty.reward_points }} 积分</span>
+                            <span class="status-badge status-{{ bounty.status.value }}">{{ bounty.status.value }}</span>
+                        </div>
+                    </div>
+                    <div class="bounty-content">
+                        <div class="bounty-info">
+                            <div class="info-row">
+                                <span class="info-label">🔍 寻找设备：</span>
+                                <span class="info-value">{{ bounty.device_name }}</span>
+                            </div>
+                            {% if bounty.description %}
+                            <div class="info-row">
+                                <span class="info-label">📝 悬赏描述：</span>
+                                <span class="info-value">{{ bounty.description }}</span>
+                            </div>
+                            {% endif %}
+                            <div class="info-row">
+                                <span class="info-label">👤 发布人：</span>
+                                <span class="info-value">{{ bounty.publisher_name }}</span>
+                                <span class="info-label" style="margin-left: 20px;">⏰ 发布时间：</span>
+                                <span class="info-value">{{ bounty.create_time.strftime('%Y-%m-%d %H:%M') if bounty.create_time else '-' }}</span>
+                            </div>
+                            {% if bounty.claimer_name %}
+                            <div class="info-row">
+                                <span class="info-label">🙋 认领人：</span>
+                                <span class="info-value">{{ bounty.claimer_name }}</span>
+                                {% if bounty.claim_time %}
+                                <span class="info-label" style="margin-left: 20px;">⏰ 认领时间：</span>
+                                <span class="info-value">{{ bounty.claim_time.strftime('%Y-%m-%d %H:%M') if bounty.claim_time else '-' }}</span>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                            {% if bounty.finder_description %}
+                            <div class="info-row">
+                                <span class="info-label">📍 找到位置：</span>
+                                <span class="info-value">{{ bounty.finder_description }}</span>
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="bounty-actions">
+                            {% if bounty.status.value == '待认领' %}
+                                {% if bounty.publisher_id != user.user_id %}
+                                <button class="btn btn-success" onclick="showFoundModal('{{ bounty.id }}')">已找到</button>
+                                {% else %}
+                                <button class="btn btn-danger" onclick="cancelBounty('{{ bounty.id }}')">取消悬赏</button>
+                                {% endif %}
+                            {% elif bounty.status.value == '已找到' %}
+                                {% if bounty.publisher_id == user.user_id %}
+                                <div style="display: flex; flex-direction: column; gap: 8px;">
+                                    <button class="btn btn-primary" onclick="confirmBounty('{{ bounty.id }}', true)">✅ 确认找到</button>
+                                    <button class="btn btn-default" onclick="confirmBounty('{{ bounty.id }}', false)">❌ 未找到</button>
+                                </div>
+                                <div style="margin-top: 8px; font-size: 12px; color: #666; max-width: 200px;">
+                                    📍 {{ bounty.finder_description[:30] }}{% if bounty.finder_description|length > 30 %}...{% endif %}
+                                    <br>👤 找到人: {{ bounty.claimer_name }}
+                                </div>
+                                {% endif %}
+                            {% elif bounty.status.value == '已完成' %}
+                                <span class="completed-text">✅ 已完成</span>
+                                {% if bounty.complete_time %}
+                                <span class="complete-time">{{ bounty.complete_time.strftime('%Y-%m-%d %H:%M') }}</span>
+                                {% endif %}
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="empty-state">
+                    <div class="empty-icon">🎯</div>
+                    <div class="empty-text">暂无悬赏任务</div>
+                    <div class="empty-subtext">点击"发布悬赏"按钮发布第一个悬赏吧！</div>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- 发布悬赏弹窗 -->
+<div id="createBountyModal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>🎯 发布悬赏</h3>
+            <button class="modal-close" onclick="closeCreateBountyModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label">悬赏标题 <span class="required">*</span></label>
+                <input type="text" id="bountyTitle" class="form-input" placeholder="例如：寻找iPhone 15测试机">
+            </div>
+            <div class="form-group">
+                <label class="form-label">寻找设备 <span class="required">*</span></label>
+                <div style="position: relative;">
+                    <input type="text" id="bountyDevice" class="form-input" placeholder="请输入设备名称或型号" autocomplete="off">
+                    <input type="hidden" id="bountyDeviceId" value="">
+                    <div id="deviceSearchResults" class="device-search-results" style="display: none;"></div>
+                </div>
+                <div id="selectedDeviceInfo" style="margin-top: 8px; padding: 8px 12px; background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 6px; font-size: 13px; color: #096dd9; display: none;">
+                    <span id="selectedDeviceText"></span>
+                    <button onclick="clearSelectedDevice()" style="margin-left: 8px; background: none; border: none; color: #096dd9; cursor: pointer; font-size: 12px;">✕ 清除</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">悬赏积分 <span class="required">*</span></label>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <input type="number" id="bountyPoints" class="form-input" min="1" max="100" value="10" style="width: 100px;">
+                    <span style="color: #666; font-size: 13px;">积分 (1-100)</span>
+                </div>
+                <div style="margin-top: 8px; padding: 10px; background: #f5f5f5; border-radius: 6px; font-size: 13px; color: #666;">
+                    💡 发布悬赏需要支付 <strong>10积分</strong> 发布费 + <strong>悬赏积分</strong><br>
+                    当前将扣除：<strong id="totalCost">20</strong> 积分
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">悬赏描述</label>
+                <textarea id="bountyDescription" class="form-textarea" rows="3" placeholder="请描述设备特征、可能的位置等信息（可选）"></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="closeCreateBountyModal()">取消</button>
+            <button class="btn btn-primary" onclick="submitBounty()">发布悬赏</button>
+        </div>
+    </div>
+</div>
+
+<!-- 已找到设备弹窗 -->
+<div id="foundBountyModal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>🔍 已找到设备</h3>
+            <button class="modal-close" onclick="closeFoundModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label">设备位置描述 <span class="required">*</span></label>
+                <textarea id="finderDescription" class="form-textarea" rows="4" placeholder="请描述设备的具体位置，例如：在A区3号柜第二层"></textarea>
+                <div style="margin-top: 8px; font-size: 13px; color: #666;">
+                    💡 请尽可能详细描述设备位置，方便悬赏人确认
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="closeFoundModal()">取消</button>
+            <button class="btn btn-success" onclick="submitFound()">提交</button>
+        </div>
+    </div>
+</div>
+
+<style>
+.bounty-item {
+    background: #fafafa;
+    border: 1px solid #e8e8e8;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+    transition: all 0.3s ease;
+}
+
+.bounty-item:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    border-color: #d9d9d9;
+}
+
+.bounty-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.bounty-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #262626;
+}
+
+.bounty-reward {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.reward-badge {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.status-badge {
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+}
+
+.status-待认领 {
+    background: #e6f7ff;
+    color: #1890ff;
+    border: 1px solid #91d5ff;
+}
+
+.status-已找到 {
+    background: #fff7e6;
+    color: #fa8c16;
+    border: 1px solid #ffd591;
+}
+
+.status-已完成 {
+    background: #f6ffed;
+    color: #52c41a;
+    border: 1px solid #b7eb8f;
+}
+
+.bounty-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 20px;
+}
+
+.bounty-info {
+    flex: 1;
+}
+
+.info-row {
+    margin-bottom: 8px;
+    font-size: 13px;
+}
+
+.info-label {
+    color: #8c8c8c;
+}
+
+.info-value {
+    color: #262626;
+}
+
+.bounty-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 100px;
+}
+
+.completed-text {
+    color: #52c41a;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.complete-time {
+    color: #8c8c8c;
+    font-size: 12px;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+}
+
+.empty-icon {
+    font-size: 64px;
+    margin-bottom: 16px;
+}
+
+.empty-text {
+    font-size: 16px;
+    color: #262626;
+    font-weight: 500;
+    margin-bottom: 8px;
+}
+
+.empty-subtext {
+    font-size: 14px;
+    color: #8c8c8c;
+}
+
+#createBountyModal,
+#foundBountyModal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+}
+
+#createBountyModal .modal-content,
+#foundBountyModal .modal-content {
+    background: white;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+#createBountyModal .modal-header,
+#foundBountyModal .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid #e8e8e8;
+}
+
+#createBountyModal .modal-header h3,
+#foundBountyModal .modal-header h3 {
+    margin: 0;
+    font-size: 18px;
+}
+
+#createBountyModal .modal-close,
+#foundBountyModal .modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #8c8c8c;
+}
+
+#createBountyModal .modal-body,
+#foundBountyModal .modal-body {
+    padding: 20px;
+}
+
+#createBountyModal .modal-footer,
+#foundBountyModal .modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 16px 20px;
+    border-top: 1px solid #e8e8e8;
+}
+
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 14px;
+    color: #262626;
+}
+
+.required {
+    color: #ff4d4f;
+}
+
+.form-input, .form-textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #d9d9d9;
+    border-radius: 6px;
+    font-size: 14px;
+    transition: all 0.3s;
+}
+
+.form-input:focus, .form-textarea:focus {
+    outline: none;
+    border-color: #40a9ff;
+    box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+}
+
+.form-textarea {
+    resize: vertical;
+    min-height: 80px;
+}
+
+/* 设备搜索下拉框样式 */
+.device-search-results {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border: 1px solid #d9d9d9;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    max-height: 300px;
+    overflow-y: auto;
+    z-index: 10001;
+    margin-top: 4px;
+}
+
+.device-search-item {
+    padding: 12px 16px;
+    cursor: pointer;
+    border-bottom: 1px solid #f0f0f0;
+    transition: background 0.2s;
+}
+
+.device-search-item:hover {
+    background: #f5f5f5;
+}
+
+.device-search-item:last-child {
+    border-bottom: none;
+}
+
+.device-search-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: #262626;
+    margin-bottom: 4px;
+}
+
+.device-search-info {
+    font-size: 12px;
+    color: #8c8c8c;
+}
+
+.device-search-status {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    margin-left: 8px;
+}
+
+.device-search-status-在库 {
+    background: #f6ffed;
+    color: #52c41a;
+    border: 1px solid #b7eb8f;
+}
+
+.device-search-status-借出 {
+    background: #fff7e6;
+    color: #fa8c16;
+    border: 1px solid #ffd591;
+}
+
+.device-search-status-保管中 {
+    background: #e6f7ff;
+    color: #1890ff;
+    border: 1px solid #91d5ff;
+}
+
+.device-search-status-丢失 {
+    background: #fff1f0;
+    color: #ff4d4f;
+    border: 1px solid #ffa39e;
+}
+
+.device-search-empty {
+    padding: 20px;
+    text-align: center;
+    color: #8c8c8c;
+    font-size: 13px;
+}
+</style>
+
+<script>
+let currentBountyId = null;
+let deviceSearchTimeout = null;
+
+// 监听悬赏积分输入，更新总成本
+$('#bountyPoints').on('input', function() {
+    const points = parseInt($(this).val()) || 0;
+    const total = 10 + points;
+    $('#totalCost').text(total);
+});
+
+// 设备搜索功能
+$('#bountyDevice').on('input', function() {
+    const keyword = $(this).val().trim();
+
+    // 清除之前的定时器
+    if (deviceSearchTimeout) {
+        clearTimeout(deviceSearchTimeout);
+    }
+
+    if (keyword.length < 1) {
+        $('#deviceSearchResults').hide();
+        return;
+    }
+
+    // 延迟搜索，避免频繁请求
+    deviceSearchTimeout = setTimeout(function() {
+        searchDevices(keyword);
+    }, 300);
+});
+
+// 点击设备输入框外部关闭搜索结果
+$(document).on('click', function(event) {
+    if (!$(event.target).closest('#bountyDevice, #deviceSearchResults').length) {
+        $('#deviceSearchResults').hide();
+    }
+});
+
+// 搜索设备
+function searchDevices(keyword) {
+    $.ajax({
+        url: '/api/devices/search',
+        type: 'GET',
+        data: { keyword: keyword },
+        success: function(response) {
+            if (response.success) {
+                renderDeviceSearchResults(response.devices);
+            }
+        },
+        error: function() {
+            $('#deviceSearchResults').hide();
+        }
+    });
+}
+
+// 渲染搜索结果
+function renderDeviceSearchResults(devices) {
+    const $results = $('#deviceSearchResults');
+
+    if (devices.length === 0) {
+        $results.html('<div class="device-search-empty">未找到匹配的设备</div>').show();
+        return;
+    }
+
+    let html = '';
+    devices.forEach(function(device) {
+        const statusClass = 'device-search-status-' + device.status;
+        // 使用 data 属性存储设备信息，避免 HTML 属性中的引号问题
+        html += `
+            <div class="device-search-item" data-device-id="${device.id}" data-device-name="${escapeHtml(device.name)}" data-device-model="${escapeHtml(device.model)}">
+                <div class="device-search-name">
+                    ${device.name}
+                    <span class="device-search-status ${statusClass}">${device.status}</span>
+                </div>
+                <div class="device-search-info">
+                    型号: ${device.model} | 类型: ${device.device_type} | 柜号: ${device.cabinet_number || '未分配'}
+                </div>
+            </div>
+        `;
+    });
+
+    $results.html(html).show();
+
+    // 绑定点击事件
+    $results.find('.device-search-item').on('click', function(e) {
+        e.stopPropagation();
+        const deviceId = $(this).data('device-id');
+        const deviceName = $(this).data('device-name');
+        const deviceModel = $(this).data('device-model');
+        selectDevice(deviceId, deviceName, deviceModel);
+    });
+}
+
+// HTML 转义函数
+function escapeHtml(text) {
+    if (!text) return '';
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+// 选择设备
+function selectDevice(deviceId, deviceName, deviceModel) {
+    $('#bountyDeviceId').val(deviceId);
+    $('#bountyDevice').val(deviceName);
+    $('#deviceSearchResults').hide();
+
+    // 显示已选择设备信息
+    $('#selectedDeviceText').text('已选择设备: ' + deviceName + ' (' + deviceModel + ')');
+    $('#selectedDeviceInfo').show();
+}
+
+// 清除选择的设备
+function clearSelectedDevice() {
+    $('#bountyDeviceId').val('');
+    $('#bountyDevice').val('');
+    $('#selectedDeviceInfo').hide();
+}
+
+// 显示发布悬赏弹窗
+function showCreateBountyModal() {
+    console.log('showCreateBountyModal called');
+    $('#createBountyModal').css('display', 'flex');
+    $('#bountyTitle').focus();
+}
+
+// 关闭发布悬赏弹窗
+function closeCreateBountyModal() {
+    $('#createBountyModal').css('display', 'none');
+    $('#bountyTitle').val('');
+    $('#bountyDevice').val('');
+    $('#bountyDeviceId').val('');
+    $('#bountyPoints').val(10);
+    $('#bountyDescription').val('');
+    $('#totalCost').text(20);
+    $('#deviceSearchResults').hide();
+    $('#selectedDeviceInfo').hide();
+}
+
+// 提交悬赏
+function submitBounty() {
+    console.log('submitBounty called');
+    const title = $('#bountyTitle').val().trim();
+    const deviceName = $('#bountyDevice').val().trim();
+    const deviceId = $('#bountyDeviceId').val().trim();
+    const rewardPoints = parseInt($('#bountyPoints').val());
+    const description = $('#bountyDescription').val().trim();
+    console.log('title:', title, 'deviceName:', deviceName, 'deviceId:', deviceId, 'rewardPoints:', rewardPoints);
+
+    if (!title) {
+        alert('请输入悬赏标题');
+        return;
+    }
+    if (!deviceName) {
+        alert('请输入要寻找的设备名称');
+        return;
+    }
+    if (!rewardPoints || rewardPoints < 1 || rewardPoints > 100) {
+        alert('悬赏积分必须在1-100之间');
+        return;
+    }
+
+    $.ajax({
+        url: '/api/bounties',
+        type: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({
+            title: title,
+            device_name: deviceName,
+            device_id: deviceId,
+            reward_points: rewardPoints,
+            description: description
+        }),
+        success: function(response) {
+            if (response.success) {
+                alert(response.message);
+                closeCreateBountyModal();
+                location.reload();
+            } else {
+                alert(response.message);
+            }
+        },
+        error: function() {
+            alert('发布失败，请重试');
+        }
+    });
+}
+
+// 显示已找到弹窗
+function showFoundModal(bountyId) {
+    currentBountyId = bountyId;
+    $('#foundBountyModal').css('display', 'flex');
+    $('#finderDescription').val('').focus();
+}
+
+// 关闭已找到弹窗
+function closeFoundModal() {
+    $('#foundBountyModal').css('display', 'none');
+    $('#finderDescription').val('');
+    currentBountyId = null;
+}
+
+// 提交已找到
+function submitFound() {
+    const description = $('#finderDescription').val().trim();
+
+    if (!description) {
+        alert('请描述设备位置');
+        return;
+    }
+
+    $.ajax({
+        url: '/api/bounties/' + currentBountyId + '/found',
+        type: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({
+            finder_description: description
+        }),
+        success: function(response) {
+            if (response.success) {
+                alert(response.message);
+                closeFoundModal();
+                location.reload();
+            } else {
+                alert(response.message);
+            }
+        },
+        error: function() {
+            alert('提交失败，请重试');
+        }
+    });
+}
+
+// 确认悬赏（confirmed=true确认找到，confirmed=false未找到）
+function confirmBounty(bountyId, confirmed) {
+    if (confirmed) {
+        if (!confirm('确定要确认这个悬赏吗？确认后悬赏积分将发放给找到人。')) {
+            return;
+        }
+    } else {
+        if (!confirm('确定标记为未找到吗？悬赏将重新开放，其他人可以继续寻找。')) {
+            return;
+        }
+    }
+
+    $.ajax({
+        url: '/api/bounties/' + bountyId + '/confirm',
+        type: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({
+            confirmed: confirmed
+        }),
+        success: function(response) {
+            if (response.success) {
+                alert(response.message);
+                location.reload();
+            } else {
+                alert(response.message);
+            }
+        },
+        error: function() {
+            alert('操作失败，请重试');
+        }
+    });
+}
+
+// 取消悬赏
+function cancelBounty(bountyId) {
+    if (!confirm('确定要取消这个悬赏吗？取消后积分将退还给您。')) {
+        return;
+    }
+
+    $.ajax({
+        url: '/api/bounties/' + bountyId + '/cancel',
+        type: 'POST',
+        success: function(response) {
+            if (response.success) {
+                alert(response.message);
+                location.reload();
+            } else {
+                alert(response.message);
+            }
+        },
+        error: function() {
+            alert('取消失败，请重试');
+        }
+    });
+}
+
+// 筛选悬赏
+function filterBounties(status) {
+    // 更新按钮状态
+    $('.card-header .btn').removeClass('btn-primary').addClass('btn-default');
+    event.target.classList.remove('btn-default');
+    event.target.classList.add('btn-primary');
+
+    // 筛选显示
+    if (status === 'all') {
+        $('.bounty-item').show();
+    } else {
+        $('.bounty-item').each(function() {
+            const itemStatus = $(this).data('status');
+            if (status === 'pending' && itemStatus === '待认领') {
+                $(this).show();
+            } else if (status === 'claimed' && itemStatus === '已找到') {
+                $(this).show();
+            } else if (status === 'completed' && itemStatus === '已完成') {
+                $(this).show();
+            } else {
+                $(this).hide();
+            }
+        });
+    }
+}
+
+// 点击弹窗外部关闭
+$(window).on('click', function(event) {
+    if ($(event.target).attr('id') === 'createBountyModal') {
+        closeCreateBountyModal();
+    }
+    if ($(event.target).attr('id') === 'foundBountyModal') {
+        closeFoundModal();
+    }
+});
+</script>
+{% endblock %}

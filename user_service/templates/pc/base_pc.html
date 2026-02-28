@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Carbit测试设备管理系统{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='pc/pc_style.css') }}">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     {% block extra_css %}{% endblock %}
 </head>
 <body>
@@ -54,14 +55,22 @@
                     <span class="nav-icon">🏆</span>
                     <span class="nav-text">用户排行榜</span>
                 </a>
+                <a href="{{ url_for('pc_bounties') }}" class="nav-item {% if active_nav == 'bounties' %}active{% endif %}">
+                    <span class="nav-icon">🎯</span>
+                    <span class="nav-text">悬赏榜单</span>
+                </a>
+                <a href="{{ url_for('pc_points_detail') }}" class="nav-item {% if active_nav == 'points' %}active{% endif %}">
+                    <span class="nav-icon">💰</span>
+                    <span class="nav-text">积分详情</span>
+                </a>
                 <a href="{{ url_for('pc_profile') }}" class="nav-item {% if active_nav == 'profile' %}active{% endif %}">
                     <span class="nav-icon">👤</span>
                     <span class="nav-text">个人资料</span>
                 </a>
             </nav>
             <div class="sidebar-footer">
-                <a href="{{ url_for('pc_profile') }}" style="text-decoration: none; display: flex; align-items: center; gap: 10px; flex: 1;">
-                    <div class="user-info-mini">
+                <a href="{{ url_for('pc_profile') }}" style="text-decoration: none; display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;">
+                    <div class="user-info-mini" style="flex: 1; min-width: 0;">
                         <span class="user-avatar-mini">
                             {% if user.avatar %}
                             <img src="{{ user.avatar }}" alt="头像" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">
@@ -69,7 +78,16 @@
                             {{ user.borrower_name[0] if user.borrower_name else '?' }}
                             {% endif %}
                         </span>
-                        <span class="user-name">{{ user.borrower_name or '未设置' }}</span>
+                        <div style="display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; overflow: hidden;">
+                            <span class="user-name" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ user.borrower_name or '未设置' }}</span>
+                            <span class="user-title" style="font-size: 11px; color: #8c8c8c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                {% if user_title %}
+                                    {{ user_title }}
+                                {% else %}
+                                    无称号
+                                {% endif %}
+                            </span>
+                        </div>
                     </div>
                 </a>
                 <a href="{{ url_for('logout') }}" class="logout-link">退出登录</a>
@@ -487,12 +505,28 @@
                 console.log('匹配结果数:', matches.length);
 
                 if (matches.length > 0) {
-                    suggestionsDiv.innerHTML = matches.map(device => `
-                        <div class="global-search-suggestion-item" onclick="goToDevice('${device.id}', '${device.device_type}')">
+                    suggestionsDiv.innerHTML = matches.map(device => {
+                        // 状态标签样式
+                        const statusColors = {
+                            '在库': '#52c41a',
+                            '保管中': '#1890ff',
+                            '借出': '#fa8c16',
+                            '借用中': '#fa8c16',
+                            '已寄出': '#722ed1',
+                            '已损坏': '#f5222d',
+                            '丢失': '#ff4d4f',
+                            '报废': '#8c8c8c'
+                        };
+                        const statusColor = statusColors[device.status] || '#8c8c8c';
+                        const displayStatus = device.status || '未知';
+                        return `
+                        <div class="global-search-suggestion-item" onclick="goToDeviceWithPoints('${device.id}', '${device.device_type}')">
                             <span class="suggestion-name">${escapeHtml(device.name)}</span>
                             <span class="suggestion-type">${device.device_type}</span>
+                            <span class="suggestion-status" style="font-size: 11px; padding: 2px 8px; border-radius: 4px; background-color: ${statusColor}20; color: ${statusColor}; border: 1px solid ${statusColor}40; margin-left: auto; flex-shrink: 0;">${displayStatus}</span>
                         </div>
-                    `).join('');
+                    `;
+                    }).join('');
                     suggestionsDiv.style.display = 'block';
                 } else {
                     suggestionsDiv.innerHTML = '<div class="global-search-no-result">未找到匹配的设备</div>';
@@ -502,21 +536,43 @@
         }
 
         // 处理搜索框键盘事件
-        function handleGlobalSearchKeydown(event) {
+        async function handleGlobalSearchKeydown(event) {
             if (event.key === 'Enter') {
                 const value = document.getElementById('globalDeviceSearch').value.trim();
                 if (!value) return;
-                
+
+                // 调用API添加搜索积分
+                try {
+                    const response = await fetch('/api/add-search-points', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    const data = await response.json();
+                    if (data.success && data.points_added > 0) {
+                        showToast(`🎉 搜索设备 +${data.points_added} 积分！`);
+                    }
+                } catch (error) {
+                    console.log('添加搜索积分失败:', error);
+                }
+
                 // 处理搜索词：移除所有空格
                 const searchTerm = value.toLowerCase().replace(/\s+/g, '');
-                
+
                 // 查找匹配的设备
                 const matches = allDevices.filter(device => {
                     const deviceName = (device.name || '').toLowerCase().replace(/\s+/g, '');
                     const deviceModel = (device.model || '').toLowerCase().replace(/\s+/g, '');
                     return deviceName.includes(searchTerm) || deviceModel.includes(searchTerm);
                 });
-                
+
+                // 如果没有匹配结果，显示提示
+                if (matches.length === 0) {
+                    showToast('无此设备');
+                    return;
+                }
+
                 // 如果只有一个匹配结果，直接跳转到设备详情页
                 if (matches.length === 1) {
                     goToDevice(matches[0].id, matches[0].device_type);
@@ -527,7 +583,28 @@
             }
         }
 
-        // 跳转到设备详情
+        // 跳转到设备详情（带积分）
+        async function goToDeviceWithPoints(deviceId, deviceType) {
+            // 调用API添加搜索积分
+            try {
+                const response = await fetch('/api/add-search-points', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                const data = await response.json();
+                if (data.success && data.points_added > 0) {
+                    showToast(`🎉 搜索设备 +${data.points_added} 积分！`);
+                }
+            } catch (error) {
+                console.log('添加搜索积分失败:', error);
+            }
+            // 跳转到设备详情页
+            window.location.href = `/pc/device/${deviceId}?device_type=${encodeURIComponent(deviceType)}`;
+        }
+
+        // 跳转到设备详情（不带积分，用于其他页面）
         function goToDevice(deviceId, deviceType) {
             window.location.href = `/pc/device/${deviceId}?device_type=${encodeURIComponent(deviceType)}`;
         }
@@ -626,9 +703,9 @@
                 
                 const data = await response.json();
                 if (data.success) {
-                    showToast('已同意预约');
+                    showToast('已同意预约', 4000);
                 } else {
-                    showToast(data.message || '操作失败');
+                    showToast(data.message || '操作失败', 4000);
                 }
             } catch (e) {
                 showToast('操作失败，请重试');
@@ -653,9 +730,9 @@
                 
                 const data = await response.json();
                 if (data.success) {
-                    showToast('已拒绝预约');
+                    showToast('已拒绝预约', 4000);
                 } else {
-                    showToast(data.message || '操作失败');
+                    showToast(data.message || '操作失败', 4000);
                 }
             } catch (e) {
                 showToast('操作失败，请重试');
@@ -839,14 +916,14 @@
         }
 
         // Toast提示函数
-        function showToast(message) {
+        function showToast(message, duration = 2000) {
             const toast = document.getElementById('toast');
             if (toast) {
                 toast.textContent = message;
                 toast.classList.add('show');
                 setTimeout(() => {
                     toast.classList.remove('show');
-                }, 2000);
+                }, duration);
             }
         }
     </script>
@@ -924,8 +1001,8 @@
             padding: 10px 16px;
             cursor: pointer;
             display: flex;
-            justify-content: space-between;
             align-items: center;
+            gap: 12px;
             transition: background 0.2s;
             border-bottom: 1px solid #f0f0f0;
         }
@@ -942,6 +1019,7 @@
             font-size: 14px;
             color: #333;
             font-weight: 500;
+            flex-shrink: 0;
         }
 
         .global-search-suggestion-item .suggestion-type {
@@ -950,6 +1028,7 @@
             background: #f5f5f5;
             padding: 2px 8px;
             border-radius: 4px;
+            flex-shrink: 0;
         }
 
         .global-search-no-result {

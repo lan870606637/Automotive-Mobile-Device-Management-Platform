@@ -111,17 +111,17 @@
                 {% if device.status.value == '丢失' %}
                 <div class="info-row" style="color: #ff4d4f;">
                     <span class="info-label">丢失时间</span>
-                    <span class="info-value">{{ device.lost_time.strftime('%Y-%m-%d %H:%M') }}</span>
+                    <span class="info-value">{{ device.lost_time.strftime('%Y-%m-%d %H:%M') if device.lost_time else '-' }}</span>
                 </div>
                 {% endif %}
                 {% if device.status.value == '已损坏' %}
                 <div class="info-row" style="color: #ff4d4f;">
                     <span class="info-label">损坏原因</span>
-                    <span class="info-value">{{ device.damage_reason }}</span>
+                    <span class="info-value">{{ device.damage_reason or '-' }}</span>
                 </div>
                 <div class="info-row" style="color: #ff4d4f;">
                     <span class="info-label">损坏时间</span>
-                    <span class="info-value">{{ device.damage_time.strftime('%Y-%m-%d %H:%M') }}</span>
+                    <span class="info-value">{{ device.damage_time.strftime('%Y-%m-%d %H:%M') if device.damage_time else '-' }}</span>
                 </div>
                 {% endif %}
             </div>
@@ -150,7 +150,7 @@
             <div class="card-body" style="display: flex; flex-direction: column; align-items: center; padding: 40px 20px;">
                 <!-- 第一行：我要借用 + 预约借用 并排 -->
                 <div style="display: flex; gap: 16px; margin-bottom: 16px;">
-                    <button class="btn btn-primary" onclick="openBorrowModal()" style="font-size: 20px; padding: 16px 48px; border-radius: 10px; min-width: 160px;">我要借用</button>
+                    <button class="btn btn-primary" onclick="openBorrowModal()" style="font-size: 20px; padding: 16px 48px; border-radius: 10px; min-width: 160px;">立即借用</button>
                     <button class="btn btn-success" onclick="openReserveModal()" style="font-size: 20px; padding: 16px 48px; border-radius: 10px; min-width: 160px;">预约借用</button>
                 </div>
                 <!-- 第二行：查看预约日历 -->
@@ -279,6 +279,73 @@
             </div>
         </div>
         {% endif %}
+
+        <!-- 设备图片 -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">📷 设备图片</span>
+                <button class="btn btn-primary btn-sm" onclick="openUploadImageModal()">+ 上传图片</button>
+            </div>
+            <div class="card-body">
+                <div id="deviceImages" class="image-grid">
+                    {% if device_images %}
+                        {% for img in device_images %}
+                        <div class="image-item" data-image-id="{{ img.id }}">
+                            <img src="{{ img.url }}" alt="设备图片" onclick="openImagePreview('{{ img.url }}')">
+                            <button class="image-delete-btn" onclick="deleteImage('{{ img.id }}', event)">×</button>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="empty-state" style="padding: 40px; width: 100%;">
+                            <div class="empty-icon">📷</div>
+                            <p class="empty-title">暂无图片</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- 设备附件 -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">📎 设备附件</span>
+                <div>
+                    {% if device_attachments and device_attachments|length > 0 %}
+                    <button class="btn btn-default btn-sm" onclick="batchDownloadAttachments()" style="margin-right: 8px;">批量下载</button>
+                    {% endif %}
+                    <button class="btn btn-primary btn-sm" onclick="openUploadAttachmentModal()">+ 上传附件</button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="deviceAttachments">
+                    {% if device_attachments %}
+                    <div class="attachment-list">
+                        {% for att in device_attachments %}
+                        <div class="attachment-item" data-attachment-id="{{ att.id }}">
+                            <div class="attachment-info">
+                                <span class="attachment-icon">📄</span>
+                                <div class="attachment-details">
+                                    <div class="attachment-name">{{ att.filename }}</div>
+                                    <div class="attachment-meta">{{ att.size_formatted }} · {{ att.upload_time }}</div>
+                                </div>
+                            </div>
+                            <div class="attachment-actions">
+                                <input type="checkbox" class="attachment-checkbox" value="{{ att.id }}" onchange="updateBatchDownloadButton()">
+                                <a href="{{ att.url }}" download class="btn btn-default btn-sm">下载</a>
+                                <button class="btn btn-danger btn-sm" onclick="deleteAttachment('{{ att.id }}')">删除</button>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="empty-state" style="padding: 40px;">
+                        <div class="empty-icon">📎</div>
+                        <p class="empty-title">暂无附件</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
 
         <!-- 用户备注 -->
         <div class="card">
@@ -441,7 +508,14 @@
                     <span class="info-label">借用原因</span>
                     <span class="info-value">{{ device.reason or '-' }}</span>
                 </div>
-                {% if device.expected_return_date %}
+                {% if is_long_term_borrow %}
+                <div class="info-row">
+                    <span class="info-label">预计归还</span>
+                    <span class="info-value" style="color: #d46b08;">
+                        长期借用（无固定归还时间）
+                    </span>
+                </div>
+                {% elif device.expected_return_date %}
                 <div class="info-row">
                     <span class="info-label">预计归还</span>
                     <span class="info-value" {% if is_overdue %}style="color: #ff4d4f; font-weight: 500;"{% endif %}>
@@ -477,11 +551,14 @@
         <div class="card">
             <div class="card-header">
                 <span class="card-title">📋 借用记录</span>
+                {% if records|length > 20 %}
+                <span style="font-size: 12px; color: #999;">(显示最近20条，共{{ records|length }}条)</span>
+                {% endif %}
             </div>
             <div class="card-body">
                 {% if records %}
                 <div class="timeline">
-                    {% for record in records %}
+                    {% for record in records[:20] %}
                     <div class="timeline-item">
                         {% set op_type = record.operation_type %}
                         {% if op_type == '转借' and ('——>' in record.borrower or '->' in record.borrower) %}
@@ -507,6 +584,7 @@
                             {% if '借出' in op_type %}borrow
                             {% elif '归还' in op_type %}return
                             {% elif '被转借' in op_type %}return
+                            {% elif '悬赏' in op_type %}bounty
                             {% else %}lost{% endif %}"></div>
                         <div class="timeline-content">
                             <div class="timeline-header">
@@ -517,6 +595,7 @@
                                         {% elif '丢失' in op_type or '损坏' in op_type %}status-lost
                                         {% elif '续期' in op_type %}status-available
                                         {% elif '被转借' in op_type %}status-available
+                                        {% elif '悬赏' in op_type %}status-bounty
                                         {% else %}status-borrowed{% endif %}">
                                         {{ op_type }}
                                     </span>
@@ -582,8 +661,21 @@
                 <textarea id="borrowDetail" class="form-textarea" rows="2">用于功能测试</textarea>
             </div>
             <div class="form-group">
-                <label class="form-label">预计归还日期</label>
-                <input type="date" id="returnDate" class="form-input">
+                <label class="form-label">借用时间</label>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <select id="borrowTimeUnit" class="form-input" style="width: 100px; flex-shrink: 0;" onchange="updateBorrowTime()">
+                        <option value="minutes">分钟</option>
+                        <option value="hours" selected>小时</option>
+                        <option value="days">天</option>
+                        <option value="long">长期借</option>
+                    </select>
+                    <input type="number" id="borrowTimeValue" class="form-input" value="24" min="1" style="flex: 1;" onchange="updateBorrowTime()">
+                    <span id="borrowTimeLabel" style="color: #8c8c8c; white-space: nowrap;">小时</span>
+                </div>
+                <input type="hidden" id="returnDate" class="form-input">
+                <div id="borrowTimePreview" style="margin-top: 8px; padding: 8px 12px; background: #f6ffed; border-radius: 6px; border: 1px solid #b7eb8f; color: #389e0d; font-size: 13px;">
+                    预计归还时间：<span id="borrowTimeDisplay">-</span>
+                </div>
             </div>
         </div>
         <div class="modal-footer">
@@ -667,15 +759,22 @@
             <button class="modal-close" onclick="closeModal('renewModal')">×</button>
         </div>
         <div class="modal-body">
-            <p style="color: #8c8c8c; margin-bottom: 16px;">设置新的预计归还时间（默认增加1天）：</p>
+            <p style="color: #8c8c8c; margin-bottom: 16px;">设置续期时间（在当前预计归还时间基础上增加）：</p>
             <div class="form-group">
-                <label class="form-label">新预计归还日期</label>
-                <input type="date" id="renewDate" class="form-input">
-            </div>
-            <div class="form-group" style="background: #f6ffed; padding: 12px 16px; border-radius: 8px; border: 1px solid #b7eb8f; margin-top: 12px;">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <span style="color: #52c41a; font-size: 20px;">⏰</span>
-                    <span style="color: #389e0d; font-size: 14px;">当前预计归还时间 + <strong id="renewDays">1</strong> 天</span>
+                <label class="form-label">续期时间</label>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <select id="renewTimeUnit" class="form-input" style="width: 100px; flex-shrink: 0;" onchange="updateRenewTime()">
+                        <option value="minutes">分钟</option>
+                        <option value="hours" selected>小时</option>
+                        <option value="days">天</option>
+                        <option value="long">长期借</option>
+                    </select>
+                    <input type="number" id="renewTimeValue" class="form-input" value="24" min="1" style="flex: 1;" onchange="updateRenewTime()">
+                    <span id="renewTimeLabel" style="color: #8c8c8c; white-space: nowrap;">小时</span>
+                </div>
+                <input type="hidden" id="renewDate" class="form-input">
+                <div id="renewTimePreview" style="margin-top: 8px; padding: 8px 12px; background: #f6ffed; border-radius: 6px; border: 1px solid #b7eb8f; color: #389e0d; font-size: 13px;">
+                    新预计归还时间：<span id="renewTimeDisplay">-</span>
                 </div>
             </div>
         </div>
@@ -1128,27 +1227,132 @@ document.addEventListener('DOMContentLoaded', function() {
 function openModal(id) { document.getElementById(id).classList.add('active'); }
 function closeModal(id) { document.getElementById(id).classList.remove('active'); }
 
-function openBorrowModal() { openModal('borrowModal'); }
+// 借用时间计算
+function updateBorrowTime() {
+    const unit = document.getElementById('borrowTimeUnit').value;
+    const valueInput = document.getElementById('borrowTimeValue');
+    const label = document.getElementById('borrowTimeLabel');
+    const returnDateEl = document.getElementById('returnDate');
+    const display = document.getElementById('borrowTimeDisplay');
+    const preview = document.getElementById('borrowTimePreview');
+
+    if (unit === 'long') {
+        valueInput.style.display = 'none';
+        label.textContent = '长期借用';
+        returnDateEl.value = '';
+        display.textContent = '长期借用（无固定归还时间）';
+        preview.style.background = '#fff7e6';
+        preview.style.borderColor = '#ffd591';
+        preview.style.color = '#d46b08';
+    } else {
+        valueInput.style.display = 'block';
+        const unitLabels = { minutes: '分钟', hours: '小时', days: '天' };
+        label.textContent = unitLabels[unit];
+
+        let value = parseInt(valueInput.value) || 0;
+        if (value < 1) value = 1;
+        valueInput.value = value;
+
+        const now = new Date();
+        let returnDate = new Date(now);
+
+        if (unit === 'minutes') {
+            returnDate.setMinutes(returnDate.getMinutes() + value);
+        } else if (unit === 'hours') {
+            returnDate.setHours(returnDate.getHours() + value);
+        } else if (unit === 'days') {
+            returnDate.setDate(returnDate.getDate() + value);
+        }
+
+        // 格式化为 YYYY-MM-DD HH:MM:SS 格式传递给后端
+        const year = returnDate.getFullYear();
+        const month = String(returnDate.getMonth() + 1).padStart(2, '0');
+        const day = String(returnDate.getDate()).padStart(2, '0');
+        const hours = String(returnDate.getHours()).padStart(2, '0');
+        const minutes = String(returnDate.getMinutes()).padStart(2, '0');
+        const seconds = String(returnDate.getSeconds()).padStart(2, '0');
+        returnDateEl.value = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+        display.textContent = returnDate.toLocaleString('zh-CN', {
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit'
+        });
+        preview.style.background = '#f6ffed';
+        preview.style.borderColor = '#b7eb8f';
+        preview.style.color = '#389e0d';
+    }
+}
+
+// 续期时间计算
+function updateRenewTime() {
+    const unit = document.getElementById('renewTimeUnit').value;
+    const valueInput = document.getElementById('renewTimeValue');
+    const label = document.getElementById('renewTimeLabel');
+    const renewDateEl = document.getElementById('renewDate');
+    const display = document.getElementById('renewTimeDisplay');
+    const preview = document.getElementById('renewTimePreview');
+
+    // 获取当前预计归还时间
+    const currentExpectedDateStr = '{{ device.expected_return_date.strftime("%Y-%m-%d %H:%M:%S") if device.expected_return_date else "" }}';
+    let baseDate = currentExpectedDateStr ? new Date(currentExpectedDateStr.replace(' ', 'T')) : new Date();
+
+    if (unit === 'long') {
+        valueInput.style.display = 'none';
+        label.textContent = '长期借用';
+        renewDateEl.value = '';
+        display.textContent = '长期借用（无固定归还时间）';
+        preview.style.background = '#fff7e6';
+        preview.style.borderColor = '#ffd591';
+        preview.style.color = '#d46b08';
+    } else {
+        valueInput.style.display = 'block';
+        const unitLabels = { minutes: '分钟', hours: '小时', days: '天' };
+        label.textContent = unitLabels[unit];
+
+        let value = parseInt(valueInput.value) || 0;
+        if (value < 1) value = 1;
+        valueInput.value = value;
+
+        let newReturnDate = new Date(baseDate);
+
+        if (unit === 'minutes') {
+            newReturnDate.setMinutes(newReturnDate.getMinutes() + value);
+        } else if (unit === 'hours') {
+            newReturnDate.setHours(newReturnDate.getHours() + value);
+        } else if (unit === 'days') {
+            newReturnDate.setDate(newReturnDate.getDate() + value);
+        }
+
+        // 格式化为 YYYY-MM-DD HH:MM:SS 格式传递给后端
+        const year = newReturnDate.getFullYear();
+        const month = String(newReturnDate.getMonth() + 1).padStart(2, '0');
+        const day = String(newReturnDate.getDate()).padStart(2, '0');
+        const hours = String(newReturnDate.getHours()).padStart(2, '0');
+        const minutes = String(newReturnDate.getMinutes()).padStart(2, '0');
+        const seconds = String(newReturnDate.getSeconds()).padStart(2, '0');
+        renewDateEl.value = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+        display.textContent = newReturnDate.toLocaleString('zh-CN', {
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit'
+        });
+        preview.style.background = '#f6ffed';
+        preview.style.borderColor = '#b7eb8f';
+        preview.style.color = '#389e0d';
+    }
+}
+
+function openBorrowModal() {
+    openModal('borrowModal');
+    updateBorrowTime();
+}
 function openReturnModal() { openModal('returnModal'); }
 function openTransferModal() { openModal('transferModal'); loadUserSuggestions(); }
 function openRenewModal() {
-    const renewDateEl = document.getElementById('renewDate');
-    if (renewDateEl) {
-        // 默认值为当前预计归还日期 + 1天，如果没有则今天+1天
-        const currentExpectedDate = '{{ device.expected_return_date.strftime("%Y-%m-%d") if device.expected_return_date else "" }}';
-        let defaultDate;
-        if (currentExpectedDate) {
-            const d = new Date(currentExpectedDate);
-            d.setDate(d.getDate() + 1);
-            defaultDate = d.toISOString().split('T')[0];
-        } else {
-            const d = new Date();
-            d.setDate(d.getDate() + 1);
-            defaultDate = d.toISOString().split('T')[0];
-        }
-        renewDateEl.value = defaultDate;
-        renewDateEl.min = new Date().toISOString().split('T')[0]; // 不能选择过去的日期
-    }
+    // 重置默认值并更新时间显示
+    const renewTimeValue = document.getElementById('renewTimeValue');
+    const renewTimeUnit = document.getElementById('renewTimeUnit');
+    if (renewTimeValue) renewTimeValue.value = '24';
+    if (renewTimeUnit) renewTimeUnit.value = 'hours';
+    updateRenewTime();
     openModal('renewModal');
 }
 function openReportLostModal() { openModal('reportLostModal'); }
@@ -1232,13 +1436,22 @@ function loadUserSuggestions() {
         const matched = allUsers.filter(u => u.name.toLowerCase().includes(keyword) && u.name !== currentBorrower);
         if (matched.length > 0) {
             suggestions.innerHTML = matched.map(u => {
-                const name = u.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                return '<div style="padding: 10px 12px; cursor: pointer;" onclick="selectUser(\'' + name + '\')">' + u.name + '</div>';
+                // 使用 data 属性存储用户名，避免 HTML 属性编码问题
+                return '<div class="user-suggestion-item" data-name="' + u.name + '" style="padding: 10px 12px; cursor: pointer;">' + u.name + '</div>';
             }).join('');
             suggestions.style.display = 'block';
         } else {
             suggestions.innerHTML = '<div style="padding: 10px 12px; color: #999;">无匹配用户</div>';
             suggestions.style.display = 'block';
+        }
+    });
+
+    // 使用事件委托处理点击，避免 onclick 属性编码问题
+    suggestions.addEventListener('click', function(e) {
+        const item = e.target.closest('.user-suggestion-item');
+        if (item) {
+            const name = item.getAttribute('data-name');
+            selectUser(name);
         }
     });
 
@@ -1261,13 +1474,19 @@ function submitBorrow() {
     const reasonEl = document.querySelector('input[name="borrowReason"]:checked');
     const detailEl = document.getElementById('borrowDetail');
     const dateEl = document.getElementById('returnDate');
-    
+    const timeUnit = document.getElementById('borrowTimeUnit').value;
+
     if (!reasonEl) { showToast('请选择借用原因'); return; }
-    if (!dateEl || !dateEl.value) { showToast('请选择预计归还日期'); return; }
-    
+
+    // 长期借用不需要日期
+    if (timeUnit !== 'long' && (!dateEl || !dateEl.value)) {
+        showToast('请选择借用时间');
+        return;
+    }
+
     const reason = reasonEl.value;
     const detail = detailEl ? detailEl.value.trim() : '';
-    const date = dateEl.value;
+    const date = dateEl ? dateEl.value : null;
     const fullReason = reason + (detail ? ' - ' + detail : '');
 
     fetch('/api/borrow', {
@@ -1333,7 +1552,7 @@ function submitTransfer() {
                 if (data.code === 'RESERVATION_CONFLICT' && data.conflict_info) {
                     showTransferConflictModal(data.conflict_info, to, remark);
                 } else {
-                    showToast(data.message || '转借失败：存在预约冲突');
+                    showToast(data.message || '转借失败：存在预约冲突', 4000);
                 }
                 return null;
             });
@@ -1349,10 +1568,15 @@ function submitTransfer() {
 
 function submitRenew() {
     const dateEl = document.getElementById('renewDate');
-    if (!dateEl || !dateEl.value) { showToast('请选择续期日期'); return; }
-    const newReturnDate = dateEl.value;
-    const today = new Date().toISOString().split('T')[0];
-    if (newReturnDate < today) { showToast('续期日期不能早于今天'); return; }
+    const timeUnit = document.getElementById('renewTimeUnit').value;
+
+    // 长期借用不需要日期验证
+    if (timeUnit !== 'long' && (!dateEl || !dateEl.value)) {
+        showToast('请选择续期时间');
+        return;
+    }
+
+    const newReturnDate = dateEl ? dateEl.value : null;
 
     fetch('/api/renew', {
         method: 'POST',
@@ -1711,9 +1935,9 @@ function submitReserve() {
     const startTimeEl = document.getElementById('reserveStartTime');
     const endTimeEl = document.getElementById('reserveEndTime');
     
-    if (!reasonEl) { showToast('请选择借用原因'); return; }
-    if (!startTimeEl || !startTimeEl.value) { showToast('请选择预约开始时间'); return; }
-    if (!endTimeEl || !endTimeEl.value) { showToast('请设置预约结束时间'); return; }
+    if (!reasonEl) { showToast('请选择借用原因', 4000); return; }
+    if (!startTimeEl || !startTimeEl.value) { showToast('请选择预约开始时间', 4000); return; }
+    if (!endTimeEl || !endTimeEl.value) { showToast('请设置预约结束时间', 4000); return; }
     
     const reason = reasonEl.value;
     const startTime = startTimeEl.value;
@@ -1723,7 +1947,7 @@ function submitReserve() {
     const now = new Date();
     const start = new Date(startTime);
     if (start <= now) {
-        showToast('预约开始时间必须晚于当前时间');
+        showToast('预约开始时间必须晚于当前时间', 4000);
         return;
     }
     
@@ -1740,13 +1964,13 @@ function submitReserve() {
     }).then(r => r.json()).then(data => {
         if (data.success) {
             const reservation = data.reservation;
-            showToast(`已预约${reservation.device_name}，${reservation.start_time}至${reservation.end_time}`);
+            showToast(`已预约${reservation.device_name}，${reservation.start_time}至${reservation.end_time}`, 4000);
             closeModal('reserveModal');
             setTimeout(() => location.reload(), 1500);
         } else {
-            showToast(data.message || '预约失败');
+            showToast(data.message || '预约失败', 4000);
         }
-    }).catch(() => showToast('提交失败，请重试'));
+    }).catch(() => showToast('提交失败，请重试', 4000));
 }
 
 // 打开预约日历
@@ -1778,7 +2002,7 @@ async function openReservationCalendar() {
         }
     } catch (e) {
         console.error('Error loading reservations:', e);
-        showToast('加载预约信息失败');
+        showToast('加载预约信息失败', 4000);
     }
 }
 
@@ -2017,12 +2241,12 @@ function submitForceTransfer() {
             body: JSON.stringify({device_id: deviceId, force: true})
         }).then(r => r.json()).then(data => {
             if (data.success) { 
-                showToast('强制转借成功，已取消预约'); 
+                showToast('强制转借成功，已取消预约', 4000); 
                 setTimeout(() => location.reload(), 1000); 
             } else { 
-                showToast(data.message || '转借失败'); 
+                showToast(data.message || '转借失败', 4000); 
             }
-        }).catch(() => showToast('提交失败，请重试'));
+        }).catch(() => showToast('提交失败，请重试', 4000));
     } else {
         // 转借给他人
         fetch('/api/transfer', {
@@ -2037,12 +2261,12 @@ function submitForceTransfer() {
             })
         }).then(r => r.json()).then(data => {
             if (data.success) { 
-                showToast('强制转借成功，已取消预约'); 
+                showToast('强制转借成功，已取消预约', 4000); 
                 setTimeout(() => window.location.href = '/pc', 1000); 
             } else { 
-                showToast(data.message || '转借失败'); 
+                showToast(data.message || '转借失败', 4000); 
             }
-        }).catch(() => showToast('提交失败，请重试'));
+        }).catch(() => showToast('提交失败，请重试', 4000));
     }
     
     closeModal('forceTransferConfirmModal');
@@ -2093,14 +2317,14 @@ async function approveReservationConfirm() {
         
         const data = await response.json();
         if (data.success) {
-            showToast('已同意预约');
+            showToast('已同意预约', 4000);
             closeModal('reservationConfirmModal');
             setTimeout(() => location.reload(), 1000);
         } else {
-            showToast(data.message || '操作失败');
+            showToast(data.message || '操作失败', 4000);
         }
     } catch (e) {
-        showToast('操作失败，请重试');
+        showToast('操作失败，请重试', 4000);
     }
     
     pendingReservation = null;
@@ -2119,14 +2343,14 @@ async function rejectReservationConfirm() {
         
         const data = await response.json();
         if (data.success) {
-            showToast('已拒绝预约');
+            showToast('已拒绝预约', 4000);
             closeModal('reservationConfirmModal');
             setTimeout(() => location.reload(), 1000);
         } else {
-            showToast(data.message || '操作失败');
+            showToast(data.message || '操作失败', 4000);
         }
     } catch (e) {
-        showToast('操作失败，请重试');
+        showToast('操作失败，请重试', 4000);
     }
     
     pendingReservation = null;
@@ -2151,6 +2375,261 @@ window.submitForceTransfer = submitForceTransfer;
 window.approveReservationConfirm = approveReservationConfirm;
 window.rejectReservationConfirm = rejectReservationConfirm;
 
+// ========== 设备图片功能 ==========
+
+// 打开图片上传弹窗
+function openUploadImageModal() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.multiple = true;
+    input.onchange = function(e) {
+        const files = e.target.files;
+        if (files.length > 0) {
+            uploadImages(files);
+        }
+    };
+    input.click();
+}
+
+// 上传图片
+async function uploadImages(files) {
+    const maxSize = 200 * 1024 * 1024; // 200MB
+    const formData = new FormData();
+    
+    for (let file of files) {
+        if (file.size > maxSize) {
+            showToast(`图片 ${file.name} 超过200MB限制`);
+            continue;
+        }
+        formData.append('images', file);
+    }
+    
+    if (formData.getAll('images').length === 0) return;
+    
+    formData.append('device_id', deviceId);
+    formData.append('device_type', deviceType);
+    
+    try {
+        showToast('正在上传图片...');
+        const response = await fetch('/api/device/images/upload', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            showToast('上传成功');
+            location.reload();
+        } else {
+            showToast(data.message || '上传失败');
+        }
+    } catch (err) {
+        showToast('上传失败，请重试');
+    }
+}
+
+// 打开图片预览
+function openImagePreview(url) {
+    const overlay = document.createElement('div');
+    overlay.className = 'image-preview-overlay';
+    overlay.onclick = function() {
+        document.body.removeChild(overlay);
+    };
+    
+    const img = document.createElement('img');
+    img.src = url;
+    img.onclick = function(e) {
+        e.stopPropagation();
+    };
+    
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'image-preview-close';
+    closeBtn.innerHTML = '×';
+    closeBtn.onclick = function() {
+        document.body.removeChild(overlay);
+    };
+    
+    overlay.appendChild(img);
+    overlay.appendChild(closeBtn);
+    document.body.appendChild(overlay);
+}
+
+// 删除图片
+async function deleteImage(imageId, event) {
+    event.stopPropagation();
+    if (!confirm('确定要删除这张图片吗？')) return;
+    
+    try {
+        const response = await fetch(`/api/device/images/${imageId}/delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_id: deviceId, device_type: deviceType })
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            showToast('删除成功');
+            const imageItem = document.querySelector(`.image-item[data-image-id="${imageId}"]`);
+            if (imageItem) {
+                imageItem.remove();
+            }
+            // 如果没有图片了，刷新页面显示空状态
+            const remainingImages = document.querySelectorAll('.image-item');
+            if (remainingImages.length === 0) {
+                location.reload();
+            }
+        } else {
+            showToast(data.message || '删除失败');
+        }
+    } catch (err) {
+        showToast('删除失败，请重试');
+    }
+}
+
+// ========== 设备附件功能 ==========
+
+// 打开附件上传弹窗
+function openUploadAttachmentModal() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = true;
+    input.onchange = function(e) {
+        const files = e.target.files;
+        if (files.length > 0) {
+            uploadAttachments(files);
+        }
+    };
+    input.click();
+}
+
+// 上传附件
+async function uploadAttachments(files) {
+    const maxSize = 200 * 1024 * 1024; // 200MB
+    const formData = new FormData();
+    
+    for (let file of files) {
+        if (file.size > maxSize) {
+            showToast(`文件 ${file.name} 超过200MB限制`);
+            continue;
+        }
+        formData.append('attachments', file);
+    }
+    
+    if (formData.getAll('attachments').length === 0) return;
+    
+    formData.append('device_id', deviceId);
+    formData.append('device_type', deviceType);
+    
+    try {
+        showToast('正在上传附件...');
+        const response = await fetch('/api/device/attachments/upload', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            showToast('上传成功');
+            location.reload();
+        } else {
+            showToast(data.message || '上传失败');
+        }
+    } catch (err) {
+        showToast('上传失败，请重试');
+    }
+}
+
+// 删除附件
+async function deleteAttachment(attachmentId) {
+    if (!confirm('确定要删除这个附件吗？')) return;
+    
+    try {
+        const response = await fetch(`/api/device/attachments/${attachmentId}/delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_id: deviceId, device_type: deviceType })
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            showToast('删除成功');
+            const attachmentItem = document.querySelector(`.attachment-item[data-attachment-id="${attachmentId}"]`);
+            if (attachmentItem) {
+                attachmentItem.remove();
+            }
+            // 如果没有附件了，刷新页面显示空状态
+            const remainingAttachments = document.querySelectorAll('.attachment-item');
+            if (remainingAttachments.length === 0) {
+                location.reload();
+            }
+        } else {
+            showToast(data.message || '删除失败');
+        }
+    } catch (err) {
+        showToast('删除失败，请重试');
+    }
+}
+
+// 更新批量下载按钮状态
+function updateBatchDownloadButton() {
+    const checkboxes = document.querySelectorAll('.attachment-checkbox:checked');
+    const batchBtn = document.querySelector('.btn[onclick="batchDownloadAttachments()"]');
+    if (batchBtn) {
+        batchBtn.textContent = checkboxes.length > 0 ? `批量下载 (${checkboxes.length})` : '批量下载';
+    }
+}
+
+// 批量下载附件
+async function batchDownloadAttachments() {
+    const checkboxes = document.querySelectorAll('.attachment-checkbox:checked');
+    if (checkboxes.length === 0) {
+        showToast('请先选择要下载的附件');
+        return;
+    }
+    
+    const attachmentIds = Array.from(checkboxes).map(cb => cb.value);
+    
+    try {
+        showToast('正在打包下载...');
+        const response = await fetch('/api/device/attachments/batch-download', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                device_id: deviceId,
+                device_type: deviceType,
+                attachment_ids: attachmentIds
+            })
+        });
+        
+        if (response.ok) {
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `设备附件_${device.name}_${new Date().toISOString().split('T')[0]}.zip`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            showToast('下载成功');
+        } else {
+            showToast('下载失败');
+        }
+    } catch (err) {
+        showToast('下载失败，请重试');
+    }
+}
+
+// 导出函数到全局作用域
+window.openUploadImageModal = openUploadImageModal;
+window.openImagePreview = openImagePreview;
+window.deleteImage = deleteImage;
+window.openUploadAttachmentModal = openUploadAttachmentModal;
+window.deleteAttachment = deleteAttachment;
+window.updateBatchDownloadButton = updateBatchDownloadButton;
+window.batchDownloadAttachments = batchDownloadAttachments;
+
 </script>
 {% endblock %}
 
@@ -2166,6 +2645,208 @@ window.rejectReservationConfirm = rejectReservationConfirm;
 .calendar-day.other-month:hover {
     border-color: #e8e8e8;
     box-shadow: none;
+}
+
+/* ========== 设备图片样式 ========== */
+.image-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 12px;
+}
+
+/* 空状态在grid中居中显示 */
+.image-grid .empty-state {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.image-item {
+    position: relative;
+    aspect-ratio: 1;
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    border: 1px solid #e8e8e8;
+    transition: all 0.3s;
+}
+
+.image-item:hover {
+    border-color: #1890ff;
+    box-shadow: 0 2px 8px rgba(24, 144, 255, 0.2);
+}
+
+.image-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.image-delete-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: rgba(255, 77, 79, 0.9);
+    color: white;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.image-item:hover .image-delete-btn {
+    opacity: 1;
+}
+
+.image-delete-btn:hover {
+    background: rgba(255, 77, 79, 1);
+}
+
+/* 图片预览弹窗 */
+.image-preview-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.9);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: zoom-out;
+}
+
+.image-preview-overlay img {
+    max-width: 90%;
+    max-height: 90%;
+    object-fit: contain;
+}
+
+.image-preview-close {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    border: none;
+    cursor: pointer;
+    font-size: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.image-preview-close:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* ========== 设备附件样式 ========== */
+.attachment-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.attachment-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px;
+    background: #fafafa;
+    border-radius: 8px;
+    border: 1px solid #f0f0f0;
+    transition: all 0.2s;
+}
+
+.attachment-item:hover {
+    background: #f0f0f0;
+    border-color: #d9d9d9;
+}
+
+.attachment-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+}
+
+.attachment-icon {
+    font-size: 24px;
+    flex-shrink: 0;
+}
+
+.attachment-details {
+    flex: 1;
+    min-width: 0;
+}
+
+.attachment-name {
+    font-size: 14px;
+    color: #262626;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.attachment-meta {
+    font-size: 12px;
+    color: #8c8c8c;
+    margin-top: 2px;
+}
+
+.attachment-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.attachment-checkbox {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+/* 上传进度条 */
+.upload-progress {
+    margin-top: 12px;
+}
+
+.upload-progress-bar {
+    height: 4px;
+    background: #f0f0f0;
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.upload-progress-fill {
+    height: 100%;
+    background: #1890ff;
+    border-radius: 2px;
+    transition: width 0.3s;
+}
+
+.upload-progress-text {
+    font-size: 12px;
+    color: #8c8c8c;
+    margin-top: 4px;
+    text-align: center;
 }
 </style>
 {% endblock %}

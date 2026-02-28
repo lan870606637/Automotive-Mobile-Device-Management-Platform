@@ -758,6 +758,11 @@ a {
     color: #1890ff;
 }
 
+.type-bounty {
+    background: #f9f0ff;
+    color: #722ed1;
+}
+
 .admin-badge {
     display: inline-block;
     background: #ff4d4f;
@@ -1233,6 +1238,10 @@ a {
     background: #52c41a;
 }
 
+.dot-bounty {
+    background: #722ed1;
+}
+
 .timeline-content {
     flex: 1;
 }
@@ -1263,6 +1272,11 @@ a {
 .badge-return {
     background: #f6ffed;
     color: #52c41a;
+}
+
+.badge-bounty {
+    background: #f9f0ff;
+    color: #722ed1;
 }
 
 .record-info {

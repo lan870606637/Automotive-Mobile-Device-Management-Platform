@@ -1627,7 +1627,15 @@ def api_admin_return(device_id):
     )
     api_client._db.save_record(record)
     api_client.add_operation_log(f"强制归还: {original_borrower}", device.name)
-
+    
+    # 更新原借用人的归还次数
+    if original_borrower:
+        for u in api_client._users:
+            if u.borrower_name == original_borrower:
+                u.return_count += 1
+                api_client._db.save_user(u)
+                break
+    
     # 发送通知
     # 1. 通知原借用人
     if original_borrower:

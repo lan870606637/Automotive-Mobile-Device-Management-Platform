@@ -115,6 +115,7 @@
                         {% elif '被转借' in op_type %}type-return
                         {% elif '丢失' in op_type or '损坏' in op_type or '未找到' in op_type %}type-lost
                         {% elif '续期' in op_type %}type-renew
+                        {% elif '悬赏' in op_type %}type-bounty
                         {% else %}type-transfer{% endif %}">
                         {{ op_type }}
                     </span>
@@ -167,6 +168,7 @@
                         {% elif '被转借' in op_type %}type-return
                         {% elif '丢失' in op_type or '损坏' in op_type or '未找到' in op_type %}type-lost
                         {% elif '续期' in op_type %}type-renew
+                        {% elif '悬赏' in op_type %}type-bounty
                         {% else %}type-transfer{% endif %}">
                         {{ op_type }}
                     </span>
@@ -202,7 +204,7 @@
     {% else %}
     <div class="action-section">
         <a href="{{ url_for('borrow_device', device_id=device.id) }}" class="btn btn-primary btn-large btn-block">
-            我要借用
+            立即借用
         </a>
     </div>
     {% endif %}
@@ -338,6 +340,7 @@
                         {% elif record.operation_type.value == '归还' or record.operation_type.value == '强制归还' %}type-return
                         {% elif record.operation_type.value == '丢失报备' or record.operation_type.value == '损坏报备' or record.operation_type.value == '借用人未找到' %}type-lost
                         {% elif record.operation_type.value == '借用续期' %}type-renew
+                        {% elif '悬赏' in record.operation_type.value %}type-bounty
                         {% else %}type-transfer{% endif %}">
                         {{ record.operation_type.value }}
                     </span>

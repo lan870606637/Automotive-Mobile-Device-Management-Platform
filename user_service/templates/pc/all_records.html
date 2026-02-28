@@ -84,6 +84,7 @@
                             {% elif '状态变更' in op_type %}status-borrowed
                             {% elif '保管人变更' in op_type %}status-no-cabinet
                             {% elif '被转借' in op_type %}status-available
+                            {% elif '悬赏' in op_type %}status-bounty
                             {% else %}status-borrowed{% endif %}">
                             {{ op_type }}
                         </span>

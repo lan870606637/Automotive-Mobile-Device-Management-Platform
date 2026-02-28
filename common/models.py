@@ -49,6 +49,9 @@ class OperationType(Enum):
     SHIP = "寄出"
     STATUS_CHANGE = "状态变更"
     BATCH_IMPORT = "批量导入"
+    CREATE_BOUNTY = "发布悬赏"
+    CANCEL_BOUNTY = "取消悬赏"
+    COMPLETE_BOUNTY = "悬赏完成"
 
 
 class EntrySource(Enum):
@@ -118,6 +121,7 @@ class Device:
     damage_reason: str = ""
     damage_time: Optional[datetime] = None
     previous_borrower: str = ""  # 上一个借用人
+    previous_status: str = ""  # 丢失/损坏前的状态（用于恢复）
     
     # 手机特有信息
     sn: str = ""  # SN码（设备序列号）
@@ -228,6 +232,7 @@ class Device:
             damage_reason=data.get('damage_reason', ''),
             damage_time=parse_datetime(data.get('damage_time')),
             previous_borrower=data.get('previous_borrower', ''),
+            previous_status=data.get('previous_status', ''),
             sn=data.get('sn', ''),
             system_version=data.get('system_version', ''),
             imei=data.get('imei', ''),
@@ -261,7 +266,7 @@ class Device:
             "location": self.location,
             "reason": self.reason,
             "entry_source": self.entry_source,
-            "expected_return_date": self.expected_return_date.strftime("%Y-%m-%d") if self.expected_return_date else "",
+            "expected_return_date": self.expected_return_date.strftime("%Y-%m-%d %H:%M:%S") if self.expected_return_date else "",
             "create_time": self.create_time.strftime("%Y-%m-%d %H:%M:%S") if self.create_time else "",
         }
 
@@ -441,6 +446,7 @@ class User:
     password: str = "123456"  # 默认密码
     borrower_name: str = ""   # 借用人名称（必填，唯一）
     avatar: str = ""          # 头像URL或路径
+    signature: str = ""       # 个性签名
     borrow_count: int = 0     # 借用次数
     return_count: int = 0     # 归还次数
     is_frozen: bool = False   # 是否冻结
@@ -473,6 +479,7 @@ class User:
             password=data.get('password', '123456'),
             borrower_name=data.get('borrower_name', ''),
             avatar=data.get('avatar', ''),
+            signature=data.get('signature', ''),
             borrow_count=int(data.get('borrow_count', 0)),
             return_count=int(data.get('return_count', 0)),
             is_frozen=bool(data.get('is_frozen', 0)),
@@ -489,6 +496,7 @@ class User:
             "password": self.password,
             "borrower_name": self.borrower_name,
             "avatar": self.avatar,
+            "signature": self.signature,
             "borrow_count": self.borrow_count,
             "return_count": self.return_count,
             "is_frozen": "已冻结" if self.is_frozen else "正常",
@@ -932,4 +940,371 @@ class Reservation:
             "current_borrower_id": self.current_borrower_id,
             "current_borrower_name": self.current_borrower_name,
             "reason": self.reason
+        }
+
+
+@dataclass
+class DeviceImage:
+    """设备图片"""
+    id: str
+    device_id: str
+    device_type: str
+    filename: str
+    url: str
+    upload_time: datetime
+    uploader: str = ""
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'DeviceImage':
+        """从字典创建设备图片对象"""
+        from datetime import datetime
+        
+        def parse_datetime(val):
+            if val is None or val == '':
+                return datetime.now()
+            if isinstance(val, datetime):
+                return val
+            if isinstance(val, str):
+                for fmt in ['%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d']:
+                    try:
+                        return datetime.strptime(val, fmt)
+                    except:
+                        continue
+            return datetime.now()
+        
+        return cls(
+            id=data.get('id', ''),
+            device_id=data.get('device_id', ''),
+            device_type=data.get('device_type', ''),
+            filename=data.get('filename', ''),
+            url=data.get('url', ''),
+            upload_time=parse_datetime(data.get('upload_time')),
+            uploader=data.get('uploader', '')
+        )
+    
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "device_id": self.device_id,
+            "device_type": self.device_type,
+            "filename": self.filename,
+            "url": self.url,
+            "upload_time": self.upload_time.strftime("%Y-%m-%d %H:%M:%S") if self.upload_time else "",
+            "uploader": self.uploader
+        }
+
+
+@dataclass
+class DeviceAttachment:
+    """设备附件"""
+    id: str
+    device_id: str
+    device_type: str
+    filename: str
+    url: str
+    size: int
+    upload_time: datetime
+    uploader: str = ""
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'DeviceAttachment':
+        """从字典创建设备附件对象"""
+        from datetime import datetime
+        
+        def parse_datetime(val):
+            if val is None or val == '':
+                return datetime.now()
+            if isinstance(val, datetime):
+                return val
+            if isinstance(val, str):
+                for fmt in ['%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d']:
+                    try:
+                        return datetime.strptime(val, fmt)
+                    except:
+                        continue
+            return datetime.now()
+        
+        return cls(
+            id=data.get('id', ''),
+            device_id=data.get('device_id', ''),
+            device_type=data.get('device_type', ''),
+            filename=data.get('filename', ''),
+            url=data.get('url', ''),
+            size=int(data.get('size', 0)),
+            upload_time=parse_datetime(data.get('upload_time')),
+            uploader=data.get('uploader', '')
+        )
+    
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "device_id": self.device_id,
+            "device_type": self.device_type,
+            "filename": self.filename,
+            "url": self.url,
+            "size": self.size,
+            "size_formatted": self.format_size(),
+            "upload_time": self.upload_time.strftime("%Y-%m-%d %H:%M:%S") if self.upload_time else "",
+            "uploader": self.uploader
+        }
+    
+    def format_size(self) -> str:
+        """格式化文件大小"""
+        size = self.size
+        if size < 1024:
+            return f"{size}B"
+        elif size < 1024 * 1024:
+            return f"{size / 1024:.1f}KB"
+        elif size < 1024 * 1024 * 1024:
+            return f"{size / (1024 * 1024):.1f}MB"
+        else:
+            return f"{size / (1024 * 1024 * 1024):.1f}GB"
+
+
+class PointsTransactionType(Enum):
+    """积分交易类型"""
+    FIRST_LOGIN = "首次登录"
+    DAILY_LOGIN = "每日登录"
+    BORROW = "借用设备"
+    RETURN = "归还设备"
+    OVERDUE = "逾期归还"
+    CREATE_BOUNTY = "发布悬赏"
+    COMPLETE_BOUNTY = "完成悬赏"
+    RECEIVE_BOUNTY = "获得悬赏"
+    RANKING_REWARD = "排行榜奖励"
+    LIKE = "点赞"
+    SEARCH = "搜索设备"
+    REPORT_FOUND = "我已找到"
+    REPORT_FIXED = "我已修好"
+    REPORT_DAMAGED = "损坏报备"
+    REPORT_LOST = "丢失报备"
+    TRANSFER = "转借设备"
+    RENEW = "续期"
+    RESERVE = "预约设备"
+
+
+@dataclass
+class UserPoints:
+    """用户积分"""
+    id: str
+    user_id: str
+    points: int = 0  # 当前积分，可以为负
+    total_earned: int = 0  # 累计获得积分
+    total_spent: int = 0  # 累计消费积分
+    update_time: Optional[datetime] = None
+    
+    def __post_init__(self):
+        if self.update_time is None:
+            self.update_time = datetime.now()
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'UserPoints':
+        """从字典创建用户积分对象"""
+        from datetime import datetime
+        
+        def parse_datetime(val):
+            if val is None or val == '':
+                return None
+            if isinstance(val, datetime):
+                return val
+            if isinstance(val, str):
+                for fmt in ['%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d']:
+                    try:
+                        return datetime.strptime(val, fmt)
+                    except:
+                        continue
+            return None
+        
+        return cls(
+            id=data.get('id', ''),
+            user_id=data.get('user_id', ''),
+            points=int(data.get('points', 0)),
+            total_earned=int(data.get('total_earned', 0)),
+            total_spent=int(data.get('total_spent', 0)),
+            update_time=parse_datetime(data.get('update_time'))
+        )
+    
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "points": self.points,
+            "total_earned": self.total_earned,
+            "total_spent": self.total_spent,
+            "update_time": self.update_time.strftime("%Y-%m-%d %H:%M:%S") if self.update_time else "",
+        }
+
+
+@dataclass
+class PointsRecord:
+    """积分记录"""
+    id: str
+    user_id: str
+    transaction_type: PointsTransactionType
+    points_change: int  # 正数为获得，负数为扣除
+    points_after: int  # 变动后的积分
+    description: str = ""
+    related_id: str = ""  # 相关记录ID（如设备ID、悬赏ID等）
+    create_time: Optional[datetime] = None
+    
+    def __post_init__(self):
+        if self.create_time is None:
+            self.create_time = datetime.now()
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'PointsRecord':
+        """从字典创建积分记录对象"""
+        from datetime import datetime
+        
+        def parse_datetime(val):
+            if val is None or val == '':
+                return None
+            if isinstance(val, datetime):
+                return val
+            if isinstance(val, str):
+                for fmt in ['%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d']:
+                    try:
+                        return datetime.strptime(val, fmt)
+                    except:
+                        continue
+            return None
+        
+        # 确定交易类型
+        trans_type_str = data.get('transaction_type', '首次登录')
+        if isinstance(trans_type_str, PointsTransactionType):
+            trans_type = trans_type_str
+        else:
+            try:
+                trans_type = PointsTransactionType(trans_type_str)
+            except Exception as e:
+                # 如果转换失败，尝试通过值查找
+                trans_type = None
+                for pt in PointsTransactionType:
+                    if pt.value == trans_type_str:
+                        trans_type = pt
+                        break
+                if trans_type is None:
+                    trans_type = PointsTransactionType.FIRST_LOGIN
+        
+        return cls(
+            id=data.get('id', ''),
+            user_id=data.get('user_id', ''),
+            transaction_type=trans_type,
+            points_change=int(data.get('points_change', 0)),
+            points_after=int(data.get('points_after', 0)),
+            description=data.get('description', ''),
+            related_id=data.get('related_id', ''),
+            create_time=parse_datetime(data.get('create_time'))
+        )
+    
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "transaction_type": self.transaction_type.value if isinstance(self.transaction_type, PointsTransactionType) else str(self.transaction_type),
+            "points_change": self.points_change,
+            "points_after": self.points_after,
+            "description": self.description,
+            "related_id": self.related_id,
+            "create_time": self.create_time.strftime("%Y-%m-%d %H:%M:%S") if self.create_time else "",
+        }
+
+
+class BountyStatus(Enum):
+    """悬赏状态"""
+    PENDING = "待认领"
+    FOUND = "已找到"  # 有人找到设备，等待悬赏人确认
+    COMPLETED = "已完成"
+    CANCELLED = "已取消"
+
+
+@dataclass
+class Bounty:
+    """悬赏任务"""
+    id: str
+    title: str  # 悬赏标题
+    description: str  # 悬赏描述
+    publisher_id: str  # 发布人ID
+    publisher_name: str  # 发布人名称
+    reward_points: int  # 悬赏积分
+    status: BountyStatus = BountyStatus.PENDING
+    device_name: str = ""  # 要找的设备名称/型号
+    device_id: str = ""  # 关联的设备ID
+    device_previous_status: str = ""  # 设备发布悬赏前的状态
+    create_time: Optional[datetime] = None
+    claim_time: Optional[datetime] = None
+    complete_time: Optional[datetime] = None
+    claimer_id: str = ""  # 认领人ID
+    claimer_name: str = ""  # 认领人名称
+    finder_description: str = ""  # 找到设备的描述
+    
+    def __post_init__(self):
+        if self.create_time is None:
+            self.create_time = datetime.now()
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Bounty':
+        """从字典创建悬赏对象"""
+        from datetime import datetime
+        
+        def parse_datetime(val):
+            if val is None or val == '':
+                return None
+            if isinstance(val, datetime):
+                return val
+            if isinstance(val, str):
+                for fmt in ['%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d']:
+                    try:
+                        return datetime.strptime(val, fmt)
+                    except:
+                        continue
+            return None
+        
+        # 确定状态
+        status_str = data.get('status', '待认领')
+        if isinstance(status_str, BountyStatus):
+            status = status_str
+        else:
+            try:
+                status = BountyStatus(status_str)
+            except:
+                status = BountyStatus.PENDING
+        
+        return cls(
+            id=data.get('id', ''),
+            title=data.get('title', ''),
+            description=data.get('description', ''),
+            publisher_id=data.get('publisher_id', ''),
+            publisher_name=data.get('publisher_name', ''),
+            reward_points=int(data.get('reward_points', 0)),
+            status=status,
+            device_name=data.get('device_name', ''),
+            device_id=data.get('device_id', ''),
+            device_previous_status=data.get('device_previous_status', ''),
+            create_time=parse_datetime(data.get('create_time')),
+            claim_time=parse_datetime(data.get('claim_time')),
+            complete_time=parse_datetime(data.get('complete_time')),
+            claimer_id=data.get('claimer_id', ''),
+            claimer_name=data.get('claimer_name', ''),
+            finder_description=data.get('finder_description', '')
+        )
+    
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "title": self.title,
+            "description": self.description,
+            "publisher_id": self.publisher_id,
+            "publisher_name": self.publisher_name,
+            "reward_points": self.reward_points,
+            "status": self.status.value if isinstance(self.status, BountyStatus) else str(self.status),
+            "device_name": self.device_name,
+            "device_id": self.device_id,
+            "device_previous_status": self.device_previous_status,
+            "create_time": self.create_time.strftime("%Y-%m-%d %H:%M:%S") if self.create_time else "",
+            "claim_time": self.claim_time.strftime("%Y-%m-%d %H:%M:%S") if self.claim_time else "",
+            "complete_time": self.complete_time.strftime("%Y-%m-%d %H:%M:%S") if self.complete_time else "",
+            "claimer_id": self.claimer_id,
+            "claimer_name": self.claimer_name,
+            "finder_description": self.finder_description,
         }

@@ -7,6 +7,121 @@
 {% block content %}
 <h1 class="page-title" style="margin-bottom: 12px;">📊 我的设备详情</h1>
 
+<!-- 首次登录积分提示 -->
+{% if first_login_points %}
+<div id="pointsToast" style="position: fixed; top: 20px; right: 20px; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 16px 24px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); z-index: 10000; animation: slideIn 0.5s ease;">
+    <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="font-size: 32px;">🎉</span>
+        <div>
+            <div style="font-weight: 600; font-size: 16px;">{{ points_message }}</div>
+            <div style="font-size: 13px; opacity: 0.9; margin-top: 4px;">当前积分: {{ first_login_points }}</div>
+        </div>
+        <button onclick="document.getElementById('pointsToast').style.display='none'" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 16px; margin-left: 8px;">×</button>
+    </div>
+</div>
+<style>
+@keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+</style>
+<script>
+setTimeout(function() {
+    var toast = document.getElementById('pointsToast');
+    if (toast) {
+        toast.style.transition = 'all 0.5s ease';
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100%)';
+        setTimeout(function() { toast.style.display = 'none'; }, 500);
+    }
+}, 5000);
+</script>
+{% endif %}
+
+<!-- 每日登录积分提示 -->
+{% if daily_login_points %}
+<div id="dailyLoginToast" style="position: fixed; top: 20px; right: 20px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; padding: 16px 24px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); z-index: 10000; animation: slideIn 0.5s ease;">
+    <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="font-size: 32px;">📅</span>
+        <div>
+            <div style="font-weight: 600; font-size: 16px;">{{ daily_login_message }}</div>
+            <div style="font-size: 13px; opacity: 0.9; margin-top: 4px;">当前积分: {{ daily_login_points }}</div>
+        </div>
+        <button onclick="document.getElementById('dailyLoginToast').style.display='none'" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 16px; margin-left: 8px;">×</button>
+    </div>
+</div>
+<script>
+setTimeout(function() {
+    var toast = document.getElementById('dailyLoginToast');
+    if (toast) {
+        toast.style.transition = 'all 0.5s ease';
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100%)';
+        setTimeout(function() { toast.style.display = 'none'; }, 500);
+    }
+}, 5000);
+</script>
+{% endif %}
+
+<!-- 悬赏弹窗 - 右下角弹出 -->
+{% if pending_bounties %}
+<div id="bountyToast" style="position: fixed; bottom: 20px; right: 20px; background: linear-gradient(135deg, #722ed1 0%, #b37feb 100%); color: white; padding: 16px 20px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); z-index: 10000; animation: slideUp 0.5s ease; max-width: 320px;">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 24px;">💰</span>
+            <span style="font-weight: 600; font-size: 16px;">悬赏公告</span>
+        </div>
+        <button onclick="document.getElementById('bountyToast').style.display='none'" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 24px; height: 24px; border-radius: 50%; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center;">×</button>
+    </div>
+    
+    {% if pending_bounties|length == 1 %}
+        {% set bounty = pending_bounties[0] %}
+        <div style="margin-bottom: 12px;">
+            <div style="font-size: 15px; font-weight: 500; margin-bottom: 6px; line-height: 1.4;">{{ bounty.title }}</div>
+            <div style="font-size: 13px; opacity: 0.9; margin-bottom: 4px;">设备: {{ bounty.device_name or '未指定' }}</div>
+            <div style="font-size: 13px; opacity: 0.9; margin-bottom: 4px;">发布人: {{ bounty.publisher_name }}</div>
+            <div style="font-size: 14px; font-weight: 600; color: #ffd700; margin-top: 8px;">💎 奖励: {{ bounty.reward_points }} 积分</div>
+        </div>
+    {% else %}
+        <div style="margin-bottom: 12px; max-height: 150px; overflow-y: auto;">
+            {% for bounty in pending_bounties %}
+            <div style="padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.2); {% if loop.last %}border-bottom: none;{% endif %}">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 500;">{{ bounty.device_name or '未指定设备' }}</span>
+                    <span style="font-size: 13px; font-weight: 600; color: #ffd700;">{{ bounty.reward_points }} 积分</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        <div style="font-size: 12px; opacity: 0.8; margin-bottom: 12px;">共 {{ pending_bounties|length }} 个悬赏待认领</div>
+    {% endif %}
+    
+    <a href="{{ url_for('pc_bounties') }}" style="display: block; text-align: center; background: rgba(255,255,255,0.2); color: white; padding: 10px 16px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 500; transition: background 0.3s;">
+        查看详情 →
+    </a>
+</div>
+<style>
+@keyframes slideUp {
+    from { transform: translateY(100%); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+#bountyToast a:hover {
+    background: rgba(255,255,255,0.3) !important;
+}
+</style>
+<script>
+setTimeout(function() {
+    var toast = document.getElementById('bountyToast');
+    if (toast) {
+        toast.style.transition = 'all 0.5s ease';
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(100%)';
+        setTimeout(function() { toast.style.display = 'none'; }, 500);
+    }
+}, 15000);
+</script>
+{% endif %}
+
 <!-- 主布局：改为上下布局，更紧凑 -->
 <div style="display: flex; flex-direction: column; gap: 12px;">
     
@@ -20,7 +135,7 @@
                 <span style="font-size: 11px; color: #8c8c8c;">每天0点更新</span>
             </div>
             <div class="card-body" style="padding: 12px;">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
                     <a href="{{ url_for('pc_user_rankings') }}" style="text-decoration: none;">
                         <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 12px; border-radius: 8px; color: white; text-align: center;">
                             <div style="font-size: 11px; opacity: 0.9;">借用排行</div>
@@ -51,6 +166,22 @@
                                 {% endif %}
                             </div>
                             <div style="font-size: 11px; opacity: 0.85;">{{ return_total or 0 }} 次</div>
+                        </div>
+                    </a>
+                    <a href="{{ url_for('pc_user_rankings') }}" style="text-decoration: none;">
+                        <div style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); padding: 12px; border-radius: 8px; color: white; text-align: center;">
+                            <div style="font-size: 11px; opacity: 0.9;">累计积分排行</div>
+                            <div style="font-size: 22px; font-weight: 700; margin: 4px 0;">
+                                {% if points_rank is not none %}#{{ points_rank }}{% else %}-{% endif %}
+                            </div>
+                            <div style="font-size: 10px; min-height: 20px; margin: 4px 0;">
+                                {% if points_title %}
+                                    <span class="dashboard-ranking-title {% if points_rank <= 10 %}top{{ points_rank }}{% endif %}">{{ points_title }}</span>
+                                {% else %}
+                                    <span class="dashboard-ranking-title no-title">暂无称号</span>
+                                {% endif %}
+                            </div>
+                            <div style="font-size: 11px; opacity: 0.85;">{{ total_earned or 0 }} 累计积分</div>
                         </div>
                     </a>
                 </div>
@@ -196,7 +327,7 @@
                                     <button onclick="openReturnModal('{{ device.id }}')" class="btn btn-success btn-sm" style="font-size: 13px; padding: 6px 12px;">归还</button>
                                     <button onclick="openTransferModal('{{ device.id }}')" class="btn btn-info btn-sm" style="font-size: 13px; padding: 6px 12px;">转借</button>
                                     {% if device.can_renew %}
-                                    <button onclick="openRenewModal('{{ device.id }}')" class="btn btn-info btn-sm" style="font-size: 13px; padding: 6px 12px;">续借</button>
+                                    <button onclick="openRenewModal('{{ device.id }}', '{{ device.expected_return_date.strftime('%Y-%m-%d %H:%M:%S') if device.expected_return_date else '' }}')" class="btn btn-info btn-sm" style="font-size: 13px; padding: 6px 12px;">续借</button>
                                     {% else %}
                                     <button onclick="showToast('{{ device.renew_disabled_reason }}')" class="btn btn-sm" style="font-size: 13px; padding: 6px 12px; background: #d9d9d9; border-color: #d9d9d9; color: #8c8c8c; cursor: not-allowed;" title="{{ device.renew_disabled_reason }}">续借</button>
                                     {% endif %}
@@ -481,10 +612,23 @@
             <button class="modal-close" onclick="closeModal('renewModal')">×</button>
         </div>
         <div class="modal-body">
-            <p style="color: #8c8c8c; margin-bottom: 16px;">请选择新的预计归还日期（只能往后选择）：</p>
+            <p style="color: #8c8c8c; margin-bottom: 16px;">设置续期时间（在当前预计归还时间基础上增加）：</p>
             <div class="form-group">
-                <label class="form-label">新预计归还日期</label>
-                <input type="date" id="renewDate" class="form-input">
+                <label class="form-label">续期时间</label>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <select id="renewTimeUnit" class="form-input" style="width: 100px; flex-shrink: 0;" onchange="updateRenewTime()">
+                        <option value="minutes">分钟</option>
+                        <option value="hours" selected>小时</option>
+                        <option value="days">天</option>
+                        <option value="long">长期借</option>
+                    </select>
+                    <input type="number" id="renewTimeValue" class="form-input" value="24" min="1" style="flex: 1;" onchange="updateRenewTime()">
+                    <span id="renewTimeLabel" style="color: #8c8c8c; white-space: nowrap;">小时</span>
+                </div>
+                <input type="hidden" id="renewDate" class="form-input">
+                <div id="renewTimePreview" style="margin-top: 8px; padding: 8px 12px; background: #f6ffed; border-radius: 6px; border: 1px solid #b7eb8f; color: #389e0d; font-size: 13px;">
+                    新预计归还时间：<span id="renewTimeDisplay">-</span>
+                </div>
             </div>
         </div>
         <div class="modal-footer">
@@ -522,20 +666,78 @@ function openTransferModal(deviceId) {
     openModal('transferModal');
 }
 
+// 当前选中设备的预计归还时间
+let currentDeviceExpectedReturnDate = '';
+
 // 打开续借弹窗
-function openRenewModal(deviceId) {
+function openRenewModal(deviceId, expectedReturnDate) {
     currentDeviceId = deviceId;
-    const renewDateEl = document.getElementById('renewDate');
-    if (renewDateEl) {
-        const today = new Date();
-        const tomorrow = new Date(today);
-        tomorrow.setDate(today.getDate() + 1);
-        const tomorrowStr = tomorrow.toISOString().split('T')[0];
-        const todayStr = today.toISOString().split('T')[0];
-        renewDateEl.min = todayStr;
-        renewDateEl.value = tomorrowStr;
-    }
+    currentDeviceExpectedReturnDate = expectedReturnDate || '';
+    // 重置默认值
+    const timeUnitEl = document.getElementById('renewTimeUnit');
+    const timeValueEl = document.getElementById('renewTimeValue');
+    if (timeUnitEl) timeUnitEl.value = 'hours';
+    if (timeValueEl) timeValueEl.value = '24';
+    updateRenewTime();
     openModal('renewModal');
+}
+
+// 更新续借时间显示
+function updateRenewTime() {
+    const unit = document.getElementById('renewTimeUnit').value;
+    const valueInput = document.getElementById('renewTimeValue');
+    const label = document.getElementById('renewTimeLabel');
+    const renewDateEl = document.getElementById('renewDate');
+    const display = document.getElementById('renewTimeDisplay');
+    const preview = document.getElementById('renewTimePreview');
+
+    // 获取当前设备的预计归还时间作为基准时间
+    // 如果没有预计归还时间，则使用当前时间
+    let baseDate = currentDeviceExpectedReturnDate ? new Date(currentDeviceExpectedReturnDate.replace(' ', 'T')) : new Date();
+
+    if (unit === 'long') {
+        valueInput.style.display = 'none';
+        label.textContent = '长期借用';
+        renewDateEl.value = '';
+        display.textContent = '长期借用（无固定归还时间）';
+        preview.style.background = '#fff7e6';
+        preview.style.borderColor = '#ffd591';
+        preview.style.color = '#d46b08';
+    } else {
+        valueInput.style.display = 'block';
+        const unitLabels = { minutes: '分钟', hours: '小时', days: '天' };
+        label.textContent = unitLabels[unit];
+
+        let value = parseInt(valueInput.value) || 0;
+        if (value < 1) value = 1;
+        valueInput.value = value;
+
+        let newReturnDate = new Date(baseDate);
+
+        if (unit === 'minutes') {
+            newReturnDate.setMinutes(newReturnDate.getMinutes() + value);
+        } else if (unit === 'hours') {
+            newReturnDate.setHours(newReturnDate.getHours() + value);
+        } else if (unit === 'days') {
+            newReturnDate.setDate(newReturnDate.getDate() + value);
+        }
+
+        // 格式化为 YYYY-MM-DD HH:MM:SS 格式传递给后端
+        const year = newReturnDate.getFullYear();
+        const month = String(newReturnDate.getMonth() + 1).padStart(2, '0');
+        const day = String(newReturnDate.getDate()).padStart(2, '0');
+        const hours = String(newReturnDate.getHours()).padStart(2, '0');
+        const minutes = String(newReturnDate.getMinutes()).padStart(2, '0');
+        const seconds = String(newReturnDate.getSeconds()).padStart(2, '0');
+        renewDateEl.value = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+        display.textContent = newReturnDate.toLocaleString('zh-CN', {
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit'
+        });
+        preview.style.background = '#f6ffed';
+        preview.style.borderColor = '#b7eb8f';
+        preview.style.color = '#389e0d';
+    }
 }
 
 // 用户搜索建议
@@ -554,13 +756,22 @@ function loadUserSuggestions() {
         const matched = allUsers.filter(u => u.name.toLowerCase().includes(keyword));
         if (matched.length > 0) {
             suggestions.innerHTML = matched.map(u => {
-                const name = encodeURIComponent(u.name);
-                return '<div style="padding: 10px 12px; cursor: pointer;" onclick="selectUser(\'' + name + '\')">' + u.name + '</div>';
+                // 使用 data 属性存储用户名，避免 HTML 属性编码问题
+                return '<div class="user-suggestion-item" data-name="' + u.name + '" style="padding: 10px 12px; cursor: pointer;">' + u.name + '</div>';
             }).join('');
             suggestions.style.display = 'block';
         } else {
             suggestions.innerHTML = '<div style="padding: 10px 12px; color: #999;">无匹配用户</div>';
             suggestions.style.display = 'block';
+        }
+    });
+
+    // 使用事件委托处理点击，避免 onclick 属性编码问题
+    suggestions.addEventListener('click', function(e) {
+        const item = e.target.closest('.user-suggestion-item');
+        if (item) {
+            const name = item.getAttribute('data-name');
+            selectUser(name);
         }
     });
 
@@ -632,22 +843,20 @@ function submitTransfer() {
 // 提交续借
 function submitRenew() {
     const dateEl = document.getElementById('renewDate');
-    if (!dateEl || !dateEl.value) { showToast('请选择续期日期'); return; }
-    const selectedDate = new Date(dateEl.value);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    if (selectedDate < today) { showToast('续期日期不能早于今天'); return; }
-    
-    // 计算续借天数（从当前时间到选择日期的天数差）
-    const diffTime = selectedDate - today;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    const days = diffDays > 0 ? diffDays : 1;
+    const timeUnit = document.getElementById('renewTimeUnit').value;
+
+    // 长期借用不需要日期验证
+    if (timeUnit !== 'long' && (!dateEl || !dateEl.value)) {
+        showToast('请选择续期时间');
+        return;
+    }
+
+    const newReturnDate = dateEl ? dateEl.value : null;
 
     fetch('/api/renew', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({device_id: currentDeviceId, days: days})
+        body: JSON.stringify({device_id: currentDeviceId, new_return_date: newReturnDate})
     }).then(r => r.json()).then(data => {
         if (data.success) { showToast('续期成功'); setTimeout(() => location.reload(), 1000); }
         else { showToast(data.message || '续期失败'); }
@@ -705,13 +914,27 @@ function handleDeviceSearchInput(keyword) {
                             d.device_type === '仪表' ? '📊' : 
                             d.device_type === '手机卡' ? '📲' : '🔧';
                 const safeName = encodeURIComponent(d.name);
+                // 状态标签样式
+                const statusColors = {
+                    '在库': '#52c41a',
+                    '保管中': '#1890ff',
+                    '借出': '#fa8c16',
+                    '借用中': '#fa8c16',
+                    '已寄出': '#722ed1',
+                    '已损坏': '#f5222d',
+                    '丢失': '#ff4d4f',
+                    '报废': '#8c8c8c'
+                };
+                const statusColor = statusColors[d.status] || '#8c8c8c';
+                const displayStatus = d.status || '未知';
                 return `<div class="suggestion-item" data-id="${d.id}" data-type="${d.device_type}" data-name="${safeName}" 
-                            style="padding: 10px 12px; cursor: pointer; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #f0f0f0; hover: background-color: #f5f5f5;">
-                            <span>${icon}</span>
-                            <div style="flex: 1;">
-                                <div style="font-weight: 500;">${escapeHtml(d.name)}</div>
+                            style="padding: 10px 12px; cursor: pointer; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #f0f0f0;">
+                            <span style="font-size: 20px;">${icon}</span>
+                            <div style="flex: 1; min-width: 0;">
+                                <div style="font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(d.name)}</div>
                                 <div style="font-size: 12px; color: #8c8c8c;">${d.model || ''} ${d.device_type}</div>
                             </div>
+                            <span style="font-size: 11px; padding: 3px 10px; border-radius: 4px; background-color: ${statusColor}20; color: ${statusColor}; border: 1px solid ${statusColor}40; white-space: nowrap; flex-shrink: 0;">${displayStatus}</span>
                         </div>`;
             }).join('');
             
@@ -868,14 +1091,14 @@ async function cancelReservation(reservationId) {
         
         const data = await response.json();
         if (data.success) {
-            showToast('预约已取消');
+            showToast('预约已取消', 4000);
             // 刷新页面
             setTimeout(() => location.reload(), 1000);
         } else {
-            showToast(data.message || '取消失败');
+            showToast(data.message || '取消失败', 4000);
         }
     } catch (e) {
-        showToast('取消失败，请重试');
+        showToast('取消失败，请重试', 4000);
     }
 }
 
@@ -958,12 +1181,12 @@ async function submitRebook() {
     const reason = document.querySelector('input[name="rebookReason"]:checked')?.value || '测试';
     
     if (!startTime || !endTime) {
-        showToast('请选择预约时间');
+        showToast('请选择预约时间', 4000);
         return;
     }
     
     if (new Date(startTime) >= new Date(endTime)) {
-        showToast('结束时间必须晚于开始时间');
+        showToast('结束时间必须晚于开始时间', 4000);
         return;
     }
     
@@ -982,15 +1205,15 @@ async function submitRebook() {
         
         const data = await response.json();
         if (data.success) {
-            showToast('预约成功');
+            showToast('预约成功', 4000);
             closeRebookModal();
             // 刷新页面
             setTimeout(() => location.reload(), 1000);
         } else {
-            showToast(data.message || '预约失败');
+            showToast(data.message || '预约失败', 4000);
         }
     } catch (e) {
-        showToast('预约失败，请重试');
+        showToast('预约失败，请重试', 4000);
     }
 }
 

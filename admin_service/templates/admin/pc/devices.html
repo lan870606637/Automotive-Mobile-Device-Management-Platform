@@ -343,7 +343,6 @@
                                     <button class="btn btn-sm btn-warning" onclick="showTransferModal('{{ device.id }}')">转借</button>
                                     {% endif %}
                                     <button class="btn btn-sm btn-danger" onclick="deleteDevice('{{ device.id }}')">删除</button>
-                                    <button class="btn btn-sm btn-danger" style="background: #ff0000;" onclick="permanentDeleteDevice('{{ device.id }}')" title="彻底删除，不可恢复">彻底删除</button>
                                 </div>
                             </td>
                         </tr>
@@ -809,7 +808,6 @@
                             <a href="/admin/pc/device/${device.id}" class="btn btn-sm btn-secondary">编辑</a>
                             ${getActionButtons(device)}
                             <button class="btn btn-sm btn-danger" onclick="deleteDevice('${device.id}')">删除</button>
-                            <button class="btn btn-sm btn-danger" style="background: #ff0000;" onclick="permanentDeleteDevice('${device.id}')" title="彻底删除，不可恢复">彻底删除</button>
                         </div>
                     </td>
                 </tr>
@@ -1185,34 +1183,6 @@
                 const result = await response.json();
                 if (result.success) {
                     showToast('删除成功', 'success');
-                    loadDevices();
-                } else {
-                    showToast(result.message || '删除失败', 'error');
-                }
-            } catch (error) {
-                showToast('网络错误', 'error');
-            }
-        }
-
-        // 彻底删除设备（物理删除）
-        async function permanentDeleteDevice(deviceId) {
-            if (!confirm('⚠️ 警告：彻底删除后数据将无法恢复！\n\n确定要彻底删除该设备吗？')) return;
-            if (!confirm('再次确认：此操作将永久删除设备数据，不可恢复！\n\n请输入"确认删除"以继续：')) {
-                const confirmText = prompt('请输入"确认删除"以彻底删除该设备：');
-                if (confirmText !== '确认删除') {
-                    showToast('取消删除', 'info');
-                    return;
-                }
-            }
-
-            try {
-                const response = await fetch(`/api/devices/${deviceId}/permanent-delete`, {
-                    method: 'DELETE'
-                });
-
-                const result = await response.json();
-                if (result.success) {
-                    showToast('设备已彻底删除', 'success');
                     loadDevices();
                 } else {
                     showToast(result.message || '删除失败', 'error');

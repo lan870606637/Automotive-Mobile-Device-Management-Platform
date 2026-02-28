@@ -1,0 +1,38 @@
+{
+  "images": {
+    "00d929bf-1da3-47b2-b7cd-e4f380736788": [
+      {
+        "id": "2a8ea4c7-80e3-4aa1-b528-b7a65e73a426",
+        "device_id": "00d929bf-1da3-47b2-b7cd-e4f380736788",
+        "device_type": "车机",
+        "filename": "u=2995341149,3056780188&fm=253&fmt=auto&app=138&f=JPEG.webp",
+        "url": "/uploads/images/00d929bf-1da3-47b2-b7cd-e4f380736788/5e1b4c3cb3a1461296d0d17f604ae87c.webp",
+        "upload_time": "2026-02-28 12:36:38",
+        "uploader": "沈晋元"
+      },
+      {
+        "id": "b2507934-d922-45ee-a58f-4e189d601f91",
+        "device_id": "00d929bf-1da3-47b2-b7cd-e4f380736788",
+        "device_type": "车机",
+        "filename": "u=2995341149,3056780188&fm=253&fmt=auto&app=138&f=JPEG.webp",
+        "url": "/uploads/images/00d929bf-1da3-47b2-b7cd-e4f380736788/23b82667a0c34f4e80338a278d06092d.webp",
+        "upload_time": "2026-02-28 12:36:41",
+        "uploader": "沈晋元"
+      }
+    ]
+  },
+  "attachments": {
+    "00d929bf-1da3-47b2-b7cd-e4f380736788": [
+      {
+        "id": "7f042ca3-81e6-4e03-b4e4-937dec85c47a",
+        "device_id": "00d929bf-1da3-47b2-b7cd-e4f380736788",
+        "device_type": "车机",
+        "filename": "车机导入模板 (1).xlsx",
+        "url": "/uploads/attachments/00d929bf-1da3-47b2-b7cd-e4f380736788/cbaa46c1c9454bf0a6f54a18cee9d5ae.xlsx",
+        "size": 121668,
+        "upload_time": "2026-02-28 12:37:25",
+        "uploader": "沈晋元"
+      }
+    ]
+  }
+}

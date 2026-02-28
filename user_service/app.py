@@ -13,20 +13,23 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 import uuid
 import io
 import base64
+import re
+import json
 import urllib.request
 import urllib.parse
 from datetime import datetime, timedelta
 from functools import wraps
 
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for, make_response
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, make_response, send_file, send_from_directory
 from dotenv import load_dotenv
 
 # 从 common 导入
-from common.models import DeviceStatus, DeviceType, OperationType, EntrySource, ReservationStatus, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, ViewRecord
+from common.models import DeviceStatus, DeviceType, OperationType, EntrySource, ReservationStatus, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, ViewRecord, PointsTransactionType
 from common.api_client import api_client
 from common.db_store import DatabaseStore, init_database
 from common.utils import mask_phone, is_mobile_device
 from common.config import SECRET_KEY, SERVER_URL, USER_SERVICE_PORT
+from common.points_service import points_service
 
 # 尝试导入qrcode，如果没有安装则使用备用方案
 try:
@@ -210,8 +213,21 @@ def inject_globals():
     """注入全局模板变量和函数"""
     user = get_current_user()
     rank_data = get_user_rank_data(user.get('borrower_name', ''))
+    
+    # 获取用户称号（基于累计积分排名）
+    user_title = None
+    if user and user.get('user_id'):
+        try:
+            points_rank_info = points_service.get_user_points_rank(user['user_id'])
+            if points_rank_info and points_rank_info.get('rank') and points_rank_info['rank'] <= 10:
+                rank = points_rank_info['rank']
+                user_title = points_service.POINTS_TITLES[rank - 1] if rank <= len(points_service.POINTS_TITLES) else points_service.POINTS_TITLES[-1]
+        except Exception:
+            pass
+    
     return {
         'is_admin_user': is_admin_user,
+        'user_title': user_title,
         **rank_data
     }
 
@@ -262,6 +278,23 @@ def pc_login():
             session['user_id'] = user.id
             session['email'] = user.email
             session['login_device_type'] = 'pc'  # 记录登录设备类型
+
+            # 首次登录奖励积分（在设置session之后）
+            points_result = points_service.first_login_reward(user.id)
+            if points_result['success']:
+                session['first_login_points'] = points_result['points']
+                session['points_message'] = points_result['message']
+                # 首次登录也发放每日登录奖励
+                daily_result = points_service.daily_login_reward(user.id)
+                if daily_result['success']:
+                    session['daily_login_points'] = daily_result['points']
+                    session['daily_login_message'] = daily_result['message']
+            else:
+                # 不是首次登录，只发放每日登录奖励
+                daily_result = points_service.daily_login_reward(user.id)
+                if daily_result['success']:
+                    session['daily_login_points'] = daily_result['points']
+                    session['daily_login_message'] = daily_result['message']
 
             # 检查是否需要设置借用人名称
             if not user.borrower_name:
@@ -576,8 +609,8 @@ def pc_dashboard():
             time_diff = device.expected_return_date - datetime.now()
             total_seconds = time_diff.total_seconds()
 
-            if total_seconds < 0:
-                # 已逾期
+            if total_seconds < -60:
+                # 已逾期超过1分钟
                 device.is_overdue = True
                 device.overdue_hours = int(abs(total_seconds) // 3600)
                 device.overdue_days = int(abs(total_seconds) // (24 * 3600))
@@ -588,6 +621,15 @@ def pc_dashboard():
                     device.renew_disabled_reason = '逾期超过3天，不能续借，需要归还后才能再次借用'
                 else:
                     device.can_renew = True
+            elif total_seconds < 0:
+                # 逾期1分钟内，不算逾期，显示剩余0分钟
+                device.is_overdue = False
+                device.remaining_days = 0
+                device.remaining_hours = 0
+                device.remaining_minutes = 0
+                device.remaining_time_display = '0 分钟'
+                # 剩余时间小于24小时才能续借
+                device.can_renew = True
             else:
                 # 剩余时间（向上取整）
                 device.remaining_days = int(total_seconds // (24 * 3600))
@@ -595,11 +637,13 @@ def pc_dashboard():
                 total_hours_float = total_seconds / 3600
                 total_hours_int = int(total_hours_float)
                 device.remaining_hours = total_hours_int if total_hours_float == total_hours_int else total_hours_int + 1
-                
+
                 # 计算剩余分钟数（用于小于1小时的显示）
                 device.remaining_minutes = int(total_seconds // 60)
-                
+
                 # 生成格式化的剩余时间显示
+                # 计算实际剩余小时数（向下取整，用于显示）
+                actual_remaining_hours = int(total_seconds // 3600)
                 if device.remaining_days > 0:
                     # 大于1天，显示天、小时和分钟
                     remaining_hours_after_days = int((total_seconds % (24 * 3600)) // 3600)
@@ -610,22 +654,27 @@ def pc_dashboard():
                         device.remaining_time_display = f"{device.remaining_days} 天 {remaining_hours_after_days} 小时"
                     else:
                         device.remaining_time_display = f"{device.remaining_days} 天"
-                elif device.remaining_hours > 0:
+                elif actual_remaining_hours > 0:
                     # 小于24小时，显示小时和分钟
                     remaining_mins = int((total_seconds % 3600) // 60)
                     if remaining_mins > 0:
-                        device.remaining_time_display = f"{device.remaining_hours} 小时 {remaining_mins} 分钟"
+                        device.remaining_time_display = f"{actual_remaining_hours} 小时 {remaining_mins} 分钟"
                     else:
-                        device.remaining_time_display = f"{device.remaining_hours} 小时"
+                        device.remaining_time_display = f"{actual_remaining_hours} 小时"
                 else:
                     # 小于1小时，显示分钟
                     mins = int(total_seconds // 60)
                     device.remaining_time_display = f"{mins} 分钟"
-                
+
                 # 剩余时间小于24小时才能续借
                 device.can_renew = device.remaining_hours < 24
                 if not device.can_renew:
                     device.renew_disabled_reason = '剩余时间大于24小时，暂不需要续借'
+        else:
+            # 长期借用，无固定归还时间
+            device.remaining_time_display = '长期借用'
+            device.can_renew = False  # 长期借用不需要续借
+            device.renew_disabled_reason = '长期借用无需续借'
 
         my_borrowed_devices.append(device)
 
@@ -822,6 +871,21 @@ def pc_dashboard():
     # 按时间排序，取最新的20条
     my_items_borrowed = sorted(my_items_borrowed, key=lambda x: x['time'], reverse=True)[:20]
 
+    # 获取待认领的悬赏列表（用于首页弹窗）
+    from common.models import BountyStatus
+    all_bounties = api_client._db.get_all_bounties()
+    pending_bounties = [
+        {
+            'id': b.id,
+            'title': b.title,
+            'device_name': b.device_name,
+            'reward_points': b.reward_points,
+            'publisher_name': b.publisher_name
+        }
+        for b in all_bounties
+        if b.status == BountyStatus.PENDING
+    ]
+
     # 获取当前用户的排行（使用与排行榜页面一致的数据源）
     current_user_name = user['borrower_name']
     
@@ -844,6 +908,28 @@ def pc_dashboard():
             return_rank = ranking['rank']
             return_total = ranking['count']
             break
+    
+    # 获取用户积分和积分排名
+    user_points_info = points_service.get_user_points_rank(user['user_id'])
+    user_points = user_points_info['points']
+    points_rank = user_points_info['rank']
+
+    # 获取用户累计积分
+    user_points_data = points_service.get_or_create_user_points(user['user_id'])
+    total_earned = user_points_data.total_earned if user_points_data else 0
+
+    # 获取积分称号（前10名）
+    points_title = None
+    if points_rank and points_rank <= 10:
+        points_title = points_service.POINTS_TITLES[points_rank - 1] if points_rank <= len(points_service.POINTS_TITLES) else points_service.POINTS_TITLES[-1]
+    
+    # 获取首次登录积分提示
+    first_login_points = session.pop('first_login_points', None)
+    points_message = session.pop('points_message', None)
+    
+    # 获取每日登录积分提示
+    daily_login_points = session.pop('daily_login_points', None)
+    daily_login_message = session.pop('daily_login_message', None)
 
     return render_template('pc/dashboard.html',
                          user=user,
@@ -867,7 +953,16 @@ def pc_dashboard():
                          return_rank=return_rank,
                          return_total=return_total,
                          my_reservation_count=my_reservation_count,
-                         my_reservations=active_reservations)
+                         my_reservations=active_reservations,
+                         user_points=user_points,
+                         total_earned=total_earned,
+                         points_rank=points_rank,
+                         points_title=points_title,
+                         pending_bounties=pending_bounties,
+                         first_login_points=first_login_points,
+                         points_message=points_message,
+                         daily_login_points=daily_login_points,
+                         daily_login_message=daily_login_message)
 
 
 @app.route('/api/all-devices')
@@ -998,118 +1093,126 @@ def pc_device_list():
         if no_cabinet == '1':
             base_devices = [d for d in base_devices if d.status == DeviceStatus.NO_CABINET]
 
-        # 计算每个下拉框的选项（基于除自己外的其他筛选条件）
+        # 辅助函数：提取独立的选项值（将"国内前装、海外前装"拆分为["国内前装", "海外前装"]）
+        def extract_unique_options(devices_list, attr_name):
+            """从设备列表中提取指定属性的所有独立选项值"""
+            options = set()
+            for d in devices_list:
+                value = getattr(d, attr_name, None)
+                if value:
+                    # 按常见分隔符拆分（、,，;；等）
+                    parts = re.split(r'[、,，;；/\\|]+', value)
+                    for part in parts:
+                        part = part.strip()
+                        if part:
+                            options.add(part)
+            return sorted(options)
+
+        # 辅助函数：模糊匹配筛选（检查属性值是否包含筛选值）
+        def fuzzy_match_filter(devices_list, attr_name, filter_value):
+            """使用模糊匹配筛选设备"""
+            if not filter_value:
+                return devices_list
+            return [d for d in devices_list if filter_value in (getattr(d, attr_name, '') or '')]
+
+        # 计算每个下拉框的选项（基于除自己外的其他筛选条件，使用模糊匹配）
         # 项目属性选项：基于除项目属性外的其他筛选条件
         filtered_for_project = base_devices
-        if filter_connection:
-            filtered_for_project = [d for d in filtered_for_project if d.connection_method == filter_connection]
-        if filter_os_version:
-            filtered_for_project = [d for d in filtered_for_project if d.os_version == filter_os_version]
-        if filter_os_platform:
-            filtered_for_project = [d for d in filtered_for_project if d.os_platform == filter_os_platform]
-        if filter_product:
-            filtered_for_project = [d for d in filtered_for_project if d.product_name == filter_product]
-        if filter_orientation:
-            filtered_for_project = [d for d in filtered_for_project if d.screen_orientation == filter_orientation]
-        if filter_resolution:
-            filtered_for_project = [d for d in filtered_for_project if d.screen_resolution == filter_resolution]
-        project_attributes = sorted(set(d.project_attribute for d in filtered_for_project if d.project_attribute))
+        filtered_for_project = fuzzy_match_filter(filtered_for_project, 'connection_method', filter_connection)
+        filtered_for_project = fuzzy_match_filter(filtered_for_project, 'os_version', filter_os_version)
+        filtered_for_project = fuzzy_match_filter(filtered_for_project, 'os_platform', filter_os_platform)
+        filtered_for_project = fuzzy_match_filter(filtered_for_project, 'product_name', filter_product)
+        filtered_for_project = fuzzy_match_filter(filtered_for_project, 'screen_orientation', filter_orientation)
+        filtered_for_project = fuzzy_match_filter(filtered_for_project, 'screen_resolution', filter_resolution)
+        project_attributes = extract_unique_options(filtered_for_project, 'project_attribute')
+        # 确保当前选中的值在选项列表中
+        if filter_project and filter_project not in project_attributes:
+            project_attributes.append(filter_project)
+            project_attributes.sort()
 
         # 连接方式选项：基于除连接方式外的其他筛选条件
         filtered_for_connection = base_devices
-        if filter_project:
-            filtered_for_connection = [d for d in filtered_for_connection if d.project_attribute == filter_project]
-        if filter_os_version:
-            filtered_for_connection = [d for d in filtered_for_connection if d.os_version == filter_os_version]
-        if filter_os_platform:
-            filtered_for_connection = [d for d in filtered_for_connection if d.os_platform == filter_os_platform]
-        if filter_product:
-            filtered_for_connection = [d for d in filtered_for_connection if d.product_name == filter_product]
-        if filter_orientation:
-            filtered_for_connection = [d for d in filtered_for_connection if d.screen_orientation == filter_orientation]
-        if filter_resolution:
-            filtered_for_connection = [d for d in filtered_for_connection if d.screen_resolution == filter_resolution]
-        connection_methods = sorted(set(d.connection_method for d in filtered_for_connection if d.connection_method))
+        filtered_for_connection = fuzzy_match_filter(filtered_for_connection, 'project_attribute', filter_project)
+        filtered_for_connection = fuzzy_match_filter(filtered_for_connection, 'os_version', filter_os_version)
+        filtered_for_connection = fuzzy_match_filter(filtered_for_connection, 'os_platform', filter_os_platform)
+        filtered_for_connection = fuzzy_match_filter(filtered_for_connection, 'product_name', filter_product)
+        filtered_for_connection = fuzzy_match_filter(filtered_for_connection, 'screen_orientation', filter_orientation)
+        filtered_for_connection = fuzzy_match_filter(filtered_for_connection, 'screen_resolution', filter_resolution)
+        connection_methods = extract_unique_options(filtered_for_connection, 'connection_method')
+        # 确保当前选中的值在选项列表中
+        if filter_connection and filter_connection not in connection_methods:
+            connection_methods.append(filter_connection)
+            connection_methods.sort()
 
         # 系统版本选项
         filtered_for_os_version = base_devices
-        if filter_project:
-            filtered_for_os_version = [d for d in filtered_for_os_version if d.project_attribute == filter_project]
-        if filter_connection:
-            filtered_for_os_version = [d for d in filtered_for_os_version if d.connection_method == filter_connection]
-        if filter_os_platform:
-            filtered_for_os_version = [d for d in filtered_for_os_version if d.os_platform == filter_os_platform]
-        if filter_product:
-            filtered_for_os_version = [d for d in filtered_for_os_version if d.product_name == filter_product]
-        if filter_orientation:
-            filtered_for_os_version = [d for d in filtered_for_os_version if d.screen_orientation == filter_orientation]
-        if filter_resolution:
-            filtered_for_os_version = [d for d in filtered_for_os_version if d.screen_resolution == filter_resolution]
-        os_versions = sorted(set(d.os_version for d in filtered_for_os_version if d.os_version))
+        filtered_for_os_version = fuzzy_match_filter(filtered_for_os_version, 'project_attribute', filter_project)
+        filtered_for_os_version = fuzzy_match_filter(filtered_for_os_version, 'connection_method', filter_connection)
+        filtered_for_os_version = fuzzy_match_filter(filtered_for_os_version, 'os_platform', filter_os_platform)
+        filtered_for_os_version = fuzzy_match_filter(filtered_for_os_version, 'product_name', filter_product)
+        filtered_for_os_version = fuzzy_match_filter(filtered_for_os_version, 'screen_orientation', filter_orientation)
+        filtered_for_os_version = fuzzy_match_filter(filtered_for_os_version, 'screen_resolution', filter_resolution)
+        os_versions = extract_unique_options(filtered_for_os_version, 'os_version')
+        # 确保当前选中的值在选项列表中
+        if filter_os_version and filter_os_version not in os_versions:
+            os_versions.append(filter_os_version)
+            os_versions.sort()
 
         # 系统平台选项
         filtered_for_os_platform = base_devices
-        if filter_project:
-            filtered_for_os_platform = [d for d in filtered_for_os_platform if d.project_attribute == filter_project]
-        if filter_connection:
-            filtered_for_os_platform = [d for d in filtered_for_os_platform if d.connection_method == filter_connection]
-        if filter_os_version:
-            filtered_for_os_platform = [d for d in filtered_for_os_platform if d.os_version == filter_os_version]
-        if filter_product:
-            filtered_for_os_platform = [d for d in filtered_for_os_platform if d.product_name == filter_product]
-        if filter_orientation:
-            filtered_for_os_platform = [d for d in filtered_for_os_platform if d.screen_orientation == filter_orientation]
-        if filter_resolution:
-            filtered_for_os_platform = [d for d in filtered_for_os_platform if d.screen_resolution == filter_resolution]
-        os_platforms = sorted(set(d.os_platform for d in filtered_for_os_platform if d.os_platform))
+        filtered_for_os_platform = fuzzy_match_filter(filtered_for_os_platform, 'project_attribute', filter_project)
+        filtered_for_os_platform = fuzzy_match_filter(filtered_for_os_platform, 'connection_method', filter_connection)
+        filtered_for_os_platform = fuzzy_match_filter(filtered_for_os_platform, 'os_version', filter_os_version)
+        filtered_for_os_platform = fuzzy_match_filter(filtered_for_os_platform, 'product_name', filter_product)
+        filtered_for_os_platform = fuzzy_match_filter(filtered_for_os_platform, 'screen_orientation', filter_orientation)
+        filtered_for_os_platform = fuzzy_match_filter(filtered_for_os_platform, 'screen_resolution', filter_resolution)
+        os_platforms = extract_unique_options(filtered_for_os_platform, 'os_platform')
+        # 确保当前选中的值在选项列表中
+        if filter_os_platform and filter_os_platform not in os_platforms:
+            os_platforms.append(filter_os_platform)
+            os_platforms.sort()
 
         # 产品名称选项
         filtered_for_product = base_devices
-        if filter_project:
-            filtered_for_product = [d for d in filtered_for_product if d.project_attribute == filter_project]
-        if filter_connection:
-            filtered_for_product = [d for d in filtered_for_product if d.connection_method == filter_connection]
-        if filter_os_version:
-            filtered_for_product = [d for d in filtered_for_product if d.os_version == filter_os_version]
-        if filter_os_platform:
-            filtered_for_product = [d for d in filtered_for_product if d.os_platform == filter_os_platform]
-        if filter_orientation:
-            filtered_for_product = [d for d in filtered_for_product if d.screen_orientation == filter_orientation]
-        if filter_resolution:
-            filtered_for_product = [d for d in filtered_for_product if d.screen_resolution == filter_resolution]
-        product_names = sorted(set(d.product_name for d in filtered_for_product if d.product_name))
+        filtered_for_product = fuzzy_match_filter(filtered_for_product, 'project_attribute', filter_project)
+        filtered_for_product = fuzzy_match_filter(filtered_for_product, 'connection_method', filter_connection)
+        filtered_for_product = fuzzy_match_filter(filtered_for_product, 'os_version', filter_os_version)
+        filtered_for_product = fuzzy_match_filter(filtered_for_product, 'os_platform', filter_os_platform)
+        filtered_for_product = fuzzy_match_filter(filtered_for_product, 'screen_orientation', filter_orientation)
+        filtered_for_product = fuzzy_match_filter(filtered_for_product, 'screen_resolution', filter_resolution)
+        product_names = extract_unique_options(filtered_for_product, 'product_name')
+        # 确保当前选中的值在选项列表中
+        if filter_product and filter_product not in product_names:
+            product_names.append(filter_product)
+            product_names.sort()
 
         # 屏幕方向选项
         filtered_for_orientation = base_devices
-        if filter_project:
-            filtered_for_orientation = [d for d in filtered_for_orientation if d.project_attribute == filter_project]
-        if filter_connection:
-            filtered_for_orientation = [d for d in filtered_for_orientation if d.connection_method == filter_connection]
-        if filter_os_version:
-            filtered_for_orientation = [d for d in filtered_for_orientation if d.os_version == filter_os_version]
-        if filter_os_platform:
-            filtered_for_orientation = [d for d in filtered_for_orientation if d.os_platform == filter_os_platform]
-        if filter_product:
-            filtered_for_orientation = [d for d in filtered_for_orientation if d.product_name == filter_product]
-        if filter_resolution:
-            filtered_for_orientation = [d for d in filtered_for_orientation if d.screen_resolution == filter_resolution]
-        orientations = sorted(set(d.screen_orientation for d in filtered_for_orientation if d.screen_orientation))
+        filtered_for_orientation = fuzzy_match_filter(filtered_for_orientation, 'project_attribute', filter_project)
+        filtered_for_orientation = fuzzy_match_filter(filtered_for_orientation, 'connection_method', filter_connection)
+        filtered_for_orientation = fuzzy_match_filter(filtered_for_orientation, 'os_version', filter_os_version)
+        filtered_for_orientation = fuzzy_match_filter(filtered_for_orientation, 'os_platform', filter_os_platform)
+        filtered_for_orientation = fuzzy_match_filter(filtered_for_orientation, 'product_name', filter_product)
+        filtered_for_orientation = fuzzy_match_filter(filtered_for_orientation, 'screen_resolution', filter_resolution)
+        orientations = extract_unique_options(filtered_for_orientation, 'screen_orientation')
+        # 确保当前选中的值在选项列表中
+        if filter_orientation and filter_orientation not in orientations:
+            orientations.append(filter_orientation)
+            orientations.sort()
 
         # 分辨率选项
         filtered_for_resolution = base_devices
-        if filter_project:
-            filtered_for_resolution = [d for d in filtered_for_resolution if d.project_attribute == filter_project]
-        if filter_connection:
-            filtered_for_resolution = [d for d in filtered_for_resolution if d.connection_method == filter_connection]
-        if filter_os_version:
-            filtered_for_resolution = [d for d in filtered_for_resolution if d.os_version == filter_os_version]
-        if filter_os_platform:
-            filtered_for_resolution = [d for d in filtered_for_resolution if d.os_platform == filter_os_platform]
-        if filter_product:
-            filtered_for_resolution = [d for d in filtered_for_resolution if d.product_name == filter_product]
-        if filter_orientation:
-            filtered_for_resolution = [d for d in filtered_for_resolution if d.screen_orientation == filter_orientation]
-        resolutions = sorted(set(d.screen_resolution for d in filtered_for_resolution if d.screen_resolution))
+        filtered_for_resolution = fuzzy_match_filter(filtered_for_resolution, 'project_attribute', filter_project)
+        filtered_for_resolution = fuzzy_match_filter(filtered_for_resolution, 'connection_method', filter_connection)
+        filtered_for_resolution = fuzzy_match_filter(filtered_for_resolution, 'os_version', filter_os_version)
+        filtered_for_resolution = fuzzy_match_filter(filtered_for_resolution, 'os_platform', filter_os_platform)
+        filtered_for_resolution = fuzzy_match_filter(filtered_for_resolution, 'product_name', filter_product)
+        filtered_for_resolution = fuzzy_match_filter(filtered_for_resolution, 'screen_orientation', filter_orientation)
+        resolutions = extract_unique_options(filtered_for_resolution, 'screen_resolution')
+        # 确保当前选中的值在选项列表中
+        if filter_resolution and filter_resolution not in resolutions:
+            resolutions.append(filter_resolution)
+            resolutions.sort()
     else:
         project_attributes = []
         connection_methods = []
@@ -1119,22 +1222,22 @@ def pc_device_list():
         orientations = []
         resolutions = []
 
-    # 应用所有筛选条件得到最终设备列表
+    # 应用所有筛选条件得到最终设备列表（使用模糊匹配）
     if device_type in ['car', 'instrument']:
         if filter_project:
-            devices = [d for d in devices if d.project_attribute == filter_project]
+            devices = [d for d in devices if filter_project in (d.project_attribute or '')]
         if filter_connection:
-            devices = [d for d in devices if d.connection_method == filter_connection]
+            devices = [d for d in devices if filter_connection in (d.connection_method or '')]
         if filter_os_version:
-            devices = [d for d in devices if d.os_version == filter_os_version]
+            devices = [d for d in devices if filter_os_version in (d.os_version or '')]
         if filter_os_platform:
-            devices = [d for d in devices if d.os_platform == filter_os_platform]
+            devices = [d for d in devices if filter_os_platform in (d.os_platform or '')]
         if filter_product:
-            devices = [d for d in devices if d.product_name == filter_product]
+            devices = [d for d in devices if filter_product in (d.product_name or '')]
         if filter_orientation:
-            devices = [d for d in devices if d.screen_orientation == filter_orientation]
+            devices = [d for d in devices if filter_orientation in (d.screen_orientation or '')]
         if filter_resolution:
-            devices = [d for d in devices if d.screen_resolution == filter_resolution]
+            devices = [d for d in devices if filter_resolution in (d.screen_resolution or '')]
 
     # 处理设备列表，添加 no_cabinet 和 is_circulating 属性
     device_list = []
@@ -1261,6 +1364,9 @@ def pc_device_detail(device_id):
 
     # 获取设备借用记录
     all_raw_records = api_client.get_device_records(device_id, device_type, limit=10000)
+    print(f"[DEBUG] 设备详情页 - device_id: {device_id}, device_type: {device_type}, 记录数: {len(all_raw_records)}")
+    for r in all_raw_records[:5]:
+        print(f"[DEBUG] 记录: {r.operation_type.value}, {r.borrower}, {r.reason}")
 
     # 格式化显示用的记录列表（限制20条）
     raw_records = all_raw_records[:20]
@@ -1302,26 +1408,41 @@ def pc_device_detail(device_id):
     is_overdue = False
     overdue_hours = 0
     overdue_days = 0
+    is_long_term_borrow = False  # 是否为长期借用
 
     # 计算剩余时间（无论设备状态如何，只要有预计归还日期）
     if device.expected_return_date:
         time_diff = datetime.now() - device.expected_return_date
-        if time_diff.total_seconds() > 0:  # 已逾期
+        total_seconds = time_diff.total_seconds()
+        if total_seconds > 60:  # 已逾期超过1分钟才算逾期
             is_overdue = True
-            overdue_days = int(time_diff.total_seconds() // (24 * 3600))
-            overdue_hours = int(time_diff.total_seconds() // 3600)
+            overdue_days = int(total_seconds // (24 * 3600))
+            overdue_hours = int(total_seconds // 3600)
             remaining_hours = -overdue_hours
             remaining_days = -overdue_days
             remaining_minutes = 0
+        elif total_seconds > 0:  # 逾期1分钟内，显示剩余0分钟
+            is_overdue = False
+            remaining_seconds = 0
+            remaining_hours = 0
+            remaining_days = 0
+            remaining_minutes = 0
         else:  # 未逾期
-            remaining_seconds = device.expected_return_date.timestamp() - datetime.now().timestamp()
+            remaining_seconds = abs(total_seconds)
             remaining_hours = int(remaining_seconds // 3600)
             remaining_days = int(remaining_seconds // (24 * 3600))
             remaining_minutes = int(remaining_seconds // 60)
+    else:
+        # 长期借用，无固定归还时间
+        is_long_term_borrow = True
 
     # 只有当设备被当前用户借用且状态为借用时，才计算是否可以续借
     if is_borrowed_by_me and device.status == DeviceStatus.BORROWED:
-        if remaining_hours < 0:  # 已逾期
+        if is_long_term_borrow:
+            # 长期借用不需要续借
+            can_renew = False
+            renew_disabled_reason = '长期借用无需续借'
+        elif remaining_hours < 0:  # 已逾期
             overdue_days = -remaining_days
             if overdue_days > 3:
                 can_renew = False
@@ -1334,6 +1455,10 @@ def pc_device_detail(device_id):
                 renew_disabled_reason = '剩余时间大于24小时，暂不需要续借'
 
     stats = get_device_stats()
+    
+    # 获取设备图片和附件
+    device_images = get_device_images(device_id)
+    device_attachments = get_device_attachments(device_id)
     
     return render_template('pc/device_detail.html',
                          device=device,
@@ -1352,8 +1477,11 @@ def pc_device_detail(device_id):
                          remaining_days=remaining_days,
                          remaining_hours=remaining_hours,
                          remaining_minutes=remaining_minutes,
+                         is_long_term_borrow=is_long_term_borrow,
                          user=user,
                          now=datetime.now().strftime('%Y-%m-%d %H:%M'),
+                         device_images=device_images,
+                         device_attachments=device_attachments,
                          **stats)
 
 
@@ -1652,14 +1780,19 @@ def api_borrow():
     # 计算预计归还时间
     borrow_start_time = datetime.now()
     if expected_return_date:
-        # 使用前端传递的日期，时间设为当前时间
+        # 使用前端传递的完整日期时间
         from datetime import datetime as dt
-        date_part = dt.strptime(expected_return_date, '%Y-%m-%d')
-        now_time = dt.now()
-        device.expected_return_date = date_part.replace(hour=now_time.hour, minute=now_time.minute, second=now_time.second)
+        try:
+            # 尝试解析完整格式 YYYY-MM-DD HH:MM:SS
+            device.expected_return_date = dt.strptime(expected_return_date, '%Y-%m-%d %H:%M:%S')
+        except ValueError:
+            # 兼容旧格式 YYYY-MM-DD，时间设为当前时间
+            date_part = dt.strptime(expected_return_date, '%Y-%m-%d')
+            now_time = dt.now()
+            device.expected_return_date = date_part.replace(hour=now_time.hour, minute=now_time.minute, second=now_time.second)
     else:
-        # 使用默认天数
-        device.expected_return_date = datetime.now() + timedelta(days=int(days))
+        # 长期借用，不设置归还日期（空字符串或None都表示长期借用）
+        device.expected_return_date = None
     
     # 检查是否有预约冲突（只检查与预约时间重合的情况，自己的预约不视为冲突）
     has_conflict, conflict_info = api_client.check_reservation_conflict(
@@ -1718,6 +1851,9 @@ def api_borrow():
 
     api_client.add_operation_log(f"借出设备: {user['borrower_name']}", device.name)
     
+    # 借用成功，奖励积分
+    points_result = points_service.borrow_reward(user['user_id'], device.name, device.id)
+    points_message = f"，{points_result['message']}" if points_result['success'] else ""
     
     # 发送通知（用户自己借设备，不需要通知自己）
     # 1. 通知原借用人（如果设备之前被借用且原借用人不是自己）
@@ -1755,7 +1891,7 @@ def api_borrow():
                 notification_type="info"
             )
     
-    return jsonify({'success': True, 'message': '借用成功'})
+    return jsonify({'success': True, 'message': f'借用成功{points_message}'})
 
 
 @app.route('/api/return', methods=['POST'])
@@ -1833,6 +1969,45 @@ def api_return():
 
     api_client.add_operation_log(f"归还设备: {original_borrower}", device.name)
     
+    # 更新原借用人的归还次数
+    for u in api_client._users:
+        if u.borrower_name == original_borrower:
+            u.return_count += 1
+            api_client._db.save_user(u)
+            break
+    
+    # 归还成功，奖励积分（给原借用人）
+    points_message = ""
+    # 查找原借用人的用户ID
+    original_borrower_user_id = None
+    for u in api_client._users:
+        if u.borrower_name == original_borrower:
+            original_borrower_user_id = u.id
+            break
+    
+    if original_borrower_user_id:
+        # 检查是否逾期
+        is_overdue = False
+        if device.expected_return_date:
+            from datetime import datetime as dt
+            now = dt.now()
+            if now > device.expected_return_date:
+                # 逾期超过1分钟才算逾期
+                time_diff = now - device.expected_return_date
+                if time_diff.total_seconds() > 60:
+                    is_overdue = True
+        
+        if is_overdue:
+            # 逾期扣15分
+            points_result = points_service.overdue_penalty(original_borrower_user_id, device.name, device.id)
+            if points_result['success']:
+                points_message = f"，{points_result['message']}"
+        else:
+            # 正常归还加10分
+            points_result = points_service.return_reward(original_borrower_user_id, device.name, device.id)
+            if points_result['success']:
+                points_message = f"，{points_result['message']}"
+    
     # 检查是否有等待的预约，通知第一个等待的预约人
     device_type = get_device_type_str(device)
     waiting_reservations = api_client._db.get_reservations_by_device(device_id, device_type)
@@ -1878,7 +2053,7 @@ def api_return():
                 notification_type="success"
             )
 
-    return jsonify({'success': True, 'message': '归还成功'})
+    return jsonify({'success': True, 'message': f'归还成功{points_message}'})
 
 
 @app.route('/api/remark/add', methods=['POST'])
@@ -1915,6 +2090,37 @@ def api_add_remark():
     return jsonify({'success': True, 'message': '添加成功'})
 
 
+def _approve_my_reservation(api_client, reservation, user):
+    """
+    自动同意用户自己的预约
+    作为借用人自动同意预约
+    """
+    from common.models import ReservationStatus
+    
+    # 如果预约已经是同意状态，不需要处理
+    if reservation.status == ReservationStatus.APPROVED.value:
+        return
+    
+    now = datetime.now()
+    
+    # 自动作为借用人同意
+    if not reservation.borrower_approved:
+        reservation.borrower_approved = True
+        reservation.borrower_approved_at = now
+        
+        # 更新状态
+        if reservation.status == ReservationStatus.PENDING_BORROWER.value:
+            reservation.status = ReservationStatus.APPROVED.value
+        elif reservation.status == ReservationStatus.PENDING_BOTH.value:
+            if reservation.custodian_approved:
+                reservation.status = ReservationStatus.APPROVED.value
+            else:
+                reservation.status = ReservationStatus.PENDING_CUSTODIAN.value
+    
+    reservation.updated_at = now
+    api_client._db.save_reservation(reservation)
+
+
 @app.route('/api/transfer-to-me', methods=['POST'])
 @login_required
 def api_transfer_to_me():
@@ -1949,23 +2155,40 @@ def api_transfer_to_me():
     # 检查是否强制转借
     force = data.get('force', False)
     
-    # 检查预约冲突
+    # 检查预约冲突（排除当前用户自己的预约）
+    my_reservation = None  # 记录用户自己的预约
     if not force:
         conflict_check = api_client.check_transfer_conflict(device_id)
         if conflict_check['has_conflict']:
-            r = conflict_check['reservations'][0]
-            return jsonify({
-                'success': False,
-                'code': 'RESERVATION_CONFLICT',
-                'message': f'该设备已被 {r.reserver_name} 预约借用，时间：{r.start_time.strftime("%Y-%m-%d %H:%M")} 至 {r.end_time.strftime("%Y-%m-%d %H:%M")}',
-                'conflict_info': {
-                    'reserver_name': r.reserver_name,
-                    'reserver_id': r.reserver_id,
-                    'start_time': r.start_time.strftime('%Y-%m-%d %H:%M'),
-                    'end_time': r.end_time.strftime('%Y-%m-%d %H:%M'),
-                    'reservation_id': r.id
-                }
-            }), 409
+            # 分离当前用户自己的预约和其他人的预约
+            my_reservations = [
+                r for r in conflict_check['reservations'] 
+                if r.reserver_name == user['borrower_name']
+            ]
+            other_reservations = [
+                r for r in conflict_check['reservations'] 
+                if r.reserver_name != user['borrower_name']
+            ]
+            
+            # 如果有其他人的预约，返回冲突
+            if other_reservations:
+                r = other_reservations[0]
+                return jsonify({
+                    'success': False,
+                    'code': 'RESERVATION_CONFLICT',
+                    'message': f'该设备已被 {r.reserver_name} 预约借用，时间：{r.start_time.strftime("%Y-%m-%d %H:%M")} 至 {r.end_time.strftime("%Y-%m-%d %H:%M")}',
+                    'conflict_info': {
+                        'reserver_name': r.reserver_name,
+                        'reserver_id': r.reserver_id,
+                        'start_time': r.start_time.strftime('%Y-%m-%d %H:%M'),
+                        'end_time': r.end_time.strftime('%Y-%m-%d %H:%M'),
+                        'reservation_id': r.id
+                    }
+                }), 409
+            
+            # 记录自己的预约，后面自动同意
+            if my_reservations:
+                my_reservation = my_reservations[0]
     
     # 强制转借：取消相关预约
     if force:
@@ -1978,13 +2201,21 @@ def api_transfer_to_me():
     # 保存原借用人信息
     original_borrower = device.borrower
     
+    # 计算预计归还时间：如果有自己的预约，使用预约结束时间；否则默认1天
+    if my_reservation:
+        expected_return = my_reservation.end_time
+        # 自动同意自己的预约
+        _approve_my_reservation(api_client, my_reservation, user)
+    else:
+        expected_return = datetime.now() + timedelta(days=1)
+    
     # 更新设备信息 - 转给自己
     device.previous_borrower = original_borrower
     device.borrower = user['borrower_name']
     device.status = DeviceStatus.BORROWED
     device.lost_time = None  # 清除丢失时间
     device.entry_source = EntrySource.USER.value
-    device.expected_return_date = datetime.now() + timedelta(days=1)  # 转借后预计归还时间刷新为当前时间+1天
+    device.expected_return_date = expected_return  # 使用预约结束时间或默认1天
     
     api_client.update_device(device)
     
@@ -2049,7 +2280,19 @@ def api_transfer_to_me():
                 notification_type="info"
             )
     
-    return jsonify({'success': True, 'message': '操作成功，设备已转给您保管'})
+    # 转给自己成功，发放积分奖励（+5分）
+    points_result = points_service.add_points(
+        user_id=user['user_id'],
+        points=5,
+        transaction_type=PointsTransactionType.TRANSFER,
+        description=f'转给自己: {device.name}',
+        related_id=device.id
+    )
+    points_message = ''
+    if points_result['success']:
+        points_message = f'，{points_result["message"]}'
+    
+    return jsonify({'success': True, 'message': '操作成功，设备已转给您保管' + points_message})
 
 
 @app.route('/api/return-by-custodian', methods=['POST'])
@@ -2113,7 +2356,13 @@ def api_return_by_custodian():
 
     api_client.add_operation_log(f"保管人代还 {original_borrower}", device.name)
     
-
+    # 更新原借用人的归还次数
+    for u in api_client._users:
+        if u.borrower_name == original_borrower:
+            u.return_count += 1
+            api_client._db.save_user(u)
+            break
+    
     # 通知原借用人
     if original_borrower:
         api_client.notify_return(
@@ -2272,6 +2521,19 @@ def api_search():
     return jsonify({'success': True, 'devices': results})
 
 
+@app.route('/api/add-search-points', methods=['POST'])
+@login_required
+def api_add_search_points():
+    """添加搜索积分API"""
+    user = get_current_user()
+    result = points_service.search_reward(user['user_id'])
+    return jsonify({
+        'success': result.get('success', False),
+        'points_added': result.get('points_change', 0) if result.get('success') else 0,
+        'message': result.get('message', '')
+    })
+
+
 @app.route('/api/users')
 @login_required
 def api_users():
@@ -2309,6 +2571,7 @@ def api_report_lost():
         return jsonify({'success': False, 'message': '设备状态异常'})
     
     # 更新设备状态为丢失
+    device.previous_status = device.status.value  # 保存原始状态
     device.status = DeviceStatus.LOST
     device.lost_time = datetime.now()
     device.previous_borrower = device.borrower
@@ -2352,7 +2615,13 @@ def api_report_lost():
                 notification_type="error"
             )
     
-    return jsonify({'success': True, 'message': '丢失报备成功'})
+    # 丢失报备成功，发放积分奖励
+    points_result = points_service.report_reward(user['user_id'], 'lost', device.name)
+    points_message = ''
+    if points_result['success']:
+        points_message = f'，{points_result["message"]}'
+    
+    return jsonify({'success': True, 'message': '丢失报备成功' + points_message})
 
 
 @app.route('/api/report-damage', methods=['POST'])
@@ -2387,6 +2656,7 @@ def api_report_damage():
     original_borrower = device.borrower
     
     # 更新设备状态
+    device.previous_status = device.status.value  # 保存原始状态
     device.status = DeviceStatus.DAMAGED
     device.damage_reason = damage_reason
     device.damage_time = datetime.now()
@@ -2456,7 +2726,13 @@ def api_report_damage():
                 notification_type="warning"
             )
 
-    return jsonify({'success': True, 'message': '损坏报备成功'})
+    # 损坏报备成功，发放积分奖励
+    points_result = points_service.report_reward(user['user_id'], 'damaged', device.name)
+    points_message = ''
+    if points_result['success']:
+        points_message = f'，{points_result["message"]}'
+    
+    return jsonify({'success': True, 'message': '损坏报备成功' + points_message})
 
 
 @app.route('/api/ship-device', methods=['POST'])
@@ -2639,6 +2915,7 @@ def api_found_device():
         device.status = DeviceStatus.BORROWED
         device.borrower = transfer_to
         device.lost_time = None
+        device.previous_status = ''  # 清空原始状态记录
         
         api_client.update_device(device)
         
@@ -2663,6 +2940,7 @@ def api_found_device():
         device.borrower = user['borrower_name']
         device.borrow_time = datetime.now()
         device.lost_time = None
+        device.previous_status = ''  # 清空原始状态记录
         
         api_client.update_device(device)
         
@@ -2683,17 +2961,28 @@ def api_found_device():
         api_client._db.save_record(record)
         api_client.add_operation_log(f"设备找回转给自己: {user['borrower_name']}", device.name)
     else:
-        # 归还入库 - 设备变为在库状态
-        device.status = DeviceStatus.IN_STOCK
+        # 归还入库 - 恢复设备原始状态（流通、无柜号、封存等）
+        previous_status = device.previous_status
+        if previous_status:
+            try:
+                device.status = DeviceStatus(previous_status)
+            except ValueError:
+                # 如果原始状态无效，默认恢复为在库
+                device.status = DeviceStatus.IN_STOCK
+        else:
+            # 如果没有记录原始状态，默认恢复为在库
+            device.status = DeviceStatus.IN_STOCK
         device.borrower = ''
         device.borrow_time = None
         device.expected_return_date = None
         device.lost_time = None
+        device.previous_status = ''  # 清空原始状态记录
 
         api_client.update_device(device)
 
         # 添加记录
         from_desc = original_borrower or '丢失状态'
+        to_status = device.status.value
         record = Record(
             id=str(uuid.uuid4()),
             device_id=device.id,
@@ -2702,8 +2991,8 @@ def api_found_device():
             operation_type=OperationType.FOUND,
             operator=user['borrower_name'],
             operation_time=datetime.now(),
-            borrower=f"找回：{from_desc}——>归还入库",
-            reason='设备已找回，归还入库',
+            borrower=f"找回：{from_desc}——>{to_status}",
+            reason=f'设备已找回，恢复为{to_status}状态',
             entry_source=EntrySource.USER.value
         )
         api_client._db.save_record(record)
@@ -2733,7 +3022,13 @@ def api_found_device():
                 notification_type="success"
             )
     
-    return jsonify({'success': True, 'message': '设备找回成功'})
+    # 设备找回成功，发放积分奖励
+    points_result = points_service.report_reward(user['user_id'], 'found', device.name)
+    points_message = ''
+    if points_result['success']:
+        points_message = f'，{points_result["message"]}'
+    
+    return jsonify({'success': True, 'message': '设备找回成功' + points_message})
 
 
 @app.route('/api/repair-device', methods=['POST'])
@@ -2784,6 +3079,7 @@ def api_repair_device():
         device.borrower = transfer_to
         device.damage_reason = ''
         device.damage_time = None
+        device.previous_status = ''  # 清空原始状态记录
 
         api_client.update_device(device)
 
@@ -2807,6 +3103,7 @@ def api_repair_device():
         device.borrow_time = datetime.now()
         device.damage_reason = ''
         device.damage_time = None
+        device.previous_status = ''  # 清空原始状态记录
 
         api_client.update_device(device)
         
@@ -2824,16 +3121,27 @@ def api_repair_device():
         )
         api_client.add_operation_log(f"修复转给自己: {user['borrower_name']}", device.name)
     else:
-        # 归还入库 - 设备变为在库状态
-        device.status = DeviceStatus.IN_STOCK
+        # 归还入库 - 恢复设备原始状态（流通、无柜号、封存等）
+        previous_status = device.previous_status
+        if previous_status:
+            try:
+                device.status = DeviceStatus(previous_status)
+            except ValueError:
+                # 如果原始状态无效，默认恢复为在库
+                device.status = DeviceStatus.IN_STOCK
+        else:
+            # 如果没有记录原始状态，默认恢复为在库
+            device.status = DeviceStatus.IN_STOCK
         device.borrower = ''
         device.borrow_time = None
         device.expected_return_date = None
         device.damage_reason = ''
         device.damage_time = None
+        device.previous_status = ''  # 清空原始状态记录
 
         api_client.update_device(device)
         
+        to_status = device.status.value
         record = Record(
             id=str(uuid.uuid4()),
             device_id=device.id,
@@ -2842,8 +3150,8 @@ def api_repair_device():
             operation_type=OperationType.REPAIRED,
             operator=user['borrower_name'],
             operation_time=datetime.now(),
-            borrower=f"修复：{original_borrower or '损坏'}——>归还入库",
-            reason='设备已修复，归还入库',
+            borrower=f"修复：{original_borrower or '损坏'}——>{to_status}",
+            reason=f'设备已修复，恢复为{to_status}状态',
             entry_source=EntrySource.USER.value
         )
         api_client.add_operation_log(f"修复归还: {user['borrower_name']}", device.name)
@@ -2873,7 +3181,13 @@ def api_repair_device():
                 notification_type="success"
             )
     
-    return jsonify({'success': True, 'message': '操作成功'})
+    # 设备修复成功，发放积分奖励
+    points_result = points_service.report_reward(user['user_id'], 'fixed', device.name)
+    points_message = ''
+    if points_result['success']:
+        points_message = f'，{points_result["message"]}'
+    
+    return jsonify({'success': True, 'message': '操作成功' + points_message})
 
 
 @app.route('/api/not-found', methods=['POST'])
@@ -2923,6 +3237,7 @@ def api_not_found():
         api_client.add_operation_log(f"未找到退回 {user['borrower_name']} -> {previous_borrower}", device.name)
     else:
         # 没有上一个借用人，转为丢失状态
+        device.previous_status = device.status.value  # 保存原始状态
         device.status = DeviceStatus.LOST
         device.previous_borrower = device.borrower
         device.lost_time = datetime.now()
@@ -2973,6 +3288,7 @@ def api_not_found_direct():
     original_borrower = device.borrower
     
     # 转为丢失状态，清空借用人信息
+    device.previous_status = device.status.value  # 保存原始状态
     device.status = DeviceStatus.LOST
     device.previous_borrower = original_borrower
     device.lost_time = datetime.now()
@@ -3123,38 +3439,43 @@ def api_renew():
     
     # 计算新的预计归还日期
     if new_return_date:
-        # 使用前端传递的日期，时间设为当前时间
+        # 使用前端传递的完整日期时间
         from datetime import datetime as dt
-        date_part = dt.strptime(new_return_date, '%Y-%m-%d')
-        now = dt.now()
-        new_expected_return_date = date_part.replace(hour=now.hour, minute=now.minute, second=now.second)
-    elif device.expected_return_date:
-        new_expected_return_date = device.expected_return_date + timedelta(days=int(days))
+        try:
+            # 尝试解析完整格式 YYYY-MM-DD HH:MM:SS
+            new_expected_return_date = dt.strptime(new_return_date, '%Y-%m-%d %H:%M:%S')
+        except ValueError:
+            # 兼容旧格式 YYYY-MM-DD，时间设为当前时间
+            date_part = dt.strptime(new_return_date, '%Y-%m-%d')
+            now = dt.now()
+            new_expected_return_date = date_part.replace(hour=now.hour, minute=now.minute, second=now.second)
     else:
-        new_expected_return_date = datetime.now() + timedelta(days=int(days))
+        # 长期借用，不设置归还日期（空字符串或None都表示长期借用）
+        new_expected_return_date = None
     
     # 检查续期是否与预约冲突
     # 获取设备类型
     device_type = get_device_type_str(device)
     
-    # 检查是否有预约与新的归还日期冲突
-    reservations = api_client._db.get_reservations_by_device(device_id, device_type)
-    for reservation in reservations:
-        # 只检查已同意或待确认的预约
-        if reservation.status in [ReservationStatus.APPROVED.value, 
-                                   ReservationStatus.PENDING_CUSTODIAN.value,
-                                   ReservationStatus.PENDING_BORROWER.value,
-                                   ReservationStatus.PENDING_BOTH.value]:
-            # 如果新的归还日期超过了预约开始时间，说明有冲突
-            if new_expected_return_date > reservation.start_time:
-                # 检查是否是预约人自己续期自己的预约
-                if reservation.reserver_id == user['user_id']:
-                    # 自己的预约，允许续期，但需要在预约到期时自动处理
-                    continue
-                return jsonify({
-                    'success': False, 
-                    'message': f"无法续期，该设备已被 {reservation.reserver_name} 预约，预约时间 {reservation.start_time.strftime('%Y-%m-%d %H:%M')} 至 {reservation.end_time.strftime('%Y-%m-%d %H:%M')}"
-                })
+    # 检查是否有预约与新的归还日期冲突（长期借用不检查冲突）
+    if new_expected_return_date is not None:
+        reservations = api_client._db.get_reservations_by_device(device_id, device_type)
+        for reservation in reservations:
+            # 只检查已同意或待确认的预约
+            if reservation.status in [ReservationStatus.APPROVED.value,
+                                       ReservationStatus.PENDING_CUSTODIAN.value,
+                                       ReservationStatus.PENDING_BORROWER.value,
+                                       ReservationStatus.PENDING_BOTH.value]:
+                # 如果新的归还日期超过了预约开始时间，说明有冲突
+                if new_expected_return_date > reservation.start_time:
+                    # 检查是否是预约人自己续期自己的预约
+                    if reservation.reserver_id == user['user_id']:
+                        # 自己的预约，允许续期，但需要在预约到期时自动处理
+                        continue
+                    return jsonify({
+                        'success': False,
+                        'message': f"无法续期，该设备已被 {reservation.reserver_name} 预约，预约时间 {reservation.start_time.strftime('%Y-%m-%d %H:%M')} 至 {reservation.end_time.strftime('%Y-%m-%d %H:%M')}"
+                    })
     
     # 更新设备的预计归还日期
     device.expected_return_date = new_expected_return_date
@@ -3172,11 +3493,11 @@ def api_renew():
         operation_time=datetime.now(),
         borrower=user['borrower_name'],
         phone=device.phone,
-        reason=f'续借 {days} 天',
+        reason=f'续借 {days} 天' if new_expected_return_date else '续借为长期借用',
         entry_source=EntrySource.USER.value
     )
     api_client._db.save_record(record)
-    api_client.add_operation_log(f"续借设备 {user['borrower_name']}, {days}天", device.name)
+    api_client.add_operation_log(f"续借设备 {user['borrower_name']}, {days if new_expected_return_date else '长期'}天", device.name)
     
     
     # 通知保管人（如果存在且不是借用人自己）
@@ -3197,9 +3518,15 @@ def api_renew():
                 notification_type="info"
             )
     
+    # 续借成功，发放积分奖励
+    points_result = points_service.renew_reward(user['user_id'], device.name)
+    points_message = ''
+    if points_result['success']:
+        points_message = f'，{points_result["message"]}'
+    
     return jsonify({
         'success': True, 
-        'message': f'续借成功，新的预计归还日期: {device.expected_return_date.strftime("%Y-%m-%d")}'
+        'message': f'续借成功，新的预计归还日期: {device.expected_return_date.strftime("%Y-%m-%d")}' + points_message
     })
 
 
@@ -3284,23 +3611,32 @@ def api_user_announcements():
 @login_required
 def api_user_rankings():
     """获取用户排名列表API"""
-    ranking_type = request.args.get('type', 'borrow')  # 'borrow' 或 'return'
+    ranking_type = request.args.get('type', 'borrow')  # 'borrow', 'return', 或 'points'
     
-    if ranking_type not in ['borrow', 'return']:
+    if ranking_type not in ['borrow', 'return', 'points']:
         return jsonify({'success': False, 'message': '排名类型无效'})
-    
-    rankings = api_client.get_user_rankings(ranking_type)
     
     # 获取当前用户今天的点赞次数
     user = get_current_user()
     today_likes = api_client.get_user_today_likes(user['user_id'])
     remaining_likes = 5 - today_likes
     
-    return jsonify({
-        'success': True,
-        'rankings': rankings,
-        'remaining_likes': max(0, remaining_likes)
-    })
+    if ranking_type == 'points':
+        # 积分排名
+        rankings = points_service.get_points_rankings(limit=100)
+        return jsonify({
+            'success': True,
+            'rankings': rankings,
+            'remaining_likes': max(0, remaining_likes)
+        })
+    else:
+        # 借用/归还排名
+        rankings = api_client.get_user_rankings(ranking_type)
+        return jsonify({
+            'success': True,
+            'rankings': rankings,
+            'remaining_likes': max(0, remaining_likes)
+        })
 
 
 @app.route('/api/user-like', methods=['POST'])
@@ -3317,11 +3653,17 @@ def api_user_like():
     success, message = api_client.add_like(user['user_id'], to_user_id)
     
     if success:
+        # 点赞成功，发放积分奖励
+        points_result = points_service.like_reward(user['user_id'])
+        points_message = ''
+        if points_result['success']:
+            points_message = f'，{points_result["message"]}'
+        
         # 获取点赞后的点赞数
         like_count = api_client.get_user_like_count(to_user_id)
         return jsonify({
             'success': True,
-            'message': message,
+            'message': message + points_message,
             'like_count': like_count
         })
     else:
@@ -3329,6 +3671,483 @@ def api_user_like():
 
 
 # ==================== 个人资料API ====================
+
+@app.route('/pc/points')
+@login_required
+def pc_points_detail():
+    """PC端积分详情页面"""
+    api_client.reload_data()
+    user = get_current_user()
+    
+    # 获取用户积分详情
+    user_points = points_service.get_or_create_user_points(user['user_id'])
+    points_rank = points_service.get_user_points_rank(user['user_id'])
+    
+    # 获取积分记录
+    records = points_service.get_points_records(user['user_id'], limit=100)
+    
+    # 获取今日积分统计
+    today = datetime.now().strftime('%Y-%m-%d')
+    today_stats = {
+        'daily_login': False,
+        'like_count': 0,
+        'search': False,
+        'report_found': False,
+        'report_fixed': False,
+        'report_damaged': False,
+        'report_lost': False,
+    }
+    
+    from common.models import PointsTransactionType
+    all_records = points_service.db.get_points_records(user['user_id'])
+    for record in all_records:
+        if record.create_time and record.create_time.strftime('%Y-%m-%d') == today:
+            if record.transaction_type == PointsTransactionType.DAILY_LOGIN:
+                today_stats['daily_login'] = True
+            elif record.transaction_type == PointsTransactionType.LIKE:
+                today_stats['like_count'] += 1
+            elif record.transaction_type == PointsTransactionType.SEARCH:
+                today_stats['search'] = True
+            elif record.transaction_type == PointsTransactionType.REPORT_FOUND:
+                today_stats['report_found'] = True
+            elif record.transaction_type == PointsTransactionType.REPORT_FIXED:
+                today_stats['report_fixed'] = True
+            elif record.transaction_type == PointsTransactionType.REPORT_DAMAGED:
+                today_stats['report_damaged'] = True
+            elif record.transaction_type == PointsTransactionType.REPORT_LOST:
+                today_stats['report_lost'] = True
+    
+    # 获取设备统计数据（用于侧边栏显示）
+    stats = get_device_stats()
+    
+    return render_template('pc/points_detail.html',
+                         user=user,
+                         user_points=user_points,
+                         points_rank=points_rank,
+                         records=records,
+                         today_stats=today_stats,
+                         active_nav='points',
+                         **stats)
+
+
+@app.route('/pc/bounties')
+@login_required
+def pc_bounties():
+    """PC端悬赏榜单页面"""
+    api_client.reload_data()
+    user = get_current_user()
+
+    # 获取所有悬赏
+    all_bounties = api_client._db.get_all_bounties()
+
+    # 获取用户积分（显示当前剩余积分）
+    user_points_data = points_service.get_or_create_user_points(user['user_id'])
+    user_points = user_points_data.points if user_points_data else 0
+
+    # 获取设备统计数据（用于侧边栏显示）
+    stats = get_device_stats()
+
+    return render_template('pc/bounties.html',
+                         user=user,
+                         user_points=user_points,
+                         bounties=all_bounties,
+                         active_nav='bounties',
+                         **stats)
+
+
+@app.route('/api/bounties', methods=['GET'])
+@login_required
+def api_get_bounties():
+    """获取悬赏列表API"""
+    status = request.args.get('status', None)
+    bounties = api_client._db.get_all_bounties(status=status)
+
+    # 转换为字典列表
+    bounty_list = []
+    for bounty in bounties:
+        bounty_dict = bounty.to_dict()
+        # 添加发布人头像
+        for u in api_client._users:
+            if u.id == bounty.publisher_id:
+                bounty_dict['publisher_avatar'] = u.avatar
+                break
+        # 添加认领人头像
+        if bounty.claimer_id:
+            for u in api_client._users:
+                if u.id == bounty.claimer_id:
+                    bounty_dict['claimer_avatar'] = u.avatar
+                    break
+        bounty_list.append(bounty_dict)
+
+    return jsonify({'success': True, 'bounties': bounty_list})
+
+
+@app.route('/api/devices/search', methods=['GET'])
+@login_required
+def api_search_devices():
+    """搜索设备API（用于悬赏联想搜索）"""
+    keyword = request.args.get('keyword', '').strip()
+    if not keyword:
+        return jsonify({'success': True, 'devices': []})
+
+    # 搜索设备
+    all_devices = api_client._db.get_all_devices()
+    matched_devices = []
+
+    for device in all_devices:
+        # 匹配设备名称、型号、SN码、IMEI等
+        name_match = device.name and keyword.lower() in device.name.lower()
+        model_match = device.model and keyword.lower() in device.model.lower()
+        sn_match = (hasattr(device, 'sn') and device.sn and keyword.lower() in device.sn.lower())
+        imei_match = (hasattr(device, 'imei') and device.imei and keyword.lower() in device.imei.lower())
+
+        if name_match or model_match or sn_match or imei_match:
+            matched_devices.append({
+                'id': device.id,
+                'name': device.name,
+                'model': device.model,
+                'device_type': device.device_type.value if hasattr(device.device_type, 'value') else str(device.device_type),
+                'status': device.status.value if hasattr(device.status, 'value') else str(device.status),
+                'cabinet_number': device.cabinet_number
+            })
+
+    # 最多返回10条结果
+    return jsonify({'success': True, 'devices': matched_devices[:10]})
+
+
+@app.route('/api/bounties', methods=['POST'])
+@login_required
+def api_create_bounty():
+    """创建悬赏API"""
+    user = get_current_user()
+    data = request.json
+
+    title = data.get('title', '').strip()
+    description = data.get('description', '').strip()
+    device_name = data.get('device_name', '').strip()
+    device_id = data.get('device_id', '').strip()
+    reward_points = int(data.get('reward_points', 10))
+
+    # 验证数据
+    if not title:
+        return jsonify({'success': False, 'message': '请输入悬赏标题'})
+    if not device_name:
+        return jsonify({'success': False, 'message': '请输入要寻找的设备名称'})
+    if reward_points < 1 or reward_points > 100:
+        return jsonify({'success': False, 'message': '悬赏积分必须在1-100之间'})
+
+    # 检查积分是否足够（发布悬赏需要10积分 + 悬赏积分）
+    user_points = points_service.get_or_create_user_points(user['user_id'])
+    total_cost = 10 + reward_points
+    if user_points.points < total_cost:
+        return jsonify({'success': False, 'message': f'积分不足，发布悬赏需要{total_cost}积分（发布费10积分 + 悬赏{reward_points}积分）'})
+
+    # 如果提供了设备ID，验证设备是否存在
+    device = None
+    if device_id:
+        device = api_client._db.get_device_by_id(device_id)
+        if not device:
+            return jsonify({'success': False, 'message': '设备不存在'})
+
+    # 扣除发布悬赏的积分（发布费10积分 + 悬赏积分）
+    from common.models import PointsTransactionType
+
+    # 扣除发布费
+    points_result = points_service.create_bounty_cost(user['user_id'], title, '')
+    if not points_result['success']:
+        return jsonify({'success': False, 'message': points_result['message']})
+
+    # 扣除悬赏积分（冻结）
+    if reward_points > 0:
+        points_service.add_points(
+            user_id=user['user_id'],
+            points=-reward_points,
+            transaction_type=PointsTransactionType.CREATE_BOUNTY,
+            description=f'悬赏冻结积分: {title}',
+            related_id=''
+        )
+
+    # 创建悬赏
+    from common.models import Bounty, BountyStatus
+    import uuid
+    from datetime import datetime
+
+    # 保存设备之前的状态
+    device_previous_status = ""
+    if device:
+        device_previous_status = device.status.value if hasattr(device.status, 'value') else str(device.status)
+
+    bounty = Bounty(
+        id=str(uuid.uuid4()),
+        title=title,
+        description=description,
+        publisher_id=user['user_id'],
+        publisher_name=user['borrower_name'],
+        reward_points=reward_points,
+        status=BountyStatus.PENDING,
+        device_name=device_name,
+        device_id=device_id,
+        device_previous_status=device_previous_status
+    )
+
+    api_client._db.save_bounty(bounty)
+
+    # 添加设备借用记录
+    if device:
+        from common.models import Record, OperationType
+        record = Record(
+            id=str(uuid.uuid4()),
+            device_id=device.id,
+            device_name=device.name,
+            device_type=get_device_type_str(device),
+            operation_type=OperationType.CREATE_BOUNTY,
+            operator=user['borrower_name'],
+            operation_time=datetime.now(),
+            borrower=user['borrower_name'],
+            reason=f'发布悬赏：{title}',
+            entry_source=EntrySource.USER.value
+        )
+        result = api_client._db.save_record(record)
+        print(f"[DEBUG] 发布悬赏记录保存结果: {result}, device_id: {device.id}, record_id: {record.id}")
+
+        # 添加操作日志
+        api_client._db.add_operation_log(
+            operation="发布悬赏",
+            device_name=device.name,
+            operator=user['borrower_name']
+        )
+
+    # 更新积分记录中的related_id
+    records = api_client._db.get_points_records(user['user_id'], limit=1)
+    if records and records[0].transaction_type.value == '发布悬赏':
+        records[0].related_id = bounty.id
+
+    return jsonify({'success': True, 'message': '悬赏发布成功', 'bounty_id': bounty.id})
+
+
+@app.route('/api/bounties/<bounty_id>/found', methods=['POST'])
+@login_required
+def api_found_bounty(bounty_id):
+    """找到设备API（任何人都可以提交找到设备）"""
+    user = get_current_user()
+    data = request.json
+    finder_description = data.get('finder_description', '').strip()
+
+    if not finder_description:
+        return jsonify({'success': False, 'message': '请描述设备位置'})
+
+    bounty = api_client._db.get_bounty_by_id(bounty_id)
+    if not bounty:
+        return jsonify({'success': False, 'message': '悬赏不存在'})
+
+    if bounty.status.value != '待认领':
+        return jsonify({'success': False, 'message': '该悬赏状态不正确'})
+
+    # 不能找到自己发布的悬赏
+    if bounty.publisher_id == user['user_id']:
+        return jsonify({'success': False, 'message': '不能提交自己发布的悬赏'})
+
+    # 更新悬赏状态为已找到
+    from common.models import BountyStatus
+    from datetime import datetime
+
+    bounty.status = BountyStatus.FOUND
+    bounty.claimer_id = user['user_id']
+    bounty.claimer_name = user['borrower_name']
+    bounty.claim_time = datetime.now()
+    bounty.finder_description = finder_description
+    api_client._db.save_bounty(bounty)
+
+    # 通知发布人
+    api_client.add_notification(
+        user_id=bounty.publisher_id,
+        user_name=bounty.publisher_name,
+        title="悬赏有人找到设备",
+        content=f"您发布的悬赏「{bounty.title}」已被 {user['borrower_name']} 找到，请确认",
+        notification_type="info"
+    )
+
+    return jsonify({'success': True, 'message': '已通知悬赏人确认'})
+
+
+@app.route('/api/bounties/<bounty_id>/confirm', methods=['POST'])
+@login_required
+def api_confirm_bounty(bounty_id):
+    """确认悬赏完成API（发布人确认）"""
+    user = get_current_user()
+    data = request.json
+    confirmed = data.get('confirmed', True)  # True=确认完成, False=未找到
+
+    bounty = api_client._db.get_bounty_by_id(bounty_id)
+    if not bounty:
+        return jsonify({'success': False, 'message': '悬赏不存在'})
+
+    if bounty.publisher_id != user['user_id']:
+        return jsonify({'success': False, 'message': '只有发布人可以确认'})
+
+    if bounty.status.value != '已找到':
+        return jsonify({'success': False, 'message': '该悬赏状态不正确'})
+
+    from common.models import BountyStatus, DeviceStatus, Record
+    from datetime import datetime
+    import uuid
+
+    if confirmed:
+        # 确认完成
+        bounty.status = BountyStatus.COMPLETED
+        bounty.complete_time = datetime.now()
+        api_client._db.save_bounty(bounty)
+
+        # 给找到人发放悬赏积分
+        points_service.receive_bounty_reward(
+            bounty.claimer_id,
+            bounty.title,
+            bounty.id,
+            bounty.reward_points
+        )
+
+        # 如果关联了设备，将设备状态改为借出并转给发榜人
+        if bounty.device_id:
+            device = api_client._db.get_device_by_id(bounty.device_id)
+            if device:
+                # 更新设备状态为借出
+                device.status = DeviceStatus.BORROWED
+                device.borrower_id = bounty.publisher_id
+                device.borrower_name = bounty.publisher_name
+                device.loan_time = datetime.now()
+                api_client._db.save_device(device)
+
+                # 创建悬赏完成记录
+                from common.models import OperationType
+                record = Record(
+                    id=str(uuid.uuid4()),
+                    device_id=device.id,
+                    device_name=device.name,
+                    device_type=get_device_type_str(device),
+                    operation_type=OperationType.COMPLETE_BOUNTY,
+                    operator=user['borrower_name'],
+                    operation_time=datetime.now(),
+                    borrower=bounty.publisher_name,
+                    reason=f'悬赏完成：{bounty.title}，获得设备',
+                    entry_source=EntrySource.USER.value
+                )
+                result = api_client._db.save_record(record)
+                print(f"[DEBUG] 悬赏完成记录保存结果: {result}, record: {record}")
+
+                # 添加操作日志
+                api_client._db.add_operation_log(
+                    operation="悬赏完成",
+                    device_name=device.name,
+                    operator=user['borrower_name']
+                )
+
+        # 通知找到人
+        api_client.add_notification(
+            user_id=bounty.claimer_id,
+            user_name=bounty.claimer_name,
+            title="悬赏完成",
+            content=f"您找到的悬赏「{bounty.title}」已被确认，获得 {bounty.reward_points} 积分",
+            notification_type="success"
+        )
+
+        return jsonify({'success': True, 'message': f'确认完成，{bounty.claimer_name} 已获得 {bounty.reward_points} 积分'})
+    else:
+        # 未找到，恢复悬赏状态为待认领
+        bounty.status = BountyStatus.PENDING
+        # 清除找到人信息但保留找到描述用于参考
+        previous_finder = bounty.claimer_name
+        bounty.claimer_id = ""
+        bounty.claimer_name = ""
+        bounty.claim_time = None
+        api_client._db.save_bounty(bounty)
+
+        # 通知找到人
+        api_client.add_notification(
+            user_id=bounty.claimer_id or "",
+            user_name=previous_finder,
+            title="悬赏未确认",
+            content=f"您找到的悬赏「{bounty.title}」未被确认，悬赏已重新开放",
+            notification_type="warning"
+        )
+
+        return jsonify({'success': True, 'message': '已标记为未找到，悬赏重新开放'})
+
+
+@app.route('/api/bounties/<bounty_id>/cancel', methods=['POST'])
+@login_required
+def api_cancel_bounty(bounty_id):
+    """取消悬赏API（发布人取消）"""
+    user = get_current_user()
+
+    bounty = api_client._db.get_bounty_by_id(bounty_id)
+    if not bounty:
+        return jsonify({'success': False, 'message': '悬赏不存在'})
+
+    if bounty.publisher_id != user['user_id']:
+        return jsonify({'success': False, 'message': '只有发布人可以取消'})
+
+    if bounty.status.value != '待认领':
+        return jsonify({'success': False, 'message': '只能取消待认领的悬赏'})
+
+    # 退还发布悬赏的积分（10积分）和悬赏积分
+    from common.models import PointsTransactionType
+
+    # 退还发布费
+    points_service.add_points(
+        user_id=user['user_id'],
+        points=10,
+        transaction_type=PointsTransactionType.CREATE_BOUNTY,
+        description=f'取消悬赏退还发布费: {bounty.title}',
+        related_id=bounty.id
+    )
+
+    # 退还悬赏积分
+    points_service.add_points(
+        user_id=user['user_id'],
+        points=bounty.reward_points,
+        transaction_type=PointsTransactionType.RECEIVE_BOUNTY,
+        description=f'取消悬赏退还悬赏积分: {bounty.title}',
+        related_id=bounty.id
+    )
+
+    # 如果关联了设备，添加取消记录
+    if bounty.device_id:
+        device = api_client._db.get_device_by_id(bounty.device_id)
+        print(f"[DEBUG] 取消悬赏 - bounty.device_id: {bounty.device_id}, device: {device}")
+        if device:
+            # 添加设备借用记录
+            from common.models import Record, OperationType
+            record = Record(
+                id=str(uuid.uuid4()),
+                device_id=device.id,
+                device_name=device.name,
+                device_type=get_device_type_str(device),
+                operation_type=OperationType.CANCEL_BOUNTY,
+                operator=user['borrower_name'],
+                operation_time=datetime.now(),
+                borrower=user['borrower_name'],
+                reason=f'取消悬赏：{bounty.title}',
+                entry_source=EntrySource.USER.value
+            )
+            result = api_client._db.save_record(record)
+            print(f"[DEBUG] 取消悬赏记录保存结果: {result}, record: {record}")
+
+            # 添加操作日志
+            api_client._db.add_operation_log(
+                operation="取消悬赏",
+                device_name=device.name,
+                operator=user['borrower_name']
+            )
+        else:
+            print(f"[DEBUG] 取消悬赏 - 设备不存在: {bounty.device_id}")
+    else:
+        print(f"[DEBUG] 取消悬赏 - bounty.device_id 为空")
+
+    # 删除悬赏
+    api_client._db.delete_bounty(bounty_id)
+
+    return jsonify({'success': True, 'message': '悬赏已取消，积分已退还'})
+
 
 @app.route('/pc/profile')
 @login_required
@@ -3444,6 +4263,37 @@ def api_update_avatar():
     })
 
 
+@app.route('/api/update-signature', methods=['POST'])
+@login_required
+def api_update_signature():
+    """更新个性签名API"""
+    user = get_current_user()
+    data = request.json
+    signature = data.get('signature', '').strip()
+
+    # 限制签名长度（最多100个字符）
+    if len(signature) > 100:
+        return jsonify({'success': False, 'message': '签名长度不能超过100个字符'})
+
+    # 查找并更新用户
+    full_user = None
+    for u in api_client._users:
+        if u.id == user['user_id']:
+            u.signature = signature
+            api_client._db.save_user(u)
+            full_user = u
+            break
+
+    if full_user:
+        return jsonify({
+            'success': True,
+            'message': '签名更新成功',
+            'signature': signature
+        })
+    else:
+        return jsonify({'success': False, 'message': '用户不存在'})
+
+
 # ==================== 预约管理API ====================
 
 @app.route('/api/reservations/create', methods=['POST'])
@@ -3482,7 +4332,15 @@ def api_create_reservation():
     )
     
     if success:
-        return jsonify({'success': True, 'message': '预约成功', 'reservation': result.to_dict()})
+        # 预约成功，发放积分奖励
+        device = api_client.get_device_by_id(device_id)
+        device_name = device.name if device else ''
+        points_result = points_service.reserve_reward(user['user_id'], device_name)
+        points_message = ''
+        if points_result['success']:
+            points_message = f'，{points_result["message"]}'
+        
+        return jsonify({'success': True, 'message': '预约成功' + points_message, 'reservation': result.to_dict()})
     else:
         return jsonify({'success': False, 'message': result})
 
@@ -3937,6 +4795,11 @@ def api_transfer():
     if force:
         message = '强制转借成功，已取消相关预约'
     
+    # 转借成功，发放积分奖励
+    points_result = points_service.transfer_reward(user['user_id'], device.name)
+    if points_result['success']:
+        message += f'，{points_result["message"]}'
+    
     return jsonify({'success': True, 'message': message})
 
 
@@ -3989,12 +4852,12 @@ if APSCHEDULER_AVAILABLE:
     
     # 每分钟执行一次预约处理
     scheduler.add_job(process_reservations_job, 'interval', minutes=1, id='process_reservations')
-    # 每天上午9点发送逾期提醒邮件
-    scheduler.add_job(send_overdue_reminder_job, 'cron', hour=9, minute=0, id='send_overdue_reminders')
-    # 每5分钟发送预约待确认提醒邮件（避免过于频繁）
-    scheduler.add_job(send_reservation_pending_reminder_job, 'interval', minutes=5, id='send_reservation_pending_reminders')
+    # 每5分钟检查并发送逾期提醒邮件（需要精确到10分钟的提醒）
+    scheduler.add_job(send_overdue_reminder_job, 'interval', minutes=5, id='send_overdue_reminders')
+    # 每30分钟检查并发送预约待确认提醒邮件
+    scheduler.add_job(send_reservation_pending_reminder_job, 'interval', minutes=30, id='send_reservation_pending_reminders')
     scheduler.start()
-    print("✓ 定时任务已启动：每分钟处理预约、每天9点发送逾期提醒、每5分钟发送预约确认提醒")
+    print("✓ 定时任务已启动：每分钟处理预约、每5分钟检查逾期提醒、每30分钟检查预约确认提醒")
 
 
 # ==================== 错误处理 ====================
@@ -4007,6 +4870,345 @@ def not_found(error):
 @app.errorhandler(500)
 def internal_error(error):
     return render_template('error.html', message='服务器内部错误'), 500
+
+
+# ========== 设备图片和附件API ==========
+
+# 上传目录
+UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), '..', 'uploads')
+IMAGE_FOLDER = os.path.join(UPLOAD_FOLDER, 'images')
+ATTACHMENT_FOLDER = os.path.join(UPLOAD_FOLDER, 'attachments')
+
+# 确保上传目录存在
+os.makedirs(IMAGE_FOLDER, exist_ok=True)
+os.makedirs(ATTACHMENT_FOLDER, exist_ok=True)
+
+# 存储图片和附件数据（使用JSON文件存储）
+DEVICE_MEDIA_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'device_media.json')
+os.makedirs(os.path.dirname(DEVICE_MEDIA_FILE), exist_ok=True)
+
+def load_device_media():
+    """加载设备媒体数据"""
+    if os.path.exists(DEVICE_MEDIA_FILE):
+        try:
+            with open(DEVICE_MEDIA_FILE, 'r', encoding='utf-8') as f:
+                content = f.read().strip()
+                if content:
+                    return json.loads(content)
+        except (json.JSONDecodeError, IOError):
+            pass
+    return {'images': {}, 'attachments': {}}
+
+def save_device_media(data):
+    """保存设备媒体数据"""
+    with open(DEVICE_MEDIA_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def get_device_images(device_id):
+    """获取设备的图片列表"""
+    media = load_device_media()
+    images = media.get('images', {}).get(device_id, [])
+    # 按上传时间倒序排列
+    images.sort(key=lambda x: x.get('upload_time', ''), reverse=True)
+    return images
+
+def get_device_attachments(device_id):
+    """获取设备的附件列表"""
+    media = load_device_media()
+    attachments = media.get('attachments', {}).get(device_id, [])
+    # 按上传时间倒序排列
+    attachments.sort(key=lambda x: x.get('upload_time', ''), reverse=True)
+    return attachments
+
+@app.route('/api/device/images/upload', methods=['POST'])
+@login_required
+def api_upload_device_images():
+    """上传设备图片"""
+    user = get_current_user()
+    device_id = request.form.get('device_id')
+    device_type = request.form.get('device_type')
+    
+    if not device_id:
+        return jsonify({'success': False, 'message': '设备ID不能为空'})
+    
+    # 检查设备是否存在
+    device = api_client.get_device_by_id(device_id)
+    if not device:
+        return jsonify({'success': False, 'message': '设备不存在'})
+    
+    files = request.files.getlist('images')
+    if not files:
+        return jsonify({'success': False, 'message': '请选择要上传的图片'})
+    
+    max_size = 200 * 1024 * 1024  # 200MB
+    uploaded = []
+    media = load_device_media()
+    
+    if 'images' not in media:
+        media['images'] = {}
+    if device_id not in media['images']:
+        media['images'][device_id] = []
+    
+    for file in files:
+        if file.filename == '':
+            continue
+        
+        # 检查文件大小
+        file.seek(0, os.SEEK_END)
+        size = file.tell()
+        file.seek(0)
+        
+        if size > max_size:
+            continue
+        
+        # 生成唯一文件名
+        ext = os.path.splitext(file.filename)[1].lower()
+        if ext not in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']:
+            ext = '.jpg'
+        
+        filename = f"{uuid.uuid4().hex}{ext}"
+        device_folder = os.path.join(IMAGE_FOLDER, device_id)
+        os.makedirs(device_folder, exist_ok=True)
+        filepath = os.path.join(device_folder, filename)
+        
+        # 保存文件
+        file.save(filepath)
+        
+        # 构建URL
+        url = f'/uploads/images/{device_id}/{filename}'
+        
+        # 保存记录
+        image_data = {
+            'id': str(uuid.uuid4()),
+            'device_id': device_id,
+            'device_type': device_type,
+            'filename': file.filename,
+            'url': url,
+            'upload_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'uploader': user['borrower_name']
+        }
+        media['images'][device_id].append(image_data)
+        uploaded.append(image_data)
+    
+    save_device_media(media)
+    
+    return jsonify({
+        'success': True,
+        'message': f'成功上传 {len(uploaded)} 张图片',
+        'images': uploaded
+    })
+
+@app.route('/api/device/images/<image_id>/delete', methods=['POST'])
+@login_required
+def api_delete_device_image(image_id):
+    """删除设备图片"""
+    user = get_current_user()
+    data = request.json or {}
+    device_id = data.get('device_id')
+    
+    if not device_id:
+        return jsonify({'success': False, 'message': '设备ID不能为空'})
+    
+    media = load_device_media()
+    images = media.get('images', {}).get(device_id, [])
+    
+    # 查找图片
+    image = None
+    for img in images:
+        if img['id'] == image_id:
+            image = img
+            break
+    
+    if not image:
+        return jsonify({'success': False, 'message': '图片不存在'})
+    
+    # 检查权限（只有上传者或管理员可以删除）
+    if image.get('uploader') != user['borrower_name'] and not user.get('is_admin'):
+        return jsonify({'success': False, 'message': '您没有权限删除此图片'})
+    
+    # 删除文件
+    try:
+        filepath = os.path.join(UPLOAD_FOLDER, '..', image['url'].lstrip('/'))
+        filepath = os.path.abspath(filepath)
+        if os.path.exists(filepath):
+            os.remove(filepath)
+    except Exception as e:
+        print(f"删除图片文件失败: {e}")
+    
+    # 从记录中移除
+    media['images'][device_id] = [img for img in images if img['id'] != image_id]
+    save_device_media(media)
+    
+    return jsonify({'success': True, 'message': '删除成功'})
+
+@app.route('/api/device/attachments/upload', methods=['POST'])
+@login_required
+def api_upload_device_attachments():
+    """上传设备附件"""
+    user = get_current_user()
+    device_id = request.form.get('device_id')
+    device_type = request.form.get('device_type')
+    
+    if not device_id:
+        return jsonify({'success': False, 'message': '设备ID不能为空'})
+    
+    # 检查设备是否存在
+    device = api_client.get_device_by_id(device_id)
+    if not device:
+        return jsonify({'success': False, 'message': '设备不存在'})
+    
+    files = request.files.getlist('attachments')
+    if not files:
+        return jsonify({'success': False, 'message': '请选择要上传的附件'})
+    
+    max_size = 200 * 1024 * 1024  # 200MB
+    uploaded = []
+    media = load_device_media()
+    
+    if 'attachments' not in media:
+        media['attachments'] = {}
+    if device_id not in media['attachments']:
+        media['attachments'][device_id] = []
+    
+    for file in files:
+        if file.filename == '':
+            continue
+        
+        # 检查文件大小
+        file.seek(0, os.SEEK_END)
+        size = file.tell()
+        file.seek(0)
+        
+        if size > max_size:
+            continue
+        
+        # 生成唯一文件名
+        ext = os.path.splitext(file.filename)[1].lower()
+        filename = f"{uuid.uuid4().hex}{ext}"
+        device_folder = os.path.join(ATTACHMENT_FOLDER, device_id)
+        os.makedirs(device_folder, exist_ok=True)
+        filepath = os.path.join(device_folder, filename)
+        
+        # 保存文件
+        file.save(filepath)
+        
+        # 构建URL
+        url = f'/uploads/attachments/{device_id}/{filename}'
+        
+        # 保存记录
+        attachment_data = {
+            'id': str(uuid.uuid4()),
+            'device_id': device_id,
+            'device_type': device_type,
+            'filename': file.filename,
+            'url': url,
+            'size': size,
+            'upload_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'uploader': user['borrower_name']
+        }
+        media['attachments'][device_id].append(attachment_data)
+        uploaded.append(attachment_data)
+    
+    save_device_media(media)
+    
+    return jsonify({
+        'success': True,
+        'message': f'成功上传 {len(uploaded)} 个附件',
+        'attachments': uploaded
+    })
+
+@app.route('/api/device/attachments/<attachment_id>/delete', methods=['POST'])
+@login_required
+def api_delete_device_attachment(attachment_id):
+    """删除设备附件"""
+    user = get_current_user()
+    data = request.json or {}
+    device_id = data.get('device_id')
+    
+    if not device_id:
+        return jsonify({'success': False, 'message': '设备ID不能为空'})
+    
+    media = load_device_media()
+    attachments = media.get('attachments', {}).get(device_id, [])
+    
+    # 查找附件
+    attachment = None
+    for att in attachments:
+        if att['id'] == attachment_id:
+            attachment = att
+            break
+    
+    if not attachment:
+        return jsonify({'success': False, 'message': '附件不存在'})
+    
+    # 检查权限（只有上传者或管理员可以删除）
+    if attachment.get('uploader') != user['borrower_name'] and not user.get('is_admin'):
+        return jsonify({'success': False, 'message': '您没有权限删除此附件'})
+    
+    # 删除文件
+    try:
+        filepath = os.path.join(UPLOAD_FOLDER, '..', attachment['url'].lstrip('/'))
+        filepath = os.path.abspath(filepath)
+        if os.path.exists(filepath):
+            os.remove(filepath)
+    except Exception as e:
+        print(f"删除附件文件失败: {e}")
+    
+    # 从记录中移除
+    media['attachments'][device_id] = [att for att in attachments if att['id'] != attachment_id]
+    save_device_media(media)
+    
+    return jsonify({'success': True, 'message': '删除成功'})
+
+@app.route('/api/device/attachments/batch-download', methods=['POST'])
+@login_required
+def api_batch_download_attachments():
+    """批量下载附件（打包成ZIP）"""
+    import zipfile
+    import io
+    
+    data = request.json or {}
+    device_id = data.get('device_id')
+    attachment_ids = data.get('attachment_ids', [])
+    
+    if not device_id or not attachment_ids:
+        return jsonify({'success': False, 'message': '参数错误'}), 400
+    
+    media = load_device_media()
+    attachments = media.get('attachments', {}).get(device_id, [])
+    
+    # 筛选要下载的附件
+    selected_attachments = []
+    for att in attachments:
+        if att['id'] in attachment_ids:
+            selected_attachments.append(att)
+    
+    if not selected_attachments:
+        return jsonify({'success': False, 'message': '未找到要下载的附件'}), 404
+    
+    # 创建ZIP文件
+    memory_file = io.BytesIO()
+    with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for att in selected_attachments:
+            filepath = os.path.join(UPLOAD_FOLDER, '..', att['url'].lstrip('/'))
+            filepath = os.path.abspath(filepath)
+            if os.path.exists(filepath):
+                zf.write(filepath, att['filename'])
+    
+    memory_file.seek(0)
+    
+    return send_file(
+        memory_file,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name=f'attachments_{device_id}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.zip'
+    )
+
+# 静态文件服务 - 上传的文件
+@app.route('/uploads/<path:filename>')
+def uploaded_file(filename):
+    """提供上传的文件访问"""
+    return send_from_directory(UPLOAD_FOLDER, filename)
 
 
 if __name__ == '__main__':

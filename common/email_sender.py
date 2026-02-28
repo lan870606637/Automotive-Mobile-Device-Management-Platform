@@ -111,32 +111,54 @@ class EmailSender:
             print(f"邮件发送失败: {e}")
             return False
     
-    def send_overdue_reminder(self, to_email: str, borrower_name: str, 
-                              devices: List[dict]) -> bool:
+    def send_overdue_reminder(self, to_email: str, borrower_name: str,
+                              devices: List[dict], reminder_type: str = 'daily') -> bool:
         """
         发送逾期提醒邮件
-        
+
         Args:
             to_email: 收件人邮箱
             borrower_name: 借用人姓名
             devices: 逾期设备列表，每个设备包含name, overdue_days, device_type
+            reminder_type: 提醒类型 ('1hour', '10min', 'daily')
         """
-        subject = f"【设备管理系统】您有{len(devices)}个设备已逾期3天以上，请尽快归还"
-        
+        # 根据提醒类型设置主题和内容
+        if reminder_type == '1hour':
+            subject = f"【设备管理系统】设备即将逾期提醒（1小时内）"
+            header_title = "⏰ 设备即将逾期提醒"
+            header_color = "#faad14"
+            main_message = "您借用的以下设备<strong style='color: #faad14;'>将在1小时内逾期</strong>，请尽快归还或续期："
+        elif reminder_type == '10min':
+            subject = f"【设备管理系统】设备即将逾期提醒（10分钟内）"
+            header_title = "🚨 设备即将逾期提醒"
+            header_color = "#ff4d4f"
+            main_message = "您借用的以下设备<strong style='color: #ff4d4f;'>将在10分钟内逾期</strong>，请立即归还或续期："
+        else:
+            subject = f"【设备管理系统】设备已逾期提醒"
+            header_title = "⚠️ 设备逾期提醒"
+            header_color = "#ff4d4f"
+            main_message = "您借用的以下设备<strong style='color: #ff4d4f;'>已逾期</strong>，请尽快归还："
+
         # 构建设备列表HTML
         devices_html = ""
         for device in devices:
             overdue_days = device.get('overdue_days', 0)
             device_name = device.get('name', '')
             device_type = device.get('device_type', '')
+
+            if reminder_type in ['1hour', '10min']:
+                time_desc = "即将逾期"
+            else:
+                time_desc = f"逾期{overdue_days}天" if overdue_days > 0 else "已逾期"
+
             devices_html += f"""
             <tr>
                 <td style="padding: 10px; border: 1px solid #ddd;">{device_name}</td>
                 <td style="padding: 10px; border: 1px solid #ddd;">{device_type}</td>
-                <td style="padding: 10px; border: 1px solid #ddd; color: #ff4d4f; font-weight: bold;">逾期{overdue_days}天</td>
+                <td style="padding: 10px; border: 1px solid #ddd; color: #ff4d4f; font-weight: bold;">{time_desc}</td>
             </tr>
             """
-        
+
         html_content = f"""
         <!DOCTYPE html>
         <html>
@@ -145,11 +167,11 @@ class EmailSender:
             <style>
                 body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
                 .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                .header {{ background: #ff4d4f; color: white; padding: 20px; text-align: center; }}
+                .header {{ background: {header_color}; color: white; padding: 20px; text-align: center; }}
                 .content {{ background: #f5f5f5; padding: 20px; margin: 20px 0; }}
                 .device-table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
                 .device-table th {{ background: #1890ff; color: white; padding: 10px; text-align: left; }}
-                .button {{ display: inline-block; padding: 12px 24px; background: #1890ff; color: white; 
+                .button {{ display: inline-block; padding: 12px 24px; background: #1890ff; color: white;
                           text-decoration: none; border-radius: 4px; margin: 20px 0; }}
                 .footer {{ text-align: center; color: #999; font-size: 12px; margin-top: 30px; }}
             </style>
@@ -157,35 +179,35 @@ class EmailSender:
         <body>
             <div class="container">
                 <div class="header">
-                    <h2>⚠️ 设备逾期提醒</h2>
+                    <h2>{header_title}</h2>
                 </div>
-                
+
                 <div class="content">
                     <p>尊敬的 {borrower_name}，</p>
-                    <p>您借用的以下设备已<strong style="color: #ff4d4f;">逾期3天以上</strong>，请尽快归还：</p>
-                    
+                    <p>{main_message}</p>
+
                     <table class="device-table">
                         <thead>
                             <tr>
                                 <th>设备名称</th>
                                 <th>设备类型</th>
-                                <th>逾期时间</th>
+                                <th>状态</th>
                             </tr>
                         </thead>
                         <tbody>
                             {devices_html}
                         </tbody>
                     </table>
-                    
+
                     <p style="color: #ff4d4f; font-weight: bold;">
                         请尽快登录系统归还设备，以免影响您的借用权限。
                     </p>
-                    
+
                     <div style="text-align: center;">
                         <a href="http://{USER_DOMAIN}" class="button">立即登录系统</a>
                     </div>
                 </div>
-                
+
                 <div class="footer">
                     <p>此邮件由设备管理系统自动发送，请勿回复</p>
                     <p>发送时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
@@ -194,7 +216,7 @@ class EmailSender:
         </body>
         </html>
         """
-        
+
         return self.send_email(to_email, subject, html_content)
     
     def send_reservation_pending_reminder(self, to_email: str, recipient_name: str,
