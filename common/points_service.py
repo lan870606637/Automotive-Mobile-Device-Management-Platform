@@ -195,6 +195,7 @@ class PointsService:
                     'current_points': user_points.points,  # 当前剩余积分（备用）
                     'total_earned': user_points.total_earned,
                     'avatar': user.avatar,
+                    'signature': user.signature,
                     'title': title
                 })
         
@@ -202,26 +203,50 @@ class PointsService:
     
     def get_user_points_rank(self, user_id: str) -> Dict[str, Any]:
         """获取用户累计积分排名"""
+        from .api_client import api_client
+
+        # 获取所有用户
+        all_users = api_client._users
+
+        # 获取所有已有积分的用户
         all_points = self.db.get_all_user_points()
+        points_dict = {p.user_id: p for p in all_points}
+
+        # 为所有用户创建积分数据（如果没有则初始化为0）- 与 get_points_rankings 保持一致
+        all_user_points = []
+        for user in all_users:
+            if user.id in points_dict:
+                all_user_points.append(points_dict[user.id])
+            else:
+                # 创建初始积分记录（不保存到数据库，仅用于显示）
+                all_user_points.append(UserPoints(
+                    id='',
+                    user_id=user.id,
+                    points=0,
+                    total_earned=0,
+                    total_spent=0
+                ))
+
         # 按累计积分排序
-        sorted_points = sorted(all_points, key=lambda x: x.total_earned, reverse=True)
+        sorted_points = sorted(all_user_points, key=lambda x: x.total_earned, reverse=True)
 
-        user_points = self.db.get_user_points(user_id)
-        if not user_points:
-            return {'rank': None, 'points': 0, 'total_earned': 0}
-
-        # 计算排名
-        rank = 1
-        for up in sorted_points:
+        # 查找用户排名
+        rank = None
+        user_points_data = None
+        for i, up in enumerate(sorted_points):
             if up.user_id == user_id:
+                rank = i + 1
+                user_points_data = up
                 break
-            rank += 1
+
+        if not user_points_data:
+            return {'rank': None, 'points': 0, 'total_earned': 0}
 
         return {
             'rank': rank,
-            'points': user_points.total_earned,  # 返回累计积分用于显示
-            'current_points': user_points.points,  # 当前剩余积分
-            'total_earned': user_points.total_earned,
+            'points': user_points_data.total_earned,  # 返回累计积分用于显示
+            'current_points': user_points_data.points,  # 当前剩余积分
+            'total_earned': user_points_data.total_earned,
             'total_users': len(sorted_points)
         }
     

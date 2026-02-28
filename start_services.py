@@ -8,6 +8,7 @@ import subprocess
 import time
 import signal
 from threading import Thread
+import socket
 
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -70,15 +71,36 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 
+def get_local_ip():
+    """获取本机局域网IP地址"""
+    try:
+        # 创建一个UDP socket来连接外部地址（不会实际发送数据）
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
+
 def main():
     """主函数"""
-    print("""
+    local_ip = get_local_ip()
+    print(f"""
 ╔══════════════════════════════════════════════════════════════╗
 ║                                                              ║
 ║     车机与手机设备管理系统 - 统一启动脚本                     ║
 ║                                                              ║
 ║     用户服务: http://device.carbit.com.cn (端口: 5000)       ║
 ║     管理服务: http://admin.device.carbit.com.cn (端口: 5001) ║
+║                                                              ║
+╠══════════════════════════════════════════════════════════════╣
+║                                                              ║
+║     【局域网访问地址】 (其他车机请使用以下地址访问)           ║
+║                                                              ║
+║     用户端:   http://{local_ip}:5000
+║     管理后台: http://{local_ip}:5001
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝
     """)
@@ -104,6 +126,9 @@ def main():
     print("\n本地访问:")
     print("  用户服务: http://localhost:5000")
     print("  管理服务: http://localhost:5001")
+    print(f"\n【局域网访问】(其他车机使用):")
+    print(f"  用户服务: http://{local_ip}:5000")
+    print(f"  管理服务: http://{local_ip}:5001")
     print("\n按 Ctrl+C 停止所有服务")
     print("=" * 50 + "\n")
     

@@ -34,6 +34,7 @@ class APIClient:
     _rankings_cache: Dict[str, Any] = {
         'borrow': None,
         'return': None,
+        'points': None,
         'last_update': None
     }
 
@@ -49,20 +50,15 @@ class APIClient:
             APIClient._initialized = True
 
     def _should_update_rankings_cache(self) -> bool:
-        """检查是否需要更新排行榜缓存（每天12点后更新）"""
+        """检查是否需要更新排行榜缓存（每天0点后更新）"""
         if self._rankings_cache['last_update'] is None:
             return True
 
         now = datetime.now()
         last_update = self._rankings_cache['last_update']
 
-        # 如果上次更新是昨天或更早，且现在过了12点，需要更新
+        # 如果上次更新是昨天或更早，需要更新（到了新的一天）
         if now.date() > last_update.date():
-            return True
-
-        # 如果上次更新在今天12点之前，且现在过了12点，需要更新
-        noon_today = now.replace(hour=12, minute=0, second=0, microsecond=0)
-        if now >= noon_today and last_update < noon_today:
             return True
 
         return False
@@ -71,8 +67,9 @@ class APIClient:
         """更新排行榜缓存"""
         self._rankings_cache['borrow'] = self._calculate_rankings('borrow')
         self._rankings_cache['return'] = self._calculate_rankings('return')
+        self._rankings_cache['points'] = self._calculate_points_rankings()
         self._rankings_cache['last_update'] = datetime.now()
-        
+
         # 发放排行榜前十积分奖励
         self._distribute_ranking_rewards()
 
@@ -111,6 +108,19 @@ class APIClient:
                 'star_level': star_level,
                 'like_count': like_count
             })
+
+        return rankings
+
+    def _calculate_points_rankings(self) -> List[dict]:
+        """计算积分排行榜数据"""
+        from .points_service import points_service
+
+        # 获取积分排行数据（使用 points_service 的逻辑）
+        rankings = points_service.get_points_rankings(limit=100)
+
+        # 添加点赞数
+        for ranking in rankings:
+            ranking['like_count'] = self.get_user_like_count(ranking['user_id'])
 
         return rankings
 
@@ -1943,13 +1953,16 @@ class APIClient:
             return 1
 
     def get_user_rankings(self, ranking_type: str = 'borrow') -> List[dict]:
-        """获取用户排名列表（使用缓存，每天12点后自动更新）"""
+        """获取用户排名列表（使用缓存，每天0点后自动更新）"""
         # 检查是否需要更新缓存
         if self._should_update_rankings_cache():
             self._update_rankings_cache()
 
         # 返回缓存数据
-        cache_key = 'borrow' if ranking_type == 'borrow' else 'return'
+        if ranking_type == 'points':
+            cache_key = 'points'
+        else:
+            cache_key = 'borrow' if ranking_type == 'borrow' else 'return'
         rankings = self._rankings_cache.get(cache_key, []) or []
 
         # 实时更新签名（签名可能经常变化，从最新用户数据中获取）

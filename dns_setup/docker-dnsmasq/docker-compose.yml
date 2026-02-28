@@ -1,0 +1,18 @@
+version: '3'
+
+services:
+  dnsmasq:
+    image: jpillora/dnsmasq
+    container_name: device_management_dns
+    restart: always
+    ports:
+      - "53:53/udp"
+      - "53:53/tcp"
+      - "5380:8080"
+    volumes:
+      - ./dnsmasq.conf:/etc/dnsmasq.conf
+    environment:
+      - HTTP_USER=admin
+      - HTTP_PASS=admin123
+    cap_add:
+      - NET_ADMIN

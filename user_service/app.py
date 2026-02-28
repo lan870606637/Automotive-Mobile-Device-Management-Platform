@@ -122,9 +122,10 @@ def get_user_equipment(user_id):
             result['avatar_frame'] = {
                 'id': frame_item.id,
                 'name': frame_item.name,
-                'color': frame_item.color or '#1890ff'
+                'color': frame_item.color or '#1890ff',
+                'icon': frame_item.icon or 'simple'
             }
-    
+
     return result
 
 
@@ -3665,32 +3666,18 @@ def api_user_rankings():
     today_likes = api_client.get_user_today_likes(user['user_id'])
     remaining_likes = 5 - today_likes
 
-    if ranking_type == 'points':
-        # 积分排名
-        rankings = points_service.get_points_rankings(limit=100)
-        # 添加用户装备信息
-        for r in rankings:
-            equipment = get_user_equipment(r['user_id'])
-            r['equipped_title'] = equipment.get('title')
-            r['avatar_frame'] = equipment.get('avatar_frame')
-        return jsonify({
-            'success': True,
-            'rankings': rankings,
-            'remaining_likes': max(0, remaining_likes)
-        })
-    else:
-        # 借用/归还排名
-        rankings = api_client.get_user_rankings(ranking_type)
-        # 添加用户装备信息
-        for r in rankings:
-            equipment = get_user_equipment(r['user_id'])
-            r['equipped_title'] = equipment.get('title')
-            r['avatar_frame'] = equipment.get('avatar_frame')
-        return jsonify({
-            'success': True,
-            'rankings': rankings,
-            'remaining_likes': max(0, remaining_likes)
-        })
+    # 获取排名数据（都使用缓存）
+    rankings = api_client.get_user_rankings(ranking_type)
+    # 添加用户装备信息
+    for r in rankings:
+        equipment = get_user_equipment(r['user_id'])
+        r['equipped_title'] = equipment.get('title')
+        r['avatar_frame'] = equipment.get('avatar_frame')
+    return jsonify({
+        'success': True,
+        'rankings': rankings,
+        'remaining_likes': max(0, remaining_likes)
+    })
 
 
 @app.route('/api/user-like', methods=['POST'])
