@@ -1,0 +1,389 @@
+{% extends 'pc/base_pc.html' %}
+
+{% block title %}积分商城 - Carbit测试设备管理系统{% endblock %}
+
+{% block content %}
+<h1 class="page-title" style="margin-bottom: 12px;">🛒 积分商城</h1>
+
+<!-- 积分概览卡片 -->
+<div class="card" style="margin-bottom: 20px;">
+    <div class="card-body">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 20px;">
+            <div style="text-align: center; padding: 20px; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); border-radius: 12px; color: white;">
+                <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">当前积分</div>
+                <div style="font-size: 36px; font-weight: 700;">{{ user_points.points }}</div>
+            </div>
+            <div style="text-align: center; padding: 20px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); border-radius: 12px; color: white;">
+                <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">累计获得</div>
+                <div style="font-size: 36px; font-weight: 700;">{{ user_points.total_earned }}</div>
+            </div>
+            <div style="text-align: center; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; color: white;">
+                <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">累计消费</div>
+                <div style="font-size: 36px; font-weight: 700;">{{ user_points.total_spent }}</div>
+            </div>
+            <div style="text-align: center; padding: 20px; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); border-radius: 12px; color: white;">
+                <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">累计积分排名</div>
+                <div style="font-size: 36px; font-weight: 700;">#{{ points_rank.rank }}</div>
+                <div style="font-size: 12px; opacity: 0.8; margin-top: 4px;">{{ points_rank.total_earned }} 累计积分</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 商品分类标签 -->
+<div class="card" style="margin-bottom: 20px;">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <span class="card-title">🎁 积分商品</span>
+        <div style="display: flex; gap: 8px;">
+            <button class="btn btn-sm {{ 'btn-primary' if item_type == 'all' else 'btn-default' }}" onclick="filterItems('all')">全部</button>
+            <button class="btn btn-sm {{ 'btn-primary' if item_type == '称号' else 'btn-default' }}" onclick="filterItems('称号')">🏆 称号</button>
+            <button class="btn btn-sm {{ 'btn-primary' if item_type == '头像边框' else 'btn-default' }}" onclick="filterItems('头像边框')">🖼️ 头像边框</button>
+        </div>
+    </div>
+    <div class="card-body">
+        {% if shop_items %}
+        <div class="shop-grid">
+            {% for item in shop_items %}
+            <div class="shop-item" data-type="{{ item.item_type.value if item.item_type else '' }}">
+                <div class="shop-item-icon" style="background: {{ item.color or '#f0f0f0' }};">
+                    {% if item.item_type.value == '称号' %}
+                    <span style="font-size: 32px;">🏆</span>
+                    {% else %}
+                    <span style="font-size: 32px;">🖼️</span>
+                    {% endif %}
+                </div>
+                <div class="shop-item-info">
+                    <div class="shop-item-name">{{ item.name }}</div>
+                    <div class="shop-item-desc">{{ item.description }}</div>
+                    <div class="shop-item-price">
+                        <span class="price-tag">💰 {{ item.price }} 积分</span>
+                    </div>
+                    {% if item.owned %}
+                    <button class="btn btn-sm btn-default" disabled>已拥有</button>
+                    {% elif user_points.points >= item.price %}
+                    <button class="btn btn-sm btn-primary" onclick="buyItem('{{ item.id }}', '{{ item.name }}', {{ item.price }})">购买</button>
+                    {% else %}
+                    <button class="btn btn-sm btn-default" disabled>积分不足</button>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">🛒</div>
+            <div class="empty-text">暂无商品</div>
+            <div class="empty-subtext">敬请期待更多商品上架！</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 积分获取方式说明 -->
+<div style="background: linear-gradient(135deg, #e6f7ff 0%, #f6ffed 100%); border: 1px solid #91d5ff; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
+    <div style="font-size: 14px; color: #096dd9; line-height: 2;">
+        <strong>📋 积分获取方式：</strong><br>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 8px; margin-top: 8px;">
+            <div>🎁 首次登录：<strong>+50</strong> 分</div>
+            <div>📅 每日登录：<strong>+20</strong> 分</div>
+            <div>📱 借用设备：<strong>+5</strong> 分</div>
+            <div>✅ 归还设备：<strong>+10</strong> 分</div>
+            <div>🏆 排行榜前十：<strong>+10~30</strong> 分</div>
+            <div>👍 点赞（每天5次）：<strong>+1</strong> 分/次</div>
+            <div>🔍 首页搜索（每天1次）：<strong>+5</strong> 分</div>
+            <div>📋 报备（每天各1次）：<strong>+10</strong> 分</div>
+            <div>🔄 转借：<strong>+1</strong> 分</div>
+            <div>⏰ 续期：<strong>+1</strong> 分</div>
+            <div>📌 预约：<strong>+1</strong> 分</div>
+            <div>🎯 完成悬赏：<strong>+悬赏积分</strong></div>
+        </div>
+        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px dashed #91d5ff;">
+            ⚠️ 逾期归还：<strong>-15</strong> 分 | 发布悬赏：<strong>-10</strong> 分发布费
+        </div>
+    </div>
+</div>
+
+<!-- 积分记录 -->
+<div class="card">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <span class="card-title">📜 积分记录</span>
+        <div style="display: flex; gap: 8px;">
+            <button class="btn btn-sm btn-primary" onclick="filterRecords('all')">全部</button>
+            <button class="btn btn-sm btn-default" onclick="filterRecords('earn')">获得</button>
+            <button class="btn btn-sm btn-default" onclick="filterRecords('spend')">消费</button>
+        </div>
+    </div>
+    <div class="card-body">
+        {% if records %}
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th style="width: 180px;">时间</th>
+                    <th style="width: 120px;">类型</th>
+                    <th>描述</th>
+                    <th style="width: 100px;">变动</th>
+                    <th style="width: 100px;">余额</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for record in records %}
+                <tr class="record-row" data-type="{{ 'earn' if record.points_change > 0 else 'spend' }}">
+                    <td>{{ record.create_time[:16] if record.create_time else '-' }}</td>
+                    <td>
+                        <span class="type-badge type-{{ record.transaction_type }}">
+                            {{ record.transaction_type }}
+                        </span>
+                    </td>
+                    <td>{{ record.description }}</td>
+                    <td>
+                        <span class="points-change {{ 'positive' if record.points_change > 0 else 'negative' }}">
+                            {{ '+' if record.points_change > 0 else '' }}{{ record.points_change }}
+                        </span>
+                    </td>
+                    <td>{{ record.points_after }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">📜</div>
+            <div class="empty-text">暂无积分记录</div>
+            <div class="empty-subtext">快去使用系统功能获取积分吧！</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+.shop-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
+}
+
+.shop-item {
+    background: #fff;
+    border: 2px solid #e8e8e8;
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+    transition: all 0.3s ease;
+}
+
+.shop-item:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    border-color: #1890ff;
+}
+
+.shop-item-icon {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    margin: 0 auto 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.shop-item-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: #262626;
+    margin-bottom: 8px;
+}
+
+.shop-item-desc {
+    font-size: 12px;
+    color: #8c8c8c;
+    margin-bottom: 12px;
+    min-height: 32px;
+}
+
+.shop-item-price {
+    margin-bottom: 12px;
+}
+
+.price-tag {
+    display: inline-block;
+    padding: 4px 12px;
+    background: #fff7e6;
+    border: 1px solid #ffd591;
+    border-radius: 12px;
+    font-size: 14px;
+    color: #d46b08;
+    font-weight: 600;
+}
+
+.type-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.type-badge.type-首次登录,
+.type-badge.type-每日登录,
+.type-badge.type-排行榜奖励 {
+    background: #e6f7ff;
+    color: #1890ff;
+}
+
+.type-badge.type-借用设备,
+.type-badge.type-归还设备,
+.type-badge.type-转借设备,
+.type-badge.type-续期,
+.type-badge.type-预约设备 {
+    background: #f6ffed;
+    color: #52c41a;
+}
+
+.type-badge.type-点赞,
+.type-badge.type-搜索设备 {
+    background: #fff7e6;
+    color: #fa8c16;
+}
+
+.type-badge.type-我已找到,
+.type-badge.type-我已修好,
+.type-badge.type-损坏报备,
+.type-badge.type-丢失报备 {
+    background: #f9f0ff;
+    color: #722ed1;
+}
+
+.type-badge.type-完成悬赏,
+.type-badge.type-获得悬赏 {
+    background: #fff0f6;
+    color: #eb2f96;
+}
+
+.type-badge.type-逾期归还,
+.type-badge.type-发布悬赏,
+.type-badge.type-购买商品 {
+    background: #fff1f0;
+    color: #ff4d4f;
+}
+
+.points-change {
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.points-change.positive {
+    color: #52c41a;
+}
+
+.points-change.negative {
+    color: #ff4d4f;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+}
+
+.empty-icon {
+    font-size: 64px;
+    margin-bottom: 16px;
+}
+
+.empty-text {
+    font-size: 16px;
+    color: #262626;
+    font-weight: 500;
+    margin-bottom: 8px;
+}
+
+.empty-subtext {
+    font-size: 14px;
+    color: #8c8c8c;
+}
+</style>
+
+<script>
+// 筛选商品
+function filterItems(type) {
+    // 更新按钮状态
+    event.target.parentElement.querySelectorAll('.btn').forEach(btn => {
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-default');
+    });
+    event.target.classList.remove('btn-default');
+    event.target.classList.add('btn-primary');
+
+    // 筛选显示
+    if (type === 'all') {
+        document.querySelectorAll('.shop-item').forEach(item => {
+            item.style.display = '';
+        });
+    } else {
+        document.querySelectorAll('.shop-item').forEach(item => {
+            if (item.dataset.type === type) {
+                item.style.display = '';
+            } else {
+                item.style.display = 'none';
+            }
+        });
+    }
+}
+
+// 购买商品
+async function buyItem(itemId, itemName, price) {
+    if (!confirm(`确定要购买 "${itemName}" 吗？\n需要消耗 ${price} 积分`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/shop/buy', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ item_id: itemId })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast(`🎉 购买成功！获得 "${itemName}"`);
+            // 刷新页面
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '购买失败');
+        }
+    } catch (error) {
+        console.error('购买失败:', error);
+        showToast('购买失败，请重试');
+    }
+}
+
+// 筛选积分记录
+function filterRecords(type) {
+    // 更新按钮状态
+    event.target.parentElement.querySelectorAll('.btn').forEach(btn => {
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-default');
+    });
+    event.target.classList.remove('btn-default');
+    event.target.classList.add('btn-primary');
+
+    // 筛选显示
+    if (type === 'all') {
+        document.querySelectorAll('.record-row').forEach(row => {
+            row.style.display = '';
+        });
+    } else {
+        document.querySelectorAll('.record-row').forEach(row => {
+            if (row.dataset.type === type) {
+                row.style.display = '';
+            } else {
+                row.style.display = 'none';
+            }
+        });
+    }
+}
+</script>
+{% endblock %}

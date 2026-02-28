@@ -505,42 +505,54 @@ function renderRankings() {
         if (currentRankingType === 'points') {
             // 积分排名显示累计积分和称号
             const pointsColor = user.points >= 0 ? '#52c41a' : '#ff4d4f';
+            // 先显示排行榜称号（如果有）
             if (user.title) {
-                // 前10名显示发光称号
                 const titleClass = `top${user.rank}`;
                 levelHtml = `<div class="ranking-title ${titleClass}">${user.title}</div>`;
-                levelHtml += `<div style="margin-top: 4px; font-size: 13px; color: ${pointsColor}; font-weight: 600;">${user.points} 累计积分</div>`;
             } else {
-                // 10名以后只显示累计积分
                 levelHtml = `<div class="ranking-title-placeholder" style="height: 22px; margin-bottom: 2px;"></div>`;
-                levelHtml += `<div style="font-size: 13px; color: ${pointsColor}; font-weight: 600;">${user.points} 累计积分</div>`;
             }
-        } else if (user.title) {
-            // 前10名称号添加特效class
-            const titleClass = `top${user.rank}`;
-            levelHtml = `<div class="ranking-title ${titleClass}">${user.title}</div>`;
-            levelHtml += `<div class="ranking-stars" style="margin-top: 2px;">${starsHtml}</div>`;
+            // 再显示个人装备的称号（如果有），否则显示"暂无个人称号"
+            if (user.equipped_title) {
+                levelHtml += `<div style="margin-top: 4px; font-size: 11px; font-weight: 600; padding: 1px 6px; background: ${user.equipped_title.color}20; color: ${user.equipped_title.color}; border: 1px solid ${user.equipped_title.color}40; border-radius: 4px; white-space: nowrap; display: table;">${user.equipped_title.name}</div>`;
+            } else {
+                levelHtml += `<div style="margin-top: 4px; font-size: 11px; color: #bfbfbf; font-style: italic;">暂无个人称号</div>`;
+            }
+            levelHtml += `<div style="margin-top: 4px; font-size: 13px; color: ${pointsColor}; font-weight: 600;">${user.points} 累计积分</div>`;
         } else {
-            // 没有称号时，使用一个空的占位div保持高度一致
-            levelHtml = `<div class="ranking-title-placeholder" style="height: 22px; margin-bottom: 2px;"></div>`;
-            levelHtml += `<div class="ranking-stars">${starsHtml}</div>`;
+            // 先显示排行榜称号（如果有）
+            if (user.title) {
+                const titleClass = `top${user.rank}`;
+                levelHtml = `<div class="ranking-title ${titleClass}">${user.title}</div>`;
+            } else {
+                levelHtml = `<div class="ranking-title-placeholder" style="height: 22px; margin-bottom: 2px;"></div>`;
+            }
+            // 再显示个人装备的称号（如果有），否则显示"暂无个人称号"
+            if (user.equipped_title) {
+                levelHtml += `<div style="margin-top: 4px; font-size: 11px; font-weight: 600; padding: 1px 6px; background: ${user.equipped_title.color}20; color: ${user.equipped_title.color}; border: 1px solid ${user.equipped_title.color}40; border-radius: 4px; white-space: nowrap; display: table;">${user.equipped_title.name}</div>`;
+            } else {
+                levelHtml += `<div style="margin-top: 4px; font-size: 11px; color: #bfbfbf; font-style: italic;">暂无个人称号</div>`;
+            }
+            levelHtml += `<div class="ranking-stars" style="margin-top: 2px;">${starsHtml}</div>`;
         }
 
-        // 头像显示
-        const avatarHtml = user.avatar
-            ? `<img src="${user.avatar}" alt="头像" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">`
-            : avatarText;
+        // 头像显示（带边框）
+        let avatarHtml = '';
+        const avatarFrameStyle = user.avatar_frame ? `border: 3px solid ${user.avatar_frame.color}; box-shadow: 0 0 8px ${user.avatar_frame.color};` : '';
+        if (user.avatar) {
+            avatarHtml = `<img src="${user.avatar}" alt="头像" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%; ${avatarFrameStyle}">`;
+        } else {
+            avatarHtml = `<div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; border-radius: 50%; ${avatarFrameStyle}">${avatarText}</div>`;
+        }
 
         // 个性签名显示
         const signatureHtml = user.signature
             ? `<div class="ranking-signature" title="${user.signature}">💬 ${user.signature}</div>`
-            : '';
+            : '<div class="ranking-signature" style="color: #bfbfbf; font-style: italic;">💬 暂无签名</div>';
 
         // 统计信息显示
         let countHtml = '';
-        if (currentRankingType === 'points') {
-            countHtml = `<div class="ranking-count">累计获得: ${user.total_earned || 0} | 累计消费: ${user.total_spent || 0}</div>`;
-        } else {
+        if (currentRankingType !== 'points') {
             countHtml = `<div class="ranking-count">${currentRankingType === 'borrow' ? '借用' : '归还'} ${user.count} 次</div>`;
         }
 
@@ -574,7 +586,7 @@ function renderRankings() {
 
     // 渲染10名以后（列表样式）
     if (others.length > 0) {
-        let othersHtml = '<table class="data-table" style="width: 100%;"><thead><tr><th style="width: 60px;">排名</th><th>用户</th><th style="width: 150px;">' + (currentRankingType === 'points' ? '积分' : '等级') + '</th><th style="width: 120px;">' + (currentRankingType === 'points' ? '详情' : '次数') + '</th>' + (currentRankingType !== 'points' ? '<th style="width: 100px;">点赞</th>' : '') + '</tr></thead><tbody>';
+        let othersHtml = '<table class="data-table" style="width: 100%;"><thead><tr><th style="width: 60px;">排名</th><th style="width: 140px;">用户</th><th style="width: 120px;">个人称号</th><th style="width: 150px;">签名</th><th style="width: 120px;">' + (currentRankingType === 'points' ? '累计积分' : '等级') + '</th>' + (currentRankingType !== 'points' ? '<th style="width: 100px;">次数</th><th style="width: 100px;">点赞</th>' : '') + '</tr></thead><tbody>';
 
         others.forEach(user => {
             // 生成星星（5星及以上显示彩色）- 仅用于借用/归还排名
@@ -598,46 +610,43 @@ function renderRankings() {
             const isSelf = user.user_id === currentUserId;
             const likeDisabled = remainingLikes <= 0 || isSelf || currentRankingType === 'points';
 
-            // 等级显示（称号+星级）
+            // 等级显示（只显示排行榜称号+星级/积分）
             let levelHtml = '';
             if (currentRankingType === 'points') {
-                // 积分排名显示积分和称号
                 const pointsColor = user.points >= 0 ? '#52c41a' : '#ff4d4f';
                 if (user.title) {
-                    // 前10名显示称号
                     levelHtml = `<span style="font-size: 12px; color: #1890ff; font-weight: 600; padding: 2px 8px; background: #e6f7ff; border-radius: 4px;">${user.title}</span>`;
-                    levelHtml += `<div style="margin-top: 4px; font-size: 13px; color: ${pointsColor}; font-weight: 600;">${user.points} 积分</div>`;
                 } else {
-                    // 10名以后只显示积分
-                    levelHtml = `<div style="height: 20px; margin-bottom: 2px;"></div>`;
-                    levelHtml += `<span style="font-size: 14px; color: ${pointsColor}; font-weight: 600;">${user.points} 积分</span>`;
+                    levelHtml = `<span style="font-size: 12px; color: #999;">-</span>`;
                 }
-            } else if (user.title) {
-                levelHtml = `<span style="font-size: 12px; color: #1890ff; font-weight: 600; padding: 2px 8px; background: #e6f7ff; border-radius: 4px;">${user.title}</span>`;
+                levelHtml += `<div style="margin-top: 4px; font-size: 13px; color: ${pointsColor}; font-weight: 600;">${user.points} 积分</div>`;
+            } else {
+                if (user.title) {
+                    levelHtml = `<span style="font-size: 12px; color: #1890ff; font-weight: 600; padding: 2px 8px; background: #e6f7ff; border-radius: 4px;">${user.title}</span>`;
+                } else {
+                    levelHtml = `<span style="font-size: 12px; color: #999;">-</span>`;
+                }
                 levelHtml += `<div style="margin-top: 4px;">${starsHtml}</div>`;
-            } else {
-                // 没有称号时，使用占位保持高度一致
-                levelHtml = `<div style="height: 20px; margin-bottom: 2px;"></div>`;
-                levelHtml += `<span style="font-size: 14px;">${starsHtml}</span>`;
             }
 
-            // 头像显示
-            const avatarHtml = user.avatar
-                ? `<img src="${user.avatar}" alt="头像" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">`
-                : avatarText;
+            // 个人称号显示（独立列）
+            const personalTitleHtml = user.equipped_title
+                ? `<span style="font-size: 12px; font-weight: 600; padding: 2px 8px; background: ${user.equipped_title.color}20; color: ${user.equipped_title.color}; border: 1px solid ${user.equipped_title.color}40; border-radius: 4px;">${user.equipped_title.name}</span>`
+                : '<span style="font-size: 12px; color: #bfbfbf; font-style: italic;">暂无个人称号</span>';
 
-            // 个性签名显示
+            // 头像显示（带边框）
+            let avatarHtml = '';
+            const avatarFrameStyle = user.avatar_frame ? `border: 2px solid ${user.avatar_frame.color}; box-shadow: 0 0 6px ${user.avatar_frame.color};` : '';
+            if (user.avatar) {
+                avatarHtml = `<img src="${user.avatar}" alt="头像" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%; ${avatarFrameStyle}">`;
+            } else {
+                avatarHtml = `<div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; border-radius: 50%; ${avatarFrameStyle}">${avatarText}</div>`;
+            }
+
+            // 个性签名显示（独立列）
             const signatureHtml = user.signature
-                ? `<div style="font-size: 11px; color: #999; font-style: italic; margin-top: 2px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">💬 ${user.signature}</div>`
-                : '';
-
-            // 统计信息显示
-            let countHtml = '';
-            if (currentRankingType === 'points') {
-                countHtml = `获得: ${user.total_earned || 0} / 消费: ${user.total_spent || 0}`;
-            } else {
-                countHtml = `${user.count} 次`;
-            }
+                ? `<div style="font-size: 12px; color: #666; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${user.signature}</div>`
+                : '<span style="font-size: 12px; color: #bfbfbf; font-style: italic;">暂无签名</span>';
 
             othersHtml += `
                 <tr>
@@ -645,15 +654,14 @@ function renderRankings() {
                     <td>
                         <div style="display: flex; align-items: center; gap: 10px;">
                             <div style="width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 600; font-size: 14px; overflow: hidden;">${avatarHtml}</div>
-                            <div>
-                                <span style="font-weight: 500;">${user.user_name} ${isSelf ? '<span style="color: #1890ff; font-size: 12px;">(你)</span>' : ''}</span>
-                                ${signatureHtml}
-                            </div>
+                            <span style="font-weight: 500;">${user.user_name} ${isSelf ? '<span style="color: #1890ff; font-size: 12px;">(你)</span>' : ''}</span>
                         </div>
                     </td>
+                    <td>${personalTitleHtml}</td>
+                    <td>${signatureHtml}</td>
                     <td>${levelHtml}</td>
-                    <td style="color: #8c8c8c;">${countHtml}</td>
                     ${currentRankingType !== 'points' ? `
+                    <td style="color: #8c8c8c;">${user.count} 次</td>
                     <td>
                         <div style="display: flex; align-items: center; gap: 6px;">
                             <button class="like-btn ${user.liked ? 'liked' : ''}"

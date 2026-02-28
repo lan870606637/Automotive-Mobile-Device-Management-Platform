@@ -59,9 +59,9 @@
                     <span class="nav-icon">🎯</span>
                     <span class="nav-text">悬赏榜单</span>
                 </a>
-                <a href="{{ url_for('pc_points_detail') }}" class="nav-item {% if active_nav == 'points' %}active{% endif %}">
-                    <span class="nav-icon">💰</span>
-                    <span class="nav-text">积分详情</span>
+                <a href="{{ url_for('pc_points_shop') }}" class="nav-item {% if active_nav == 'points_shop' %}active{% endif %}">
+                    <span class="nav-icon">&#128722;</span>
+                    <span class="nav-text">积分商城</span>
                 </a>
                 <a href="{{ url_for('pc_profile') }}" class="nav-item {% if active_nav == 'profile' %}active{% endif %}">
                     <span class="nav-icon">👤</span>
@@ -71,7 +71,7 @@
             <div class="sidebar-footer">
                 <a href="{{ url_for('pc_profile') }}" style="text-decoration: none; display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;">
                     <div class="user-info-mini" style="flex: 1; min-width: 0;">
-                        <span class="user-avatar-mini">
+                        <span class="user-avatar-mini {% if user_avatar_frame %}has-frame{% endif %}" {% if user_avatar_frame %}style="border: 3px solid {{ user_avatar_frame.color }}; box-shadow: 0 0 8px {{ user_avatar_frame.color }};"{% endif %}>
                             {% if user.avatar %}
                             <img src="{{ user.avatar }}" alt="头像" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">
                             {% else %}
@@ -81,8 +81,8 @@
                         <div style="display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; overflow: hidden;">
                             <span class="user-name" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ user.borrower_name or '未设置' }}</span>
                             <span class="user-title" style="font-size: 11px; color: #8c8c8c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                                {% if user_title %}
-                                    {{ user_title }}
+                                {% if user_equipped_title %}
+                                    <span style="color: {{ user_equipped_title.color }}; font-weight: 600;">{{ user_equipped_title.name }}</span>
                                 {% else %}
                                     无称号
                                 {% endif %}

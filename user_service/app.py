@@ -97,6 +97,37 @@ def is_admin_user(borrower_name):
     return api_client.is_user_admin(borrower_name)
 
 
+def get_user_equipment(user_id):
+    """获取用户装备信息（称号、头像边框）"""
+    user = api_client._db.get_user_by_id(user_id)
+    if not user:
+        return {'title': None, 'avatar_frame': None}
+    
+    result = {'title': None, 'avatar_frame': None}
+    
+    # 获取当前称号
+    if user.current_title:
+        title_item = api_client._db.get_shop_item_by_id(user.current_title)
+        if title_item:
+            result['title'] = {
+                'id': title_item.id,
+                'name': title_item.name,
+                'color': title_item.color or '#1890ff'
+            }
+    
+    # 获取当前头像边框
+    if user.current_avatar_frame:
+        frame_item = api_client._db.get_shop_item_by_id(user.current_avatar_frame)
+        if frame_item:
+            result['avatar_frame'] = {
+                'id': frame_item.id,
+                'name': frame_item.name,
+                'color': frame_item.color or '#1890ff'
+            }
+    
+    return result
+
+
 def get_device_type_str(device):
     """获取设备类型字符串"""
     # 方式1：通过实例类型判断
@@ -213,7 +244,7 @@ def inject_globals():
     """注入全局模板变量和函数"""
     user = get_current_user()
     rank_data = get_user_rank_data(user.get('borrower_name', ''))
-    
+
     # 获取用户称号（基于累计积分排名）
     user_title = None
     if user and user.get('user_id'):
@@ -224,10 +255,23 @@ def inject_globals():
                 user_title = points_service.POINTS_TITLES[rank - 1] if rank <= len(points_service.POINTS_TITLES) else points_service.POINTS_TITLES[-1]
         except Exception:
             pass
-    
+
+    # 获取用户装备的称号和头像边框
+    user_equipped_title = None
+    user_avatar_frame = None
+    if user and user.get('user_id'):
+        try:
+            equipment = get_user_equipment(user['user_id'])
+            user_equipped_title = equipment.get('title')
+            user_avatar_frame = equipment.get('avatar_frame')
+        except Exception:
+            pass
+
     return {
         'is_admin_user': is_admin_user,
         'user_title': user_title,
+        'user_equipped_title': user_equipped_title,
+        'user_avatar_frame': user_avatar_frame,
         **rank_data
     }
 
@@ -3612,18 +3656,23 @@ def api_user_announcements():
 def api_user_rankings():
     """获取用户排名列表API"""
     ranking_type = request.args.get('type', 'borrow')  # 'borrow', 'return', 或 'points'
-    
+
     if ranking_type not in ['borrow', 'return', 'points']:
         return jsonify({'success': False, 'message': '排名类型无效'})
-    
+
     # 获取当前用户今天的点赞次数
     user = get_current_user()
     today_likes = api_client.get_user_today_likes(user['user_id'])
     remaining_likes = 5 - today_likes
-    
+
     if ranking_type == 'points':
         # 积分排名
         rankings = points_service.get_points_rankings(limit=100)
+        # 添加用户装备信息
+        for r in rankings:
+            equipment = get_user_equipment(r['user_id'])
+            r['equipped_title'] = equipment.get('title')
+            r['avatar_frame'] = equipment.get('avatar_frame')
         return jsonify({
             'success': True,
             'rankings': rankings,
@@ -3632,6 +3681,11 @@ def api_user_rankings():
     else:
         # 借用/归还排名
         rankings = api_client.get_user_rankings(ranking_type)
+        # 添加用户装备信息
+        for r in rankings:
+            equipment = get_user_equipment(r['user_id'])
+            r['equipped_title'] = equipment.get('title')
+            r['avatar_frame'] = equipment.get('avatar_frame')
         return jsonify({
             'success': True,
             'rankings': rankings,
@@ -3674,8 +3728,8 @@ def api_user_like():
 
 @app.route('/pc/points')
 @login_required
-def pc_points_detail():
-    """PC端积分详情页面"""
+def pc_points_shop():
+    """PC端积分商城页面"""
     api_client.reload_data()
     user = get_current_user()
     
@@ -3685,6 +3739,18 @@ def pc_points_detail():
     
     # 获取积分记录
     records = points_service.get_points_records(user['user_id'], limit=100)
+    
+    # 获取商品列表
+    from common.models import ShopItemType, ShopItemSource
+    shop_items = api_client._db.get_all_shop_items(only_active=True)
+    
+    # 获取用户已拥有的物品
+    user_inventory = api_client._db.get_user_inventory(user['user_id'])
+    owned_item_ids = {item.item_id for item in user_inventory}
+    
+    # 标记已拥有的商品
+    for item in shop_items:
+        item.owned = item.id in owned_item_ids
     
     # 获取今日积分统计
     today = datetime.now().strftime('%Y-%m-%d')
@@ -3720,14 +3786,160 @@ def pc_points_detail():
     # 获取设备统计数据（用于侧边栏显示）
     stats = get_device_stats()
     
-    return render_template('pc/points_detail.html',
+    return render_template('pc/points_shop.html',
                          user=user,
                          user_points=user_points,
                          points_rank=points_rank,
                          records=records,
+                         shop_items=shop_items,
                          today_stats=today_stats,
-                         active_nav='points',
+                         active_nav='points_shop',
                          **stats)
+
+
+@app.route('/api/inventory/use', methods=['POST'])
+@login_required
+def api_use_inventory_item():
+    """使用背包物品API"""
+    try:
+        data = request.get_json()
+        inventory_id = data.get('inventory_id')
+        
+        if not inventory_id:
+            return jsonify({'success': False, 'message': '物品ID不能为空'})
+        
+        user = get_current_user()
+        user_id = user['user_id']
+        
+        # 获取背包物品
+        inventory_item = api_client._db.get_inventory_item_by_id(inventory_id)
+        if not inventory_item:
+            return jsonify({'success': False, 'message': '物品不存在'})
+        
+        if inventory_item.user_id != user_id:
+            return jsonify({'success': False, 'message': '无权操作该物品'})
+        
+        # 获取完整用户信息
+        full_user = api_client._db.get_user_by_id(user_id)
+        if not full_user:
+            return jsonify({'success': False, 'message': '用户不存在'})
+        
+        from common.models import ShopItemType
+        from datetime import datetime
+        
+        # 根据物品类型更新用户装备
+        if inventory_item.item_type == ShopItemType.TITLE:
+            # 先将同类型的其他物品设为未使用
+            user_inventory = api_client._db.get_user_inventory(user_id, ShopItemType.TITLE.value)
+            for inv in user_inventory:
+                if inv.is_used:
+                    api_client._db.update_inventory_item_status(inv.id, False)
+            # 更新用户当前称号
+            full_user.current_title = inventory_item.item_id
+        elif inventory_item.item_type == ShopItemType.AVATAR_FRAME:
+            # 先将同类型的其他物品设为未使用
+            user_inventory = api_client._db.get_user_inventory(user_id, ShopItemType.AVATAR_FRAME.value)
+            for inv in user_inventory:
+                if inv.is_used:
+                    api_client._db.update_inventory_item_status(inv.id, False)
+            # 更新用户当前头像边框
+            full_user.current_avatar_frame = inventory_item.item_id
+        
+        # 保存用户信息
+        api_client._db.save_user(full_user)
+        
+        # 更新物品使用状态
+        api_client._db.update_inventory_item_status(inventory_id, True, datetime.now())
+        
+        # 刷新api_client中的用户数据
+        api_client.reload_data()
+        
+        item_type_name = '称号' if inventory_item.item_type == ShopItemType.TITLE else '头像边框'
+        return jsonify({
+            'success': True,
+            'message': f'已装备 {inventory_item.item_name}',
+            'item_type': item_type_name
+        })
+        
+    except Exception as e:
+        print(f"使用物品失败: {e}")
+        return jsonify({'success': False, 'message': '使用失败，请重试'})
+
+
+@app.route('/api/shop/buy', methods=['POST'])
+@login_required
+def api_shop_buy():
+    """购买商品API"""
+    try:
+        data = request.get_json()
+        item_id = data.get('item_id')
+        
+        if not item_id:
+            return jsonify({'success': False, 'message': '商品ID不能为空'})
+        
+        user = get_current_user()
+        user_id = user['user_id']
+        
+        # 获取商品信息
+        item = api_client._db.get_shop_item_by_id(item_id)
+        if not item:
+            return jsonify({'success': False, 'message': '商品不存在'})
+        
+        if not item.is_active:
+            return jsonify({'success': False, 'message': '商品已下架'})
+        
+        # 检查用户是否已拥有该物品
+        if api_client._db.has_item_in_inventory(user_id, item_id):
+            return jsonify({'success': False, 'message': '您已拥有该物品'})
+        
+        # 获取用户积分
+        user_points = points_service.get_or_create_user_points(user_id)
+        
+        # 检查积分是否足够
+        if user_points.points < item.price:
+            return jsonify({'success': False, 'message': '积分不足'})
+        
+        # 扣除积分
+        success = points_service.add_points(
+            user_id=user_id,
+            points=-item.price,
+            transaction_type=PointsTransactionType.SHOP_BUY,
+            description=f'购买商品：{item.name}',
+            related_id=item_id
+        )
+        
+        if not success:
+            return jsonify({'success': False, 'message': '积分扣除失败'})
+        
+        # 添加物品到背包
+        from common.models import UserInventory, ShopItemSource
+        import uuid
+        inventory_item = UserInventory(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            item_id=item.id,
+            item_type=item.item_type,
+            item_name=item.name,
+            item_icon=item.icon,
+            item_color=item.color,
+            source=ShopItemSource.SHOP,
+            is_used=False
+        )
+        api_client._db.add_to_inventory(inventory_item)
+        
+        return jsonify({
+            'success': True,
+            'message': f'成功购买 {item.name}',
+            'item': {
+                'id': item.id,
+                'name': item.name,
+                'type': item.item_type.value if item.item_type else ''
+            }
+        })
+        
+    except Exception as e:
+        print(f"购买商品失败: {e}")
+        return jsonify({'success': False, 'message': '购买失败，请重试'})
 
 
 @app.route('/pc/bounties')
@@ -4163,12 +4375,21 @@ def pc_profile():
             full_user = u
             break
 
+    # 获取用户背包物品
+    from common.models import ShopItemType
+    inventory = api_client._db.get_user_inventory(user['user_id'])
+    inventory_titles = [item for item in inventory if item.item_type == ShopItemType.TITLE]
+    inventory_frames = [item for item in inventory if item.item_type == ShopItemType.AVATAR_FRAME]
+
     # 获取设备统计数据（用于侧边栏显示）
     stats = get_device_stats()
 
     return render_template('pc/profile.html',
                          user=user,
                          full_user=full_user,
+                         inventory=inventory,
+                         inventory_titles=inventory_titles,
+                         inventory_frames=inventory_frames,
                          hide_search=True,
                          **stats)
 

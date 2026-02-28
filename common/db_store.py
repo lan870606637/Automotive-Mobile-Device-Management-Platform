@@ -11,8 +11,8 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 from contextlib import contextmanager
 
-from .models import Device, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, OperationLog, Admin, Notification, Announcement, UserLike, Reservation, UserPoints, PointsRecord, Bounty
-from .models import DeviceStatus, DeviceType, OperationType, ReservationStatus, PointsTransactionType, BountyStatus
+from .models import Device, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, OperationLog, Admin, Notification, Announcement, UserLike, Reservation, UserPoints, PointsRecord, Bounty, ShopItem, UserInventory
+from .models import DeviceStatus, DeviceType, OperationType, ReservationStatus, PointsTransactionType, BountyStatus, ShopItemType, ShopItemSource
 
 # 导入配置
 from .config import DB_TYPE, SQLITE_DB_PATH, MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE
@@ -187,6 +187,10 @@ def init_database():
         _migrate_mysql_create_points_tables()
         # 创建悬赏表
         _migrate_mysql_create_bounties_table()
+        # 创建积分商城相关表
+        _migrate_mysql_create_shop_tables()
+        # 添加用户装扮字段
+        _migrate_mysql_add_user_equip_fields()
         return
 
     # SQLite初始化逻辑...
@@ -273,6 +277,12 @@ def init_database():
 
         # 创建悬赏表
         _migrate_sqlite_create_bounties_table(cursor)
+        
+        # 创建积分商城相关表
+        _migrate_sqlite_create_shop_tables(cursor)
+        
+        # 添加用户装扮字段
+        _migrate_sqlite_add_user_equip_fields(cursor)
 
         # 创建其他表...
         # (省略其他表的创建代码，保持原有逻辑)
@@ -817,11 +827,13 @@ class DatabaseStore:
             if exists:
                 sql = """UPDATE users SET
                     email = %s, password = %s, borrower_name = %s, avatar = %s, signature = %s,
-                    borrow_count = %s, return_count = %s, is_frozen = %s, is_admin = %s, is_deleted = %s, is_first_login = %s
+                    borrow_count = %s, return_count = %s, is_frozen = %s, is_admin = %s, is_deleted = %s, is_first_login = %s,
+                    current_title = %s, current_avatar_frame = %s
                     WHERE id = %s
                 """ if IS_MYSQL else """UPDATE users SET
                     email = ?, password = ?, borrower_name = ?, avatar = ?, signature = ?,
-                    borrow_count = ?, return_count = ?, is_frozen = ?, is_admin = ?, is_deleted = ?, is_first_login = ?
+                    borrow_count = ?, return_count = ?, is_frozen = ?, is_admin = ?, is_deleted = ?, is_first_login = ?,
+                    current_title = ?, current_avatar_frame = ?
                     WHERE id = ?
                 """
                 params = (
@@ -831,25 +843,31 @@ class DatabaseStore:
                     1 if user.is_admin else 0,
                     1 if user.is_deleted else 0,
                     1 if user.is_first_login else 0,
+                    user.current_title,
+                    user.current_avatar_frame,
                     user.id
                 )
                 cursor.execute(sql, params)
             else:
                 sql = """INSERT INTO users (
                     id, email, password, borrower_name, avatar, signature, borrow_count,
-                    return_count, is_frozen, is_admin, is_deleted, is_first_login, create_time
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, %s, CURRENT_TIMESTAMP)
+                    return_count, is_frozen, is_admin, is_deleted, is_first_login, create_time,
+                    current_title, current_avatar_frame
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, %s, CURRENT_TIMESTAMP, %s, %s)
                 """ if IS_MYSQL else """INSERT INTO users (
                     id, email, password, borrower_name, avatar, signature, borrow_count,
-                    return_count, is_frozen, is_admin, is_deleted, is_first_login, create_time
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, CURRENT_TIMESTAMP)
+                    return_count, is_frozen, is_admin, is_deleted, is_first_login, create_time,
+                    current_title, current_avatar_frame
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, CURRENT_TIMESTAMP, ?, ?)
                 """
                 params = (
                     user.id, user.email, user.password,
                     user.borrower_name, user.avatar, user.signature, user.borrow_count, user.return_count,
                     1 if user.is_frozen else 0,
                     1 if user.is_admin else 0,
-                    1 if user.is_first_login else 0
+                    1 if user.is_first_login else 0,
+                    user.current_title,
+                    user.current_avatar_frame
                 )
                 cursor.execute(sql, params)
             
@@ -1785,6 +1803,190 @@ class DatabaseStore:
                 (bounty_id,)
             )
             return cursor.rowcount > 0
+    
+    # ========== 积分商城相关操作 ==========
+    
+    def get_shop_item_by_id(self, item_id: str) -> Optional[ShopItem]:
+        """根据ID获取商品"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM shop_items WHERE id = %s" if IS_MYSQL else
+                "SELECT * FROM shop_items WHERE id = ?",
+                (item_id,)
+            )
+            row = cursor.fetchone()
+            if row:
+                return ShopItem.from_dict(row_to_dict(row))
+            return None
+    
+    def get_all_shop_items(self, item_type: str = None, only_active: bool = True) -> List[ShopItem]:
+        """获取所有商品"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            sql = "SELECT * FROM shop_items WHERE 1=1"
+            params = []
+            
+            if only_active:
+                sql += " AND is_active = 1"
+            
+            if item_type:
+                sql += " AND item_type = %s" if IS_MYSQL else " AND item_type = ?"
+                params.append(item_type)
+            
+            sql += " ORDER BY sort_order ASC, create_time ASC"
+            
+            cursor.execute(sql, tuple(params) if params else ())
+            rows = cursor.fetchall()
+            return [ShopItem.from_dict(row_to_dict(row)) for row in rows]
+    
+    def save_shop_item(self, item: ShopItem) -> bool:
+        """保存商品"""
+        with get_db_transaction() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute(
+                "SELECT id FROM shop_items WHERE id = %s" if IS_MYSQL else
+                "SELECT id FROM shop_items WHERE id = ?",
+                (item.id,)
+            )
+            exists = cursor.fetchone()
+            
+            if exists:
+                sql = """UPDATE shop_items SET
+                    name = %s, description = %s, item_type = %s, price = %s,
+                    icon = %s, color = %s, is_active = %s, sort_order = %s
+                    WHERE id = %s
+                """ if IS_MYSQL else """UPDATE shop_items SET
+                    name = ?, description = ?, item_type = ?, price = ?,
+                    icon = ?, color = ?, is_active = ?, sort_order = ?
+                    WHERE id = ?
+                """
+                params = (
+                    item.name, item.description,
+                    item.item_type.value if item.item_type else None,
+                    item.price, item.icon, item.color,
+                    1 if item.is_active else 0, item.sort_order, item.id
+                )
+            else:
+                sql = """INSERT INTO shop_items (
+                    id, name, description, item_type, price, icon, color, is_active, sort_order, create_time
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """ if IS_MYSQL else """INSERT INTO shop_items (
+                    id, name, description, item_type, price, icon, color, is_active, sort_order, create_time
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """
+                params = (
+                    item.id, item.name, item.description,
+                    item.item_type.value if item.item_type else None,
+                    item.price, item.icon, item.color,
+                    1 if item.is_active else 0, item.sort_order,
+                    format_datetime(item.create_time)
+                )
+            
+            cursor.execute(sql, params)
+            return True
+    
+    def delete_shop_item(self, item_id: str) -> bool:
+        """删除商品"""
+        with get_db_transaction() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM shop_items WHERE id = %s" if IS_MYSQL else
+                "DELETE FROM shop_items WHERE id = ?",
+                (item_id,)
+            )
+            return True
+    
+    # ========== 用户背包相关操作 ==========
+    
+    def get_user_inventory(self, user_id: str, item_type: str = None) -> List[UserInventory]:
+        """获取用户背包物品"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            sql = "SELECT * FROM user_inventory WHERE user_id = %s" if IS_MYSQL else "SELECT * FROM user_inventory WHERE user_id = ?"
+            params = [user_id]
+            
+            if item_type:
+                sql += " AND item_type = %s" if IS_MYSQL else " AND item_type = ?"
+                params.append(item_type)
+            
+            sql += " ORDER BY acquire_time DESC"
+            
+            cursor.execute(sql, tuple(params))
+            rows = cursor.fetchall()
+            return [UserInventory.from_dict(row_to_dict(row)) for row in rows]
+    
+    def get_inventory_item_by_id(self, inventory_id: str) -> Optional[UserInventory]:
+        """根据ID获取背包物品"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM user_inventory WHERE id = %s" if IS_MYSQL else
+                "SELECT * FROM user_inventory WHERE id = ?",
+                (inventory_id,)
+            )
+            row = cursor.fetchone()
+            if row:
+                return UserInventory.from_dict(row_to_dict(row))
+            return None
+    
+    def add_to_inventory(self, item: UserInventory) -> bool:
+        """添加物品到背包"""
+        with get_db_transaction() as conn:
+            cursor = conn.cursor()
+            sql = """INSERT INTO user_inventory (
+                id, user_id, item_id, item_type, item_name, item_icon, item_color,
+                source, is_used, acquire_time, use_time
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """ if IS_MYSQL else """INSERT INTO user_inventory (
+                id, user_id, item_id, item_type, item_name, item_icon, item_color,
+                source, is_used, acquire_time, use_time
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            params = (
+                item.id, item.user_id, item.item_id,
+                item.item_type.value if item.item_type else None,
+                item.item_name, item.item_icon, item.item_color,
+                item.source.value if item.source else None,
+                1 if item.is_used else 0,
+                format_datetime(item.acquire_time),
+                format_datetime(item.use_time)
+            )
+            cursor.execute(sql, params)
+            return True
+    
+    def update_inventory_item_status(self, inventory_id: str, is_used: bool, use_time: datetime = None) -> bool:
+        """更新背包物品使用状态"""
+        with get_db_transaction() as conn:
+            cursor = conn.cursor()
+            sql = """UPDATE user_inventory SET
+                is_used = %s, use_time = %s
+                WHERE id = %s
+            """ if IS_MYSQL else """UPDATE user_inventory SET
+                is_used = ?, use_time = ?
+                WHERE id = ?
+            """
+            params = (
+                1 if is_used else 0,
+                format_datetime(use_time),
+                inventory_id
+            )
+            cursor.execute(sql, params)
+            return True
+    
+    def has_item_in_inventory(self, user_id: str, item_id: str) -> bool:
+        """检查用户是否已拥有某物品"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id FROM user_inventory WHERE user_id = %s AND item_id = %s LIMIT 1" if IS_MYSQL else
+                "SELECT id FROM user_inventory WHERE user_id = ? AND item_id = ? LIMIT 1",
+                (user_id, item_id)
+            )
+            return cursor.fetchone() is not None
 
 
 # ========== 数据库迁移函数 ==========
@@ -1867,6 +2069,137 @@ def _migrate_mysql_create_points_tables():
             print("✓ MySQL: 已创建积分相关表")
     except Exception as e:
         print(f"⚠ MySQL 积分表迁移警告: {e}")
+
+
+def _migrate_sqlite_create_shop_tables(cursor):
+    """SQLite: 创建积分商城相关表"""
+    # 创建商品表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS shop_items (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            item_type TEXT NOT NULL,
+            price INTEGER NOT NULL,
+            icon TEXT,
+            color TEXT,
+            is_active INTEGER DEFAULT 1,
+            sort_order INTEGER DEFAULT 0,
+            create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # 创建用户背包表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_inventory (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            item_id TEXT NOT NULL,
+            item_type TEXT NOT NULL,
+            item_name TEXT NOT NULL,
+            item_icon TEXT,
+            item_color TEXT,
+            source TEXT DEFAULT '积分商城',
+            is_used INTEGER DEFAULT 0,
+            acquire_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            use_time TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    ''')
+    
+    # 创建索引
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_shop_items_type ON shop_items(item_type)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_shop_items_active ON shop_items(is_active)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_inventory_user ON user_inventory(user_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_inventory_item ON user_inventory(item_id)')
+    print("✓ SQLite: 已创建积分商城相关表")
+
+
+def _migrate_mysql_create_shop_tables():
+    """MySQL: 创建积分商城相关表"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            # 创建商品表
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS shop_items (
+                    id VARCHAR(64) PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL,
+                    description VARCHAR(500),
+                    item_type VARCHAR(32) NOT NULL,
+                    price INT NOT NULL,
+                    icon VARCHAR(100),
+                    color VARCHAR(50),
+                    is_active TINYINT DEFAULT 1,
+                    sort_order INT DEFAULT 0,
+                    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_item_type (item_type),
+                    INDEX idx_is_active (is_active)
+                )
+            ''')
+            
+            # 创建用户背包表
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS user_inventory (
+                    id VARCHAR(64) PRIMARY KEY,
+                    user_id VARCHAR(64) NOT NULL,
+                    item_id VARCHAR(64) NOT NULL,
+                    item_type VARCHAR(32) NOT NULL,
+                    item_name VARCHAR(255) NOT NULL,
+                    item_icon VARCHAR(100),
+                    item_color VARCHAR(50),
+                    source VARCHAR(32) DEFAULT '积分商城',
+                    is_used TINYINT DEFAULT 0,
+                    acquire_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    use_time DATETIME,
+                    FOREIGN KEY (user_id) REFERENCES users(id),
+                    INDEX idx_user_id (user_id),
+                    INDEX idx_item_id (item_id)
+                )
+            ''')
+            
+            conn.commit()
+            print("✓ MySQL: 已创建积分商城相关表")
+    except Exception as e:
+        print(f"⚠ MySQL 积分商城表迁移警告: {e}")
+
+
+def _migrate_sqlite_add_user_equip_fields(cursor):
+    """SQLite: 添加用户装扮字段"""
+    try:
+        cursor.execute("SELECT current_title FROM users LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE users ADD COLUMN current_title TEXT DEFAULT ''")
+        print("✓ SQLite: 已添加 current_title 列到 users 表")
+    
+    try:
+        cursor.execute("SELECT current_avatar_frame FROM users LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE users ADD COLUMN current_avatar_frame TEXT DEFAULT ''")
+        print("✓ SQLite: 已添加 current_avatar_frame 列到 users 表")
+
+
+def _migrate_mysql_add_user_equip_fields():
+    """MySQL: 添加用户装扮字段"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT current_title FROM users LIMIT 1")
+            except Exception:
+                cursor.execute("ALTER TABLE users ADD COLUMN current_title VARCHAR(64) DEFAULT ''")
+                conn.commit()
+                print("✓ MySQL: 已添加 current_title 列到 users 表")
+            
+            try:
+                cursor.execute("SELECT current_avatar_frame FROM users LIMIT 1")
+            except Exception:
+                cursor.execute("ALTER TABLE users ADD COLUMN current_avatar_frame VARCHAR(64) DEFAULT ''")
+                conn.commit()
+                print("✓ MySQL: 已添加 current_avatar_frame 列到 users 表")
+    except Exception as e:
+        print(f"⚠ MySQL 用户装扮字段迁移警告: {e}")
 
 
 def _migrate_sqlite_create_bounties_table(cursor):

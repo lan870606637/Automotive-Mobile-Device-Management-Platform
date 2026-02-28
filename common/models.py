@@ -455,6 +455,10 @@ class User:
     is_first_login: bool = True  # 是否首次登录（需要修改密码）
     create_time: Optional[datetime] = None
     
+    # 装扮相关
+    current_title: str = ""       # 当前使用的称号ID
+    current_avatar_frame: str = ""  # 当前使用的头像边框ID
+    
     @classmethod
     def from_dict(cls, data: dict) -> 'User':
         """从字典创建用户对象"""
@@ -486,7 +490,9 @@ class User:
             is_admin=bool(data.get('is_admin', 0)),
             is_deleted=bool(data.get('is_deleted', 0)),
             is_first_login=bool(data.get('is_first_login', 1)),
-            create_time=parse_datetime(data.get('create_time'))
+            create_time=parse_datetime(data.get('create_time')),
+            current_title=data.get('current_title', ''),
+            current_avatar_frame=data.get('current_avatar_frame', '')
         )
     
     def to_dict(self) -> dict:
@@ -503,6 +509,8 @@ class User:
             "is_admin": "是" if self.is_admin else "否",
             "is_first_login": self.is_first_login,
             "create_time": self.create_time.strftime("%Y-%m-%d %H:%M:%S") if self.create_time else "",
+            "current_title": self.current_title,
+            "current_avatar_frame": self.current_avatar_frame,
         }
 
 
@@ -1081,6 +1089,7 @@ class PointsTransactionType(Enum):
     TRANSFER = "转借设备"
     RENEW = "续期"
     RESERVE = "预约设备"
+    SHOP_BUY = "购买商品"
 
 
 @dataclass
@@ -1307,4 +1316,179 @@ class Bounty:
             "claimer_id": self.claimer_id,
             "claimer_name": self.claimer_name,
             "finder_description": self.finder_description,
+        }
+
+
+class ShopItemType(Enum):
+    """积分商城商品类型"""
+    TITLE = "称号"
+    AVATAR_FRAME = "头像边框"
+
+
+class ShopItemSource(Enum):
+    """商品来源类型"""
+    SHOP = "积分商城"
+    ACHIEVEMENT = "成就奖励"
+    RANDOM = "随机获得"
+    EVENT = "活动获得"
+
+
+@dataclass
+class ShopItem:
+    """积分商城商品"""
+    id: str
+    name: str
+    description: str
+    item_type: ShopItemType
+    price: int
+    icon: str = ""  # 图标/样式标识
+    color: str = ""  # 颜色主题
+    is_active: bool = True
+    sort_order: int = 0
+    create_time: Optional[datetime] = None
+    
+    def __post_init__(self):
+        if self.create_time is None:
+            self.create_time = datetime.now()
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'ShopItem':
+        """从字典创建商品对象"""
+        from datetime import datetime
+        
+        def parse_datetime(val):
+            if val is None or val == '':
+                return None
+            if isinstance(val, datetime):
+                return val
+            if isinstance(val, str):
+                for fmt in ['%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d']:
+                    try:
+                        return datetime.strptime(val, fmt)
+                    except:
+                        continue
+            return None
+        
+        # 确定商品类型
+        item_type_str = data.get('item_type', '称号')
+        if isinstance(item_type_str, ShopItemType):
+            item_type = item_type_str
+        else:
+            try:
+                item_type = ShopItemType(item_type_str)
+            except:
+                item_type = ShopItemType.TITLE
+        
+        return cls(
+            id=data.get('id', ''),
+            name=data.get('name', ''),
+            description=data.get('description', ''),
+            item_type=item_type,
+            price=int(data.get('price', 0)),
+            icon=data.get('icon', ''),
+            color=data.get('color', ''),
+            is_active=bool(data.get('is_active', 1)),
+            sort_order=int(data.get('sort_order', 0)),
+            create_time=parse_datetime(data.get('create_time'))
+        )
+    
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "item_type": self.item_type.value if isinstance(self.item_type, ShopItemType) else str(self.item_type),
+            "price": self.price,
+            "icon": self.icon,
+            "color": self.color,
+            "is_active": "是" if self.is_active else "否",
+            "sort_order": self.sort_order,
+            "create_time": self.create_time.strftime("%Y-%m-%d %H:%M:%S") if self.create_time else "",
+        }
+
+
+@dataclass
+class UserInventory:
+    """用户背包/物品"""
+    id: str
+    user_id: str
+    item_id: str
+    item_type: ShopItemType
+    item_name: str
+    item_icon: str
+    item_color: str
+    source: ShopItemSource
+    is_used: bool = False
+    acquire_time: Optional[datetime] = None
+    use_time: Optional[datetime] = None
+    
+    def __post_init__(self):
+        if self.acquire_time is None:
+            self.acquire_time = datetime.now()
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'UserInventory':
+        """从字典创建背包物品对象"""
+        from datetime import datetime
+        
+        def parse_datetime(val):
+            if val is None or val == '':
+                return None
+            if isinstance(val, datetime):
+                return val
+            if isinstance(val, str):
+                for fmt in ['%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d']:
+                    try:
+                        return datetime.strptime(val, fmt)
+                    except:
+                        continue
+            return None
+        
+        # 确定商品类型
+        item_type_str = data.get('item_type', '称号')
+        if isinstance(item_type_str, ShopItemType):
+            item_type = item_type_str
+        else:
+            try:
+                item_type = ShopItemType(item_type_str)
+            except:
+                item_type = ShopItemType.TITLE
+        
+        # 确定来源类型
+        source_str = data.get('source', '积分商城')
+        if isinstance(source_str, ShopItemSource):
+            source = source_str
+        else:
+            try:
+                source = ShopItemSource(source_str)
+            except:
+                source = ShopItemSource.SHOP
+        
+        return cls(
+            id=data.get('id', ''),
+            user_id=data.get('user_id', ''),
+            item_id=data.get('item_id', ''),
+            item_type=item_type,
+            item_name=data.get('item_name', ''),
+            item_icon=data.get('item_icon', ''),
+            item_color=data.get('item_color', ''),
+            source=source,
+            is_used=bool(data.get('is_used', 0)),
+            acquire_time=parse_datetime(data.get('acquire_time')),
+            use_time=parse_datetime(data.get('use_time'))
+        )
+    
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "item_id": self.item_id,
+            "item_type": self.item_type.value if isinstance(self.item_type, ShopItemType) else str(self.item_type),
+            "item_name": self.item_name,
+            "item_icon": self.item_icon,
+            "item_color": self.item_color,
+            "source": self.source.value if isinstance(self.source, ShopItemSource) else str(self.source),
+            "is_used": "使用中" if self.is_used else "未使用",
+            "acquire_time": self.acquire_time.strftime("%Y-%m-%d %H:%M:%S") if self.acquire_time else "",
+            "use_time": self.use_time.strftime("%Y-%m-%d %H:%M:%S") if self.use_time else "",
         }
