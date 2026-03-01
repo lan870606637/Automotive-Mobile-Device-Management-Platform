@@ -128,6 +128,66 @@
             </div>
         </div>
         {% endif %}
+
+        <!-- 主题皮肤分类 -->
+        <div class="inventory-section" style="margin-bottom: 20px;">
+            <div class="inventory-category" style="font-size: 14px; color: #666; margin-bottom: 12px; font-weight: 500;">
+                🎨 主题皮肤 ({% if inventory_themes %}{{ inventory_themes|length + 1 }}{% else %}1{% endif %})
+            </div>
+            <div class="inventory-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px;">
+                <!-- 默认主题 -->
+                <div class="inventory-item theme-inventory-item {% if not current_theme %}equipped{% endif %}" onclick="showDefaultThemeDetail()" style="border: 2px solid {% if not current_theme %}#52c41a{% else %}#e8e8e8{% endif %}; border-radius: 12px; padding: 16px; text-align: center; cursor: pointer; transition: all 0.3s; {% if not current_theme %}background: linear-gradient(135deg, #f6ffed 0%, #ffffff 100%); box-shadow: 0 2px 8px rgba(82, 196, 26, 0.15);{% endif %}">
+                    <div class="theme-preview-small" style="margin: 0 auto 12px; height: 80px; border-radius: 8px; display: flex; flex-direction: column; justify-content: center; align-items: center; background: linear-gradient(135deg, #f5f5f5 0%, #ffffff 50%, #e8e8e8 100%); border: 2px solid #d9d9d9;">
+                        <div class="theme-preview-name" style="font-size: 14px; margin-bottom: 4px; color: #262626;">默认主题</div>
+                        <div class="theme-preview-colors" style="justify-content: center;">
+                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #1890ff;"></div>
+                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #52c41a;"></div>
+                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #f5f5f5;"></div>
+                        </div>
+                    </div>
+                    <div class="item-name" style="font-size: 13px; font-weight: 600; color: #262626; margin-bottom: 4px;">默认主题</div>
+                    <div class="item-status" style="font-size: 11px; color: {% if not current_theme %}#52c41a{% else %}#8c8c8c{% endif %};">
+                        {% if not current_theme %}✅ 使用中{% else %}点击使用{% endif %}
+                    </div>
+                </div>
+                {% if inventory_themes %}
+                {% for item in inventory_themes %}
+                <div class="inventory-item theme-inventory-item {% if item.is_used %}equipped{% endif %}" onclick="showThemeDetail('{{ item.item_id }}', {{ item.item_name|tojson }}, '{{ item.item_icon }}', {{ item.source.value|tojson }}, '{{ item.acquire_time }}', {{ item.is_used|tojson }})" style="border: 2px solid {% if item.is_used %}#52c41a{% else %}#e8e8e8{% endif %}; border-radius: 12px; padding: 16px; text-align: center; cursor: pointer; transition: all 0.3s; {% if item.is_used %}background: linear-gradient(135deg, #f6ffed 0%, #ffffff 100%); box-shadow: 0 2px 8px rgba(82, 196, 26, 0.15);{% endif %}">
+                    <div class="theme-preview-small theme-preview-{{ item.item_icon }}" style="margin: 0 auto 12px; height: 80px; border-radius: 8px; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                        <div class="theme-preview-name" style="font-size: 14px; margin-bottom: 4px;">{{ item.item_name }}</div>
+                        <div class="theme-preview-colors" style="justify-content: center;">
+                            {% if item.item_icon == 'ocean-blue' %}
+                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #1e3a5f;"></div>
+                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #00d4ff;"></div>
+                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #0a1628;"></div>
+                            {% elif item.item_icon == 'sakura-pink' %}
+                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #ff6b9d;"></div>
+                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #ffb8d0;"></div>
+                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #fff0f5;"></div>
+                            {% elif item.item_icon == 'forest-green' %}
+                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #2d6a4f;"></div>
+                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #74c69d;"></div>
+                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #d8f3dc;"></div>
+                            {% elif item.item_icon == 'dark-purple' %}
+                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #6c5ce7;"></div>
+                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #fd79a8;"></div>
+                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #2d3436;"></div>
+                            {% elif item.item_icon == 'warm-orange' %}
+                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #e17055;"></div>
+                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #fdcb6e;"></div>
+                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #fff9e6;"></div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="item-name" style="font-size: 13px; font-weight: 600; color: #262626; margin-bottom: 4px;">{{ item.item_name }}</div>
+                    <div class="item-status" style="font-size: 11px; color: {% if item.is_used %}#52c41a{% else %}#8c8c8c{% endif %};">
+                        {% if item.is_used %}✅ 使用中{% else %}点击使用{% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+                {% endif %}
+            </div>
+        </div>
         {% else %}
         <div class="empty-inventory" style="text-align: center; padding: 40px 20px; color: #8c8c8c;">
             <div style="font-size: 48px; margin-bottom: 12px;">🎒</div>
@@ -169,6 +229,57 @@
         <div class="pc-modal-footer">
             <button type="button" class="btn btn-default" onclick="closeItemDetailModal()">关闭</button>
             <button type="button" id="useItemBtn" class="btn btn-primary" onclick="useCurrentItem()">使用</button>
+        </div>
+    </div>
+</div>
+
+<!-- 主题详情弹窗 -->
+<div id="themeDetailModal" class="pc-modal" style="display: none;">
+    <div class="pc-modal-content" style="max-width: 400px;">
+        <div class="pc-modal-header">
+            <h3>主题详情</h3>
+            <button class="pc-modal-close" onclick="closeThemeDetailModal()">&times;</button>
+        </div>
+        <div class="pc-modal-body" style="padding: 24px;">
+            <div id="themeDetailPreview" class="theme-preview-card" style="margin: 0 0 16px 0; height: 120px; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                <div id="themeDetailName" class="theme-preview-name" style="font-size: 20px; margin-bottom: 8px;"></div>
+                <div id="themeDetailColors" class="theme-preview-colors"></div>
+            </div>
+            <div id="themeDetailDesc" style="font-size: 14px; color: #666; text-align: center; margin-bottom: 12px;"></div>
+            <div id="themeDetailSource" style="font-size: 12px; color: #999; text-align: center; margin-bottom: 4px;"></div>
+            <div id="themeDetailTime" style="font-size: 12px; color: #999; text-align: center;"></div>
+            <div id="themeDetailStatus" style="font-size: 13px; color: #52c41a; text-align: center; margin-top: 12px; font-weight: 500;"></div>
+        </div>
+        <div class="pc-modal-footer">
+            <button type="button" class="btn btn-default" onclick="closeThemeDetailModal()">关闭</button>
+            <button type="button" id="useThemeBtn" class="btn btn-primary" onclick="useCurrentTheme()">应用主题</button>
+        </div>
+    </div>
+</div>
+
+<!-- 默认主题详情弹窗 -->
+<div id="defaultThemeModal" class="pc-modal" style="display: none;">
+    <div class="pc-modal-content" style="max-width: 400px;">
+        <div class="pc-modal-header">
+            <h3>主题详情</h3>
+            <button class="pc-modal-close" onclick="closeDefaultThemeModal()">&times;</button>
+        </div>
+        <div class="pc-modal-body" style="padding: 24px;">
+            <div class="theme-preview-card" style="margin: 0 0 16px 0; height: 120px; display: flex; flex-direction: column; justify-content: center; align-items: center; background: linear-gradient(135deg, #f5f5f5 0%, #ffffff 50%, #e8e8e8 100%); border: 2px solid #d9d9d9;">
+                <div class="theme-preview-name" style="font-size: 20px; margin-bottom: 8px; color: #262626;">默认主题</div>
+                <div class="theme-preview-colors">
+                    <div class="theme-color-dot" style="width: 24px; height: 24px; background: #1890ff;"></div>
+                    <div class="theme-color-dot" style="width: 24px; height: 24px; background: #52c41a;"></div>
+                    <div class="theme-color-dot" style="width: 24px; height: 24px; background: #f5f5f5;"></div>
+                </div>
+            </div>
+            <div style="font-size: 14px; color: #666; text-align: center; margin-bottom: 12px;">系统默认主题，简洁清爽</div>
+            <div style="font-size: 12px; color: #999; text-align: center; margin-bottom: 4px;">来源：系统默认</div>
+            <div id="defaultThemeStatus" style="font-size: 13px; color: #52c41a; text-align: center; margin-top: 12px; font-weight: 500;"></div>
+        </div>
+        <div class="pc-modal-footer">
+            <button type="button" class="btn btn-default" onclick="closeDefaultThemeModal()">关闭</button>
+            <button type="button" id="useDefaultThemeBtn" class="btn btn-primary" onclick="useDefaultTheme()">应用主题</button>
         </div>
     </div>
 </div>
@@ -221,6 +332,65 @@
 .profile-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+}
+
+/* 主题预览小卡片样式 */
+.theme-preview-small {
+    padding: 12px;
+    border-radius: 8px;
+}
+
+.theme-preview-small .theme-preview-name {
+    font-weight: 600;
+}
+
+.theme-preview-small .theme-color-dot {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+/* 主题库存项样式 */
+.theme-inventory-item {
+    transition: all 0.3s ease;
+}
+
+.theme-inventory-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.theme-inventory-item.equipped {
+    border-color: #52c41a !important;
+}
+
+/* 主题预览卡片样式（复用themes.css中的定义） */
+.theme-preview-ocean-blue {
+    background: linear-gradient(135deg, #1e3a5f 0%, #2d5a8a 50%, #0d1b2a 100%);
+    color: #e8f4f8;
+}
+
+.theme-preview-sakura-pink {
+    background: linear-gradient(135deg, #fff0f5 0%, #ffe4ec 50%, #ffb8d0 100%);
+    color: #5a3d5c;
+    border: 2px solid #ffb8d0;
+}
+
+.theme-preview-forest-green {
+    background: linear-gradient(135deg, #d8f3dc 0%, #b7e4c7 50%, #74c69d 100%);
+    color: #1b4332;
+}
+
+.theme-preview-dark-purple {
+    background: linear-gradient(135deg, #2d3436 0%, #1a1a2e 50%, #6c5ce7 100%);
+    color: #dfe6e9;
+}
+
+.theme-preview-warm-orange {
+    background: linear-gradient(135deg, #fff9e6 0%, #fdcb6e 50%, #e17055 100%);
+    color: #2d3436;
 }
 </style>
 
@@ -448,16 +618,16 @@ function closeItemDetailModal() {
 // 使用当前物品
 async function useCurrentItem() {
     if (!currentItemId) return;
-    
+
     try {
         const response = await fetch('/api/inventory/use', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ inventory_id: currentItemId })
         });
-        
+
         const data = await response.json();
-        
+
         if (data.success) {
             showToast('🎉 ' + data.message, 'success');
             closeItemDetailModal();
@@ -469,6 +639,182 @@ async function useCurrentItem() {
     } catch (error) {
         console.error('使用物品失败:', error);
         showToast('使用失败，请重试', 'error');
+    }
+}
+
+// ==================== 主题皮肤功能 ====================
+let currentThemeId = null;
+let currentThemeIcon = null;
+
+// 主题描述映射
+const themeDescriptions = {
+    'ocean-blue': '深邃海洋风格，沉稳专业，适合商务场景',
+    'sakura-pink': '浪漫樱花风格，温柔甜美，适合女性用户',
+    'forest-green': '自然森林风格，清新活力，护眼舒适',
+    'dark-purple': '神秘暗夜风格，酷炫科技，适合夜间使用',
+    'warm-orange': '温暖阳光风格，活力热情，充满正能量'
+};
+
+// 显示主题详情
+function showThemeDetail(itemId, itemName, itemIcon, source, acquireTime, isUsed) {
+    currentThemeId = itemId;
+    currentThemeIcon = itemIcon;
+
+    const modal = document.getElementById('themeDetailModal');
+    const previewDiv = document.getElementById('themeDetailPreview');
+    const nameDiv = document.getElementById('themeDetailName');
+    const colorsDiv = document.getElementById('themeDetailColors');
+    const descDiv = document.getElementById('themeDetailDesc');
+    const sourceDiv = document.getElementById('themeDetailSource');
+    const timeDiv = document.getElementById('themeDetailTime');
+    const statusDiv = document.getElementById('themeDetailStatus');
+    const useBtn = document.getElementById('useThemeBtn');
+
+    // 设置预览卡片样式
+    previewDiv.className = 'theme-preview-card theme-preview-' + itemIcon;
+    previewDiv.style.margin = '0 0 16px 0';
+    previewDiv.style.height = '120px';
+    previewDiv.style.display = 'flex';
+    previewDiv.style.flexDirection = 'column';
+    previewDiv.style.justifyContent = 'center';
+    previewDiv.style.alignItems = 'center';
+
+    // 设置主题名称
+    nameDiv.textContent = itemName;
+
+    // 设置颜色点
+    const colorMap = {
+        'ocean-blue': ['#1e3a5f', '#00d4ff', '#0a1628'],
+        'sakura-pink': ['#ff6b9d', '#ffb8d0', '#fff0f5'],
+        'forest-green': ['#2d6a4f', '#74c69d', '#d8f3dc'],
+        'dark-purple': ['#6c5ce7', '#fd79a8', '#2d3436'],
+        'warm-orange': ['#e17055', '#fdcb6e', '#fff9e6']
+    };
+
+    const colors = colorMap[itemIcon] || ['#999', '#ccc', '#eee'];
+    colorsDiv.innerHTML = colors.map(color =>
+        `<div class="theme-color-dot" style="width: 24px; height: 24px; background: ${color};"></div>`
+    ).join('');
+
+    // 设置描述
+    descDiv.textContent = themeDescriptions[itemIcon] || '';
+
+    // 设置来源和时间
+    sourceDiv.textContent = '来源：' + source;
+    timeDiv.textContent = '获得时间：' + (acquireTime ? acquireTime.split(' ')[0] : '未知');
+
+    // 设置状态
+    if (isUsed) {
+        statusDiv.textContent = '✅ 当前正在使用此主题';
+        statusDiv.style.display = 'block';
+        useBtn.textContent = '已应用';
+        useBtn.disabled = true;
+        useBtn.style.opacity = '0.6';
+    } else {
+        statusDiv.style.display = 'none';
+        useBtn.textContent = '应用主题';
+        useBtn.disabled = false;
+        useBtn.style.opacity = '1';
+    }
+
+    modal.style.display = 'flex';
+}
+
+// 关闭主题详情弹窗
+function closeThemeDetailModal() {
+    document.getElementById('themeDetailModal').style.display = 'none';
+    currentThemeId = null;
+    currentThemeIcon = null;
+}
+
+// 使用当前主题
+async function useCurrentTheme() {
+    if (!currentThemeId) {
+        showToast('主题ID为空', 'error');
+        return;
+    }
+
+    try {
+        showToast('正在应用主题...', 'info');
+
+        const response = await fetch('/api/shop/equip', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ item_id: currentThemeId })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast('✨ ' + data.message, 'success');
+            closeThemeDetailModal();
+            // 刷新页面
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '应用主题失败', 'error');
+        }
+    } catch (error) {
+        console.error('应用主题失败:', error);
+        showToast('应用主题失败，请重试', 'error');
+    }
+}
+
+// ==================== 默认主题功能 ====================
+
+// 显示默认主题详情
+function showDefaultThemeDetail() {
+    const modal = document.getElementById('defaultThemeModal');
+    const statusDiv = document.getElementById('defaultThemeStatus');
+    const useBtn = document.getElementById('useDefaultThemeBtn');
+
+    // 检查是否正在使用默认主题
+    const isUsingDefault = !{{ (current_theme or '')|tojson }};
+
+    if (isUsingDefault) {
+        statusDiv.textContent = '✅ 当前正在使用默认主题';
+        statusDiv.style.display = 'block';
+        useBtn.textContent = '已应用';
+        useBtn.disabled = true;
+        useBtn.style.opacity = '0.6';
+    } else {
+        statusDiv.style.display = 'none';
+        useBtn.textContent = '应用主题';
+        useBtn.disabled = false;
+        useBtn.style.opacity = '1';
+    }
+
+    modal.style.display = 'flex';
+}
+
+// 关闭默认主题弹窗
+function closeDefaultThemeModal() {
+    document.getElementById('defaultThemeModal').style.display = 'none';
+}
+
+// 使用默认主题
+async function useDefaultTheme() {
+    try {
+        showToast('正在恢复默认主题...', 'info');
+
+        const response = await fetch('/api/shop/equip', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ item_id: 'default' })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast('✨ ' + data.message, 'success');
+            closeDefaultThemeModal();
+            // 刷新页面
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '应用主题失败', 'error');
+        }
+    } catch (error) {
+        console.error('应用默认主题失败:', error);
+        showToast('应用主题失败，请重试', 'error');
     }
 }
 </script>

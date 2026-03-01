@@ -61,6 +61,15 @@ def init_shop_items():
         {"name": "星辰框", "description": "星辰环绕，神秘浩瀚", "price": 1100, "color": "#3f51b5", "icon": "star"},
     ]
 
+    # 主题皮肤列表
+    themes = [
+        {"name": "深海蓝", "description": "深邃海洋风格，沉稳专业", "price": 500, "icon": "ocean-blue"},
+        {"name": "樱花粉", "description": "浪漫樱花风格，温柔甜美", "price": 500, "icon": "sakura-pink"},
+        {"name": "森林绿", "description": "自然森林风格，清新活力", "price": 500, "icon": "forest-green"},
+        {"name": "暗夜紫", "description": "神秘暗夜风格，酷炫科技", "price": 600, "icon": "dark-purple"},
+        {"name": "暖阳橙", "description": "温暖阳光风格，活力热情", "price": 500, "icon": "warm-orange"},
+    ]
+
     print("=" * 60)
     print("🛒 初始化积分商城商品数据")
     print("=" * 60)
@@ -115,9 +124,30 @@ def init_shop_items():
             added_count += 1
             print(f"  ✓ {frame_data['name']} - {frame_data['price']}积分 (新增)")
 
+    # 添加主题皮肤
+    print("\n🎨 添加/更新主题皮肤...")
+    for i, theme_data in enumerate(themes):
+        item_id = f"theme_{i+1:03d}"
+        item = ShopItem(
+            id=item_id,
+            name=theme_data["name"],
+            description=theme_data["description"],
+            item_type=ShopItemType.THEME,
+            price=theme_data["price"],
+            icon=theme_data["icon"],
+            sort_order=i
+        )
+        db.save_shop_item(item)
+        if item_id in existing_ids:
+            updated_count += 1
+            print(f"  🔄 {theme_data['name']} - {theme_data['price']}积分 (更新)")
+        else:
+            added_count += 1
+            print(f"  ✓ {theme_data['name']} - {theme_data['price']}积分 (新增)")
+
     print("\n" + "=" * 60)
     print(f"✅ 完成！新增 {added_count} 个，更新 {updated_count} 个")
-    print(f"   共 {len(titles)} 个称号，{len(avatar_frames)} 个头像边框")
+    print(f"   共 {len(titles)} 个称号，{len(avatar_frames)} 个头像边框，{len(themes)} 个主题皮肤")
     print("=" * 60)
 
 if __name__ == "__main__":

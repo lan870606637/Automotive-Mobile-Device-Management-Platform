@@ -88,6 +88,7 @@ def get_current_user():
             'borrower_name': user.borrower_name,
             'avatar': user.avatar,
             'is_admin': user.is_admin,
+            'current_theme': user.current_theme,
         }
     return {}
 
@@ -98,13 +99,13 @@ def is_admin_user(borrower_name):
 
 
 def get_user_equipment(user_id):
-    """获取用户装备信息（称号、头像边框）"""
+    """获取用户装备信息（称号、头像边框、主题皮肤）"""
     user = api_client._db.get_user_by_id(user_id)
     if not user:
-        return {'title': None, 'avatar_frame': None}
-    
-    result = {'title': None, 'avatar_frame': None}
-    
+        return {'title': None, 'avatar_frame': None, 'theme': None}
+
+    result = {'title': None, 'avatar_frame': None, 'theme': None}
+
     # 获取当前称号
     if user.current_title:
         title_item = api_client._db.get_shop_item_by_id(user.current_title)
@@ -114,7 +115,7 @@ def get_user_equipment(user_id):
                 'name': title_item.name,
                 'color': title_item.color or '#1890ff'
             }
-    
+
     # 获取当前头像边框
     if user.current_avatar_frame:
         frame_item = api_client._db.get_shop_item_by_id(user.current_avatar_frame)
@@ -124,6 +125,16 @@ def get_user_equipment(user_id):
                 'name': frame_item.name,
                 'color': frame_item.color or '#1890ff',
                 'icon': frame_item.icon or 'simple'
+            }
+
+    # 获取当前主题皮肤
+    if user.current_theme:
+        theme_item = api_client._db.get_shop_item_by_id(user.current_theme)
+        if theme_item:
+            result['theme'] = {
+                'id': theme_item.id,
+                'name': theme_item.name,
+                'icon': theme_item.icon or 'default'
             }
 
     return result
@@ -976,6 +987,13 @@ def pc_dashboard():
     daily_login_points = session.pop('daily_login_points', None)
     daily_login_message = session.pop('daily_login_message', None)
 
+    # 获取当前主题
+    current_theme = None
+    if user and user.get('current_theme'):
+        theme_item = api_client._db.get_shop_item_by_id(user['current_theme'])
+        if theme_item:
+            current_theme = theme_item.icon
+
     return render_template('pc/dashboard.html',
                          user=user,
                          total_devices=total_devices,
@@ -1007,7 +1025,8 @@ def pc_dashboard():
                          first_login_points=first_login_points,
                          points_message=points_message,
                          daily_login_points=daily_login_points,
-                         daily_login_message=daily_login_message)
+                         daily_login_message=daily_login_message,
+                         current_theme=current_theme)
 
 
 @app.route('/api/all-devices')
@@ -1501,9 +1520,32 @@ def pc_device_detail(device_id):
 
     stats = get_device_stats()
     
-    # 获取设备图片和附件
     device_images = get_device_images(device_id)
     device_attachments = get_device_attachments(device_id)
+    
+    borrower_info = None
+    if device.borrower:
+        borrower_user = api_client.get_user_by_borrower_name(device.borrower)
+        if borrower_user:
+            borrower_equipment = get_user_equipment(borrower_user.id)
+            borrower_info = {
+                'user_id': borrower_user.id,
+                'user_name': borrower_user.borrower_name,
+                'avatar': borrower_user.avatar,
+                'avatar_frame': borrower_equipment.get('avatar_frame')
+            }
+    
+    custodian_info = None
+    if device.cabinet_number:
+        custodian_user = api_client.get_user_by_borrower_name(device.cabinet_number)
+        if custodian_user:
+            custodian_equipment = get_user_equipment(custodian_user.id)
+            custodian_info = {
+                'user_id': custodian_user.id,
+                'user_name': custodian_user.borrower_name,
+                'avatar': custodian_user.avatar,
+                'avatar_frame': custodian_equipment.get('avatar_frame')
+            }
     
     return render_template('pc/device_detail.html',
                          device=device,
@@ -1527,6 +1569,8 @@ def pc_device_detail(device_id):
                          now=datetime.now().strftime('%Y-%m-%d %H:%M'),
                          device_images=device_images,
                          device_attachments=device_attachments,
+                         borrower_info=borrower_info,
+                         custodian_info=custodian_info,
                          **stats)
 
 
@@ -3734,10 +3778,17 @@ def pc_points_shop():
     # 获取用户已拥有的物品
     user_inventory = api_client._db.get_user_inventory(user['user_id'])
     owned_item_ids = {item.item_id for item in user_inventory}
-    
-    # 标记已拥有的商品
+
+    # 获取完整用户信息（用于检查当前装备的主题）
+    full_user = api_client._db.get_user_by_id(user['user_id'])
+    current_theme_id = full_user.current_theme if full_user else ''
+
+    # 标记已拥有的商品和装备状态
     for item in shop_items:
         item.owned = item.id in owned_item_ids
+        # 如果是主题皮肤，检查是否正在使用
+        if item.item_type and item.item_type.value == '主题皮肤':
+            item.is_equipped = (item.id == current_theme_id)
     
     # 获取今日积分统计
     today = datetime.now().strftime('%Y-%m-%d')
@@ -3860,32 +3911,32 @@ def api_shop_buy():
     try:
         data = request.get_json()
         item_id = data.get('item_id')
-        
+
         if not item_id:
             return jsonify({'success': False, 'message': '商品ID不能为空'})
-        
+
         user = get_current_user()
         user_id = user['user_id']
-        
+
         # 获取商品信息
         item = api_client._db.get_shop_item_by_id(item_id)
         if not item:
             return jsonify({'success': False, 'message': '商品不存在'})
-        
+
         if not item.is_active:
             return jsonify({'success': False, 'message': '商品已下架'})
-        
+
         # 检查用户是否已拥有该物品
         if api_client._db.has_item_in_inventory(user_id, item_id):
             return jsonify({'success': False, 'message': '您已拥有该物品'})
-        
+
         # 获取用户积分
         user_points = points_service.get_or_create_user_points(user_id)
-        
+
         # 检查积分是否足够
         if user_points.points < item.price:
             return jsonify({'success': False, 'message': '积分不足'})
-        
+
         # 扣除积分
         success = points_service.add_points(
             user_id=user_id,
@@ -3894,10 +3945,10 @@ def api_shop_buy():
             description=f'购买商品：{item.name}',
             related_id=item_id
         )
-        
+
         if not success:
             return jsonify({'success': False, 'message': '积分扣除失败'})
-        
+
         # 添加物品到背包
         from common.models import UserInventory, ShopItemSource
         import uuid
@@ -3913,7 +3964,7 @@ def api_shop_buy():
             is_used=False
         )
         api_client._db.add_to_inventory(inventory_item)
-        
+
         return jsonify({
             'success': True,
             'message': f'成功购买 {item.name}',
@@ -3923,10 +3974,77 @@ def api_shop_buy():
                 'type': item.item_type.value if item.item_type else ''
             }
         })
-        
+
     except Exception as e:
         print(f"购买商品失败: {e}")
         return jsonify({'success': False, 'message': '购买失败，请重试'})
+
+
+@app.route('/api/shop/equip', methods=['POST'])
+@login_required
+def api_shop_equip():
+    """装备商品API（用于主题皮肤）"""
+    try:
+        data = request.get_json()
+        item_id = data.get('item_id')
+
+        if not item_id:
+            return jsonify({'success': False, 'message': '商品ID不能为空'})
+
+        user = get_current_user()
+        user_id = user['user_id']
+
+        # 获取完整用户信息
+        full_user = api_client._db.get_user_by_id(user_id)
+        if not full_user:
+            return jsonify({'success': False, 'message': '用户信息获取失败'})
+
+        # 处理默认主题
+        if item_id == 'default':
+            # 恢复默认主题
+            full_user.current_theme = ''
+            api_client._db.save_user(full_user)
+
+            return jsonify({
+                'success': True,
+                'message': '已恢复默认主题',
+                'theme': 'default'
+            })
+
+        # 获取商品信息
+        item = api_client._db.get_shop_item_by_id(item_id)
+        if not item:
+            return jsonify({'success': False, 'message': '商品不存在'})
+
+        # 检查用户是否拥有该物品
+        if not api_client._db.has_item_in_inventory(user_id, item_id):
+            return jsonify({'success': False, 'message': '您未拥有该物品，请先购买'})
+
+        # 根据商品类型进行装备
+        if item.item_type and item.item_type.value == '主题皮肤':
+            # 装备主题皮肤
+            full_user.current_theme = item_id
+            api_client._db.save_user(full_user)
+
+            # 标记物品为已使用
+            inventory_items = api_client._db.get_user_inventory(user_id)
+            for inv_item in inventory_items:
+                if inv_item.item_id == item_id:
+                    api_client._db.update_inventory_item_status(
+                        inv_item.id, True, datetime.now()
+                    )
+
+            return jsonify({
+                'success': True,
+                'message': f'成功应用主题：{item.name}',
+                'theme': item.icon
+            })
+        else:
+            return jsonify({'success': False, 'message': '该商品类型不支持装备操作'})
+
+    except Exception as e:
+        print(f"装备商品失败: {e}")
+        return jsonify({'success': False, 'message': '装备失败，请重试'})
 
 
 @app.route('/pc/bounties')
@@ -4365,8 +4483,22 @@ def pc_profile():
     # 获取用户背包物品
     from common.models import ShopItemType
     inventory = api_client._db.get_user_inventory(user['user_id'])
+
     inventory_titles = [item for item in inventory if item.item_type == ShopItemType.TITLE]
     inventory_frames = [item for item in inventory if item.item_type == ShopItemType.AVATAR_FRAME]
+    inventory_themes = [item for item in inventory if item.item_type and item.item_type.value == '主题皮肤']
+
+    # 标记当前正在使用的主题
+    current_theme_id = full_user.current_theme if full_user else ''
+    for theme in inventory_themes:
+        theme.is_used = (theme.item_id == current_theme_id)
+
+    # 获取当前主题图标
+    current_theme = None
+    if current_theme_id:
+        theme_item = api_client._db.get_shop_item_by_id(current_theme_id)
+        if theme_item:
+            current_theme = theme_item.icon
 
     # 获取设备统计数据（用于侧边栏显示）
     stats = get_device_stats()
@@ -4377,6 +4509,8 @@ def pc_profile():
                          inventory=inventory,
                          inventory_titles=inventory_titles,
                          inventory_frames=inventory_frames,
+                         inventory_themes=inventory_themes,
+                         current_theme=current_theme,
                          hide_search=True,
                          **stats)
 

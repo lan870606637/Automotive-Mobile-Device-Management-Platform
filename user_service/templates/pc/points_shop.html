@@ -38,12 +38,62 @@
             <button class="btn btn-sm {{ 'btn-primary' if item_type == 'all' else 'btn-default' }}" onclick="filterItems('all')">全部</button>
             <button class="btn btn-sm {{ 'btn-primary' if item_type == '称号' else 'btn-default' }}" onclick="filterItems('称号')">🏆 称号</button>
             <button class="btn btn-sm {{ 'btn-primary' if item_type == '头像边框' else 'btn-default' }}" onclick="filterItems('头像边框')">🖼️ 头像边框</button>
+            <button class="btn btn-sm {{ 'btn-primary' if item_type == '主题皮肤' else 'btn-default' }}" onclick="filterItems('主题皮肤')">🎨 主题皮肤</button>
         </div>
     </div>
     <div class="card-body">
         {% if shop_items %}
         <div class="shop-grid">
             {% for item in shop_items %}
+            {% if item.item_type.value == '主题皮肤' %}
+            <!-- 主题皮肤特殊展示 -->
+            <div class="shop-item theme-item" data-type="{{ item.item_type.value if item.item_type else '' }}">
+                <div class="theme-preview-card theme-preview-{{ item.icon or 'default' }}" style="margin: 0; border-radius: 12px;">
+                    <div class="theme-preview-name">{{ item.name }}</div>
+                    <div class="theme-preview-desc">{{ item.description }}</div>
+                    <div class="theme-preview-colors">
+                        {% if item.icon == 'ocean-blue' %}
+                        <div class="theme-color-dot" style="background: #1e3a5f;"></div>
+                        <div class="theme-color-dot" style="background: #00d4ff;"></div>
+                        <div class="theme-color-dot" style="background: #0a1628;"></div>
+                        {% elif item.icon == 'sakura-pink' %}
+                        <div class="theme-color-dot" style="background: #ff6b9d;"></div>
+                        <div class="theme-color-dot" style="background: #ffb8d0;"></div>
+                        <div class="theme-color-dot" style="background: #fff0f5;"></div>
+                        {% elif item.icon == 'forest-green' %}
+                        <div class="theme-color-dot" style="background: #2d6a4f;"></div>
+                        <div class="theme-color-dot" style="background: #74c69d;"></div>
+                        <div class="theme-color-dot" style="background: #d8f3dc;"></div>
+                        {% elif item.icon == 'dark-purple' %}
+                        <div class="theme-color-dot" style="background: #6c5ce7;"></div>
+                        <div class="theme-color-dot" style="background: #fd79a8;"></div>
+                        <div class="theme-color-dot" style="background: #2d3436;"></div>
+                        {% elif item.icon == 'warm-orange' %}
+                        <div class="theme-color-dot" style="background: #e17055;"></div>
+                        <div class="theme-color-dot" style="background: #fdcb6e;"></div>
+                        <div class="theme-color-dot" style="background: #fff9e6;"></div>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="shop-item-info" style="margin-top: 12px;">
+                    <div class="shop-item-price">
+                        <span class="price-tag">💰 {{ item.price }} 积分</span>
+                    </div>
+                    {% if item.owned %}
+                        {% if item.is_equipped %}
+                        <button class="btn btn-sm btn-success" disabled>✓ 使用中</button>
+                        {% else %}
+                        <button class="btn btn-sm btn-primary" onclick="equipTheme('{{ item.id }}', '{{ item.name }}')">使用</button>
+                        {% endif %}
+                    {% elif user_points.points >= item.price %}
+                    <button class="btn btn-sm btn-primary" onclick="buyItem('{{ item.id }}', '{{ item.name }}', {{ item.price }})">购买</button>
+                    {% else %}
+                    <button class="btn btn-sm btn-default" disabled>积分不足</button>
+                    {% endif %}
+                </div>
+            </div>
+            {% else %}
+            <!-- 普通商品展示 -->
             <div class="shop-item" data-type="{{ item.item_type.value if item.item_type else '' }}">
                 <div class="shop-item-icon" style="background: {{ item.color or '#f0f0f0' }};">
                     {% if item.item_type.value == '称号' %}
@@ -67,6 +117,7 @@
                     {% endif %}
                 </div>
             </div>
+            {% endif %}
             {% endfor %}
         </div>
         {% else %}
@@ -301,6 +352,52 @@
     font-size: 14px;
     color: #8c8c8c;
 }
+
+/* 主题皮肤商品样式 */
+.theme-item {
+    grid-column: span 1;
+}
+
+.theme-item .shop-item-info {
+    padding: 0 8px;
+}
+
+/* 主题预览卡片在商城中的样式调整 */
+.shop-grid .theme-preview-card {
+    min-height: 120px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.shop-grid .theme-preview-name {
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.shop-grid .theme-preview-desc {
+    font-size: 12px;
+    opacity: 0.9;
+    margin-bottom: 12px;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+    .shop-grid {
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: 12px;
+    }
+
+    .theme-item {
+        grid-column: span 2;
+    }
+}
+
+@media (max-width: 480px) {
+    .theme-item {
+        grid-column: span 1;
+    }
+}
 </style>
 
 <script>
@@ -357,6 +454,36 @@ async function buyItem(itemId, itemName, price) {
     } catch (error) {
         console.error('购买失败:', error);
         showToast('购买失败，请重试');
+    }
+}
+
+// 装备主题皮肤
+async function equipTheme(itemId, itemName) {
+    if (!confirm(`确定要使用 "${itemName}" 主题吗？\n首页将立即应用新主题`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/shop/equip', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ item_id: itemId })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast(`✨ 主题更换成功！已应用 "${itemName}"`);
+            // 刷新页面
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '主题更换失败');
+        }
+    } catch (error) {
+        console.error('主题更换失败:', error);
+        showToast('主题更换失败，请重试');
     }
 }
 

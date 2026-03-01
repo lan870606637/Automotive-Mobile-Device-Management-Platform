@@ -828,12 +828,12 @@ class DatabaseStore:
                 sql = """UPDATE users SET
                     email = %s, password = %s, borrower_name = %s, avatar = %s, signature = %s,
                     borrow_count = %s, return_count = %s, is_frozen = %s, is_admin = %s, is_deleted = %s, is_first_login = %s,
-                    current_title = %s, current_avatar_frame = %s
+                    current_title = %s, current_avatar_frame = %s, current_theme = %s
                     WHERE id = %s
                 """ if IS_MYSQL else """UPDATE users SET
                     email = ?, password = ?, borrower_name = ?, avatar = ?, signature = ?,
                     borrow_count = ?, return_count = ?, is_frozen = ?, is_admin = ?, is_deleted = ?, is_first_login = ?,
-                    current_title = ?, current_avatar_frame = ?
+                    current_title = ?, current_avatar_frame = ?, current_theme = ?
                     WHERE id = ?
                 """
                 params = (
@@ -845,6 +845,7 @@ class DatabaseStore:
                     1 if user.is_first_login else 0,
                     user.current_title,
                     user.current_avatar_frame,
+                    user.current_theme,
                     user.id
                 )
                 cursor.execute(sql, params)
@@ -852,13 +853,13 @@ class DatabaseStore:
                 sql = """INSERT INTO users (
                     id, email, password, borrower_name, avatar, signature, borrow_count,
                     return_count, is_frozen, is_admin, is_deleted, is_first_login, create_time,
-                    current_title, current_avatar_frame
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, %s, CURRENT_TIMESTAMP, %s, %s)
+                    current_title, current_avatar_frame, current_theme
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, %s, CURRENT_TIMESTAMP, %s, %s, %s)
                 """ if IS_MYSQL else """INSERT INTO users (
                     id, email, password, borrower_name, avatar, signature, borrow_count,
                     return_count, is_frozen, is_admin, is_deleted, is_first_login, create_time,
-                    current_title, current_avatar_frame
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, CURRENT_TIMESTAMP, ?, ?)
+                    current_title, current_avatar_frame, current_theme
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, CURRENT_TIMESTAMP, ?, ?, ?)
                 """
                 params = (
                     user.id, user.email, user.password,
@@ -867,7 +868,8 @@ class DatabaseStore:
                     1 if user.is_admin else 0,
                     1 if user.is_first_login else 0,
                     user.current_title,
-                    user.current_avatar_frame
+                    user.current_avatar_frame,
+                    user.current_theme
                 )
                 cursor.execute(sql, params)
             
@@ -2172,12 +2174,18 @@ def _migrate_sqlite_add_user_equip_fields(cursor):
     except sqlite3.OperationalError:
         cursor.execute("ALTER TABLE users ADD COLUMN current_title TEXT DEFAULT ''")
         print("✓ SQLite: 已添加 current_title 列到 users 表")
-    
+
     try:
         cursor.execute("SELECT current_avatar_frame FROM users LIMIT 1")
     except sqlite3.OperationalError:
         cursor.execute("ALTER TABLE users ADD COLUMN current_avatar_frame TEXT DEFAULT ''")
         print("✓ SQLite: 已添加 current_avatar_frame 列到 users 表")
+
+    try:
+        cursor.execute("SELECT current_theme FROM users LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE users ADD COLUMN current_theme TEXT DEFAULT ''")
+        print("✓ SQLite: 已添加 current_theme 列到 users 表")
 
 
 def _migrate_mysql_add_user_equip_fields():
@@ -2191,13 +2199,20 @@ def _migrate_mysql_add_user_equip_fields():
                 cursor.execute("ALTER TABLE users ADD COLUMN current_title VARCHAR(64) DEFAULT ''")
                 conn.commit()
                 print("✓ MySQL: 已添加 current_title 列到 users 表")
-            
+
             try:
                 cursor.execute("SELECT current_avatar_frame FROM users LIMIT 1")
             except Exception:
                 cursor.execute("ALTER TABLE users ADD COLUMN current_avatar_frame VARCHAR(64) DEFAULT ''")
                 conn.commit()
                 print("✓ MySQL: 已添加 current_avatar_frame 列到 users 表")
+
+            try:
+                cursor.execute("SELECT current_theme FROM users LIMIT 1")
+            except Exception:
+                cursor.execute("ALTER TABLE users ADD COLUMN current_theme VARCHAR(64) DEFAULT ''")
+                conn.commit()
+                print("✓ MySQL: 已添加 current_theme 列到 users 表")
     except Exception as e:
         print(f"⚠ MySQL 用户装扮字段迁移警告: {e}")
 

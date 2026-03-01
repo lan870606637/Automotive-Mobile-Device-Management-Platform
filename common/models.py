@@ -458,6 +458,7 @@ class User:
     # 装扮相关
     current_title: str = ""       # 当前使用的称号ID
     current_avatar_frame: str = ""  # 当前使用的头像边框ID
+    current_theme: str = ""       # 当前使用的主题皮肤ID
     
     @classmethod
     def from_dict(cls, data: dict) -> 'User':
@@ -492,7 +493,8 @@ class User:
             is_first_login=bool(data.get('is_first_login', 1)),
             create_time=parse_datetime(data.get('create_time')),
             current_title=data.get('current_title', ''),
-            current_avatar_frame=data.get('current_avatar_frame', '')
+            current_avatar_frame=data.get('current_avatar_frame', ''),
+            current_theme=data.get('current_theme', '')
         )
     
     def to_dict(self) -> dict:
@@ -511,6 +513,7 @@ class User:
             "create_time": self.create_time.strftime("%Y-%m-%d %H:%M:%S") if self.create_time else "",
             "current_title": self.current_title,
             "current_avatar_frame": self.current_avatar_frame,
+            "current_theme": self.current_theme,
         }
 
 
@@ -1323,6 +1326,7 @@ class ShopItemType(Enum):
     """积分商城商品类型"""
     TITLE = "称号"
     AVATAR_FRAME = "头像边框"
+    THEME = "主题皮肤"
 
 
 class ShopItemSource(Enum):

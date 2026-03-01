@@ -334,6 +334,13 @@ class APIClient:
         """根据ID获取用户"""
         return self._db.get_user_by_id(user_id)
 
+    def get_user_by_borrower_name(self, borrower_name: str) -> Optional[User]:
+        """根据借用人名称获取用户"""
+        for user in self._db.get_all_users():
+            if user.borrower_name == borrower_name:
+                return user
+        return None
+
     def update_user_borrower_name(self, user_id: str, borrower_name: str) -> bool:
         """更新用户借用人名称"""
         # 检查借用人名称是否已存在
