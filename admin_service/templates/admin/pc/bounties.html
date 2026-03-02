@@ -1,0 +1,529 @@
+<!--
+  电脑端后台管理 - 悬赏管理
+  功能：悬赏列表、上架下架、积分退还
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>悬赏管理 - Carbit测试设备管理系统</title>
+    <link rel="stylesheet" href="/static/admin/admin_pc.css">
+    <style>
+        .bounty-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+        }
+        .bounty-table th,
+        .bounty-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e8e8e8;
+        }
+        .bounty-table th {
+            background: #fafafa;
+            font-weight: 600;
+            color: #333;
+        }
+        .bounty-table tr:hover {
+            background: #f5f5f5;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .status-待认领 {
+            background: #e6f7ff;
+            color: #1890ff;
+        }
+        .status-已找到 {
+            background: #fff7e6;
+            color: #fa8c16;
+        }
+        .status-已完成 {
+            background: #f6ffed;
+            color: #52c41a;
+        }
+        .status-已取消 {
+            background: #f5f5f5;
+            color: #999;
+        }
+        .status-已下架 {
+            background: #fff1f0;
+            color: #ff4d4f;
+        }
+        .active-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+        }
+        .active-yes {
+            background: #f6ffed;
+            color: #52c41a;
+        }
+        .active-no {
+            background: #fff1f0;
+            color: #ff4d4f;
+        }
+        .action-btns {
+            display: flex;
+            gap: 8px;
+        }
+        .btn-sm {
+            padding: 4px 12px;
+            font-size: 12px;
+        }
+        .reward-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 12px;
+        }
+        .remaining-time {
+            font-size: 12px;
+        }
+        .time-critical {
+            color: #ff4d4f;
+            font-weight: 600;
+        }
+        .time-warning {
+            color: #faad14;
+        }
+        .time-normal {
+            color: #52c41a;
+        }
+        .filter-bar {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+        .filter-bar select,
+        .filter-bar input {
+            padding: 8px 12px;
+            border: 1px solid #d9d9d9;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .stats-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #333;
+        }
+        .stat-label {
+            font-size: 14px;
+            color: #666;
+            margin-top: 4px;
+        }
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background: white;
+            padding: 24px;
+            border-radius: 8px;
+            max-width: 500px;
+            width: 90%;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #999;
+        }
+        .modal-body {
+            margin-bottom: 24px;
+        }
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+        .btn-default {
+            background: #fff;
+            border: 1px solid #d9d9d9;
+            color: #333;
+        }
+        .btn-danger {
+            background: #ff4d4f;
+            border: 1px solid #ff4d4f;
+            color: white;
+        }
+        .btn-success {
+            background: #52c41a;
+            border: 1px solid #52c41a;
+            color: white;
+        }
+    </style>
+</head>
+<body class="pc-admin-body">
+    <div class="pc-admin-wrapper">
+        <!-- 侧边栏 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <span class="logo">🔧</span>
+                <span class="logo-text">后台管理</span>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="/admin/pc/dashboard" class="nav-item">
+                    <span class="nav-icon">📊</span>
+                    <span>仪表盘</span>
+                </a>
+                <a href="/admin/pc/devices" class="nav-item">
+                    <span class="nav-icon">📱</span>
+                    <span>设备管理</span>
+                </a>
+                <a href="/admin/pc/users" class="nav-item">
+                    <span class="nav-icon">👥</span>
+                    <span>用户管理</span>
+                </a>
+                <a href="/admin/pc/records" class="nav-item">
+                    <span class="nav-icon">📋</span>
+                    <span>记录查询</span>
+                </a>
+                <a href="/admin/pc/logs" class="nav-item">
+                    <span class="nav-icon">📜</span>
+                    <span>操作日志</span>
+                </a>
+                <a href="/admin/pc/overdue" class="nav-item">
+                    <span class="nav-icon">⚠️</span>
+                    <span>过期未还</span>
+                    {% if overdue_count > 0 %}
+                    <span class="nav-badge">{{ overdue_count }}</span>
+                    {% endif %}
+                </a>
+                <a href="/admin/pc/announcements" class="nav-item">
+                    <span class="nav-icon">📢</span>
+                    <span>公告管理</span>
+                </a>
+                <a href="/admin/pc/remarks" class="nav-item">
+                    <span class="nav-icon">📝</span>
+                    <span>备注管理</span>
+                </a>
+                <a href="/admin/pc/bounties" class="nav-item active">
+                    <span class="nav-icon">🎯</span>
+                    <span>悬赏管理</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <span>👤 {{ admin_name }}</span>
+                <a href="/admin/logout" class="logout-btn">退出</a>
+            </div>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <!-- 顶部栏 -->
+            <header class="content-header">
+                <h1>🎯 悬赏管理</h1>
+            </header>
+
+            <!-- 统计卡片 -->
+            <div class="stats-cards">
+                <div class="stat-card">
+                    <div class="stat-value" style="color: #1890ff;">{{ stats.total }}</div>
+                    <div class="stat-label">总悬赏数</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" style="color: #52c41a;">{{ stats.pending }}</div>
+                    <div class="stat-label">待认领</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" style="color: #fa8c16;">{{ stats.found }}</div>
+                    <div class="stat-label">已找到</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" style="color: #722ed1;">{{ stats.completed }}</div>
+                    <div class="stat-label">已完成</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" style="color: #999;">{{ stats.cancelled }}</div>
+                    <div class="stat-label">已取消/下架</div>
+                </div>
+            </div>
+
+            <!-- 筛选栏 -->
+            <div class="filter-bar">
+                <select id="filterStatus" onchange="loadBounties()">
+                    <option value="">全部状态</option>
+                    <option value="待认领">待认领</option>
+                    <option value="已找到">已找到</option>
+                    <option value="已完成">已完成</option>
+                    <option value="已取消">已取消</option>
+                </select>
+                <select id="filterActive" onchange="loadBounties()">
+                    <option value="">全部</option>
+                    <option value="true">已上架</option>
+                    <option value="false">已下架</option>
+                </select>
+                <input type="text" id="searchKeyword" placeholder="搜索标题、设备名称或发布人..." onkeyup="if(event.key==='Enter')loadBounties()">
+                <button class="btn btn-primary" onclick="loadBounties()">🔍 搜索</button>
+            </div>
+
+            <!-- 悬赏列表 -->
+            <div class="content-card">
+                <table class="bounty-table">
+                    <thead>
+                        <tr>
+                            <th>标题</th>
+                            <th>寻找设备</th>
+                            <th>悬赏积分</th>
+                            <th>发布人</th>
+                            <th>状态</th>
+                            <th>上架状态</th>
+                            <th>剩余时间</th>
+                            <th>发布时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bountiesTableBody">
+                        {% for bounty in bounties %}
+                        <tr data-id="{{ bounty.id }}">
+                            <td>{{ bounty.title }}</td>
+                            <td>{{ bounty.device_name }}</td>
+                            <td><span class="reward-badge">{{ bounty.reward_points }} 积分</span></td>
+                            <td>{{ bounty.publisher_name }}</td>
+                            <td><span class="status-badge status-{{ bounty.status.value }}">{{ bounty.status.value }}</span></td>
+                            <td>
+                                {% if bounty.is_active %}
+                                <span class="active-badge active-yes">✓ 上架</span>
+                                {% else %}
+                                <span class="active-badge active-no">✗ 下架</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if bounty.status.value == '待认领' %}
+                                    {% set days = bounty.get_remaining_days() %}
+                                    <span class="remaining-time {% if days < 1 %}time-critical{% elif days < 3 %}time-warning{% else %}time-normal{% endif %}">
+                                        {% if days >= 1 %}{{ days|round(1) }}天{% else %}{{ (days * 24)|round(0)|int }}小时{% endif %}
+                                    </span>
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td>{{ bounty.create_time.strftime('%Y-%m-%d %H:%M') if bounty.create_time else '-' }}</td>
+                            <td>
+                                <div class="action-btns">
+                                    {% if bounty.status.value == '待认领' %}
+                                        {% if bounty.is_active %}
+                                        <button class="btn btn-danger btn-sm" onclick="showDeactivateModal('{{ bounty.id }}', '{{ bounty.title }}', {{ bounty.reward_points }})">下架</button>
+                                        {% else %}
+                                        <button class="btn btn-success btn-sm" onclick="activateBounty('{{ bounty.id }}')">上架</button>
+                                        {% endif %}
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% if not bounties %}
+                <div style="text-align: center; padding: 60px 20px; color: #999;">
+                    <div style="font-size: 48px; margin-bottom: 16px;">🎯</div>
+                    <div style="font-size: 16px;">暂无悬赏数据</div>
+                </div>
+                {% endif %}
+            </div>
+        </main>
+    </div>
+
+    <!-- 下架确认弹窗 -->
+    <div id="deactivateModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span class="modal-title">⚠️ 确认下架悬赏</span>
+                <button class="modal-close" onclick="closeDeactivateModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>您确定要下架以下悬赏吗？</p>
+                <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; margin: 16px 0;">
+                    <p><strong>标题：</strong><span id="modalBountyTitle"></span></p>
+                    <p><strong>退还积分：</strong><span id="modalBountyPoints" style="color: #ff4d4f; font-weight: 600;"></span> 积分</p>
+                </div>
+                <p style="color: #ff4d4f;">下架后将自动退还发布费10积分 + 悬赏积分给发布人。</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-default" onclick="closeDeactivateModal()">取消</button>
+                <button class="btn btn-danger" onclick="confirmDeactivate()">确认下架</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        let currentBountyId = null;
+
+        // 显示下架弹窗
+        function showDeactivateModal(bountyId, title, points) {
+            currentBountyId = bountyId;
+            $('#modalBountyTitle').text(title);
+            $('#modalBountyPoints').text(points + 10);
+            $('#deactivateModal').css('display', 'flex');
+        }
+
+        // 关闭下架弹窗
+        function closeDeactivateModal() {
+            $('#deactivateModal').css('display', 'none');
+            currentBountyId = null;
+        }
+
+        // 确认下架
+        function confirmDeactivate() {
+            if (!currentBountyId) return;
+
+            $.ajax({
+                url: '/admin/api/bounties/' + currentBountyId + '/deactivate',
+                type: 'POST',
+                success: function(response) {
+                    if (response.success) {
+                        alert('悬赏已下架，积分已退还');
+                        location.reload();
+                    } else {
+                        alert(response.message || '下架失败');
+                    }
+                },
+                error: function() {
+                    alert('下架失败，请重试');
+                }
+            });
+        }
+
+        // 上架悬赏
+        function activateBounty(bountyId) {
+            if (!confirm('确定要上架此悬赏吗？')) return;
+
+            $.ajax({
+                url: '/admin/api/bounties/' + bountyId + '/activate',
+                type: 'POST',
+                success: function(response) {
+                    if (response.success) {
+                        alert('悬赏已上架');
+                        location.reload();
+                    } else {
+                        alert(response.message || '上架失败');
+                    }
+                },
+                error: function() {
+                    alert('上架失败，请重试');
+                }
+            });
+        }
+
+        // 加载悬赏列表
+        function loadBounties() {
+            const status = $('#filterStatus').val();
+            const active = $('#filterActive').val();
+            const keyword = $('#searchKeyword').val();
+
+            $.ajax({
+                url: '/admin/api/bounties',
+                type: 'GET',
+                data: {
+                    status: status,
+                    active: active,
+                    keyword: keyword
+                },
+                success: function(response) {
+                    if (response.success) {
+                        renderBounties(response.bounties);
+                    }
+                }
+            });
+        }
+
+        // 渲染悬赏列表
+        function renderBounties(bounties) {
+            const tbody = $('#bountiesTableBody');
+            if (bounties.length === 0) {
+                tbody.html('<tr><td colspan="9" style="text-align: center; padding: 40px; color: #999;">暂无符合条件的悬赏</td></tr>');
+                return;
+            }
+
+            let html = '';
+            bounties.forEach(function(bounty) {
+                const remainingTime = bounty.status === '待认领' ?
+                    (bounty.remaining_days >= 1 ?
+                        `<span class="remaining-time ${bounty.remaining_days < 1 ? 'time-critical' : (bounty.remaining_days < 3 ? 'time-warning' : 'time-normal')}">${bounty.remaining_days.toFixed(1)}天</span>` :
+                        `<span class="remaining-time time-critical">${Math.round(bounty.remaining_days * 24)}小时</span>`
+                    ) : '-';
+
+                const activeBadge = bounty.is_active ?
+                    '<span class="active-badge active-yes">✓ 上架</span>' :
+                    '<span class="active-badge active-no">✗ 下架</span>';
+
+                let actionBtns = '';
+                if (bounty.status === '待认领') {
+                    if (bounty.is_active) {
+                        actionBtns = `<button class="btn btn-danger btn-sm" onclick="showDeactivateModal('${bounty.id}', '${bounty.title}', ${bounty.reward_points})">下架</button>`;
+                    } else {
+                        actionBtns = `<button class="btn btn-success btn-sm" onclick="activateBounty('${bounty.id}')">上架</button>`;
+                    }
+                }
+
+                html += `
+                    <tr data-id="${bounty.id}">
+                        <td>${bounty.title}</td>
+                        <td>${bounty.device_name}</td>
+                        <td><span class="reward-badge">${bounty.reward_points} 积分</span></td>
+                        <td>${bounty.publisher_name}</td>
+                        <td><span class="status-badge status-${bounty.status}">${bounty.status}</span></td>
+                        <td>${activeBadge}</td>
+                        <td>${remainingTime}</td>
+                        <td>${bounty.create_time}</td>
+                        <td><div class="action-btns">${actionBtns}</div></td>
+                    </tr>
+                `;
+            });
+
+            tbody.html(html);
+        }
+
+        // 点击弹窗外部关闭
+        $(window).on('click', function(event) {
+            if ($(event.target).attr('id') === 'deactivateModal') {
+                closeDeactivateModal();
+            }
+        });
+    </script>
+</body>
+</html>

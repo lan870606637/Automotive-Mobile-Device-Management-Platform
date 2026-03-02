@@ -417,8 +417,13 @@ async function handleLike(userId, btn) {
             
             // 重新渲染以更新提示
             renderRankings();
-            
-            showToast('点赞成功！');
+
+            // 显示积分通知
+            if (data.points_added > 0) {
+                showPointsToast(`点赞 +${data.points_added} 积分！`, data.total_points || 0, '👍');
+            } else {
+                showToast('点赞成功！');
+            }
         } else {
             showToast(data.message || '点赞失败');
         }

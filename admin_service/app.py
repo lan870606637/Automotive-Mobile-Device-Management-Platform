@@ -20,11 +20,12 @@ from flask import Flask, render_template, request, jsonify, session, redirect, u
 from dotenv import load_dotenv
 
 # 从 common 导入
-from common.models import DeviceStatus, DeviceType, OperationType, EntrySource, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, Admin, Announcement
+from common.models import DeviceStatus, DeviceType, OperationType, EntrySource, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, Admin, Announcement, BountyStatus, PointsTransactionType
 from common.api_client import api_client
 from common.db_store import DatabaseStore, init_database
 from common.utils import mask_phone, is_mobile_device
 from common.config import SECRET_KEY, SERVER_URL, ADMIN_SERVICE_PORT
+from common.points_service import points_service
 
 load_dotenv()
 
@@ -1088,6 +1089,176 @@ def admin_logout():
     session.pop('admin_id', None)
     session.pop('admin_name', None)
     return redirect(url_for('admin_select'))
+
+
+# ==================== 悬赏管理 ====================
+
+@app.route('/admin/pc/bounties')
+@admin_required
+def admin_pc_bounties():
+    """PC端悬赏管理页面"""
+    # 先自动取消过期悬赏
+    expired_bounties = api_client._db.auto_cancel_expired_bounties()
+    if expired_bounties:
+        # 退还积分给发布人
+        for bounty in expired_bounties:
+            # 退还发布费10积分
+            points_service.add_points(
+                user_id=bounty.publisher_id,
+                points=10,
+                transaction_type=PointsTransactionType.CREATE_BOUNTY,
+                description=f'悬赏过期自动取消退还发布费: {bounty.title}',
+                related_id=bounty.id
+            )
+            # 退还悬赏积分
+            points_service.add_points(
+                user_id=bounty.publisher_id,
+                points=bounty.reward_points,
+                transaction_type=PointsTransactionType.RECEIVE_BOUNTY,
+                description=f'悬赏过期自动取消退还悬赏积分: {bounty.title}',
+                related_id=bounty.id
+            )
+
+    # 获取所有悬赏
+    bounties = api_client._db.get_all_bounties()
+
+    # 统计
+    stats = {
+        'total': len(bounties),
+        'pending': len([b for b in bounties if b.status == BountyStatus.PENDING]),
+        'found': len([b for b in bounties if b.status == BountyStatus.FOUND]),
+        'completed': len([b for b in bounties if b.status == BountyStatus.COMPLETED]),
+        'cancelled': len([b for b in bounties if b.status == BountyStatus.CANCELLED])
+    }
+
+    return render_template('admin/pc/bounties.html',
+                         bounties=bounties,
+                         stats=stats,
+                         admin_name=session.get('admin_name', '管理员'),
+                         overdue_count=get_overdue_count())
+
+
+@app.route('/admin/api/bounties', methods=['GET'])
+@admin_required
+def api_admin_get_bounties():
+    """获取悬赏列表API（后台管理用）"""
+    status = request.args.get('status', None)
+    active = request.args.get('active', None)
+    keyword = request.args.get('keyword', '').strip()
+
+    # 先自动取消过期悬赏
+    expired_bounties = api_client._db.auto_cancel_expired_bounties()
+    if expired_bounties:
+        for bounty in expired_bounties:
+            points_service.add_points(
+                user_id=bounty.publisher_id,
+                points=10,
+                transaction_type=PointsTransactionType.CREATE_BOUNTY,
+                description=f'悬赏过期自动取消退还发布费: {bounty.title}',
+                related_id=bounty.id
+            )
+            points_service.add_points(
+                user_id=bounty.publisher_id,
+                points=bounty.reward_points,
+                transaction_type=PointsTransactionType.RECEIVE_BOUNTY,
+                description=f'悬赏过期自动取消退还悬赏积分: {bounty.title}',
+                related_id=bounty.id
+            )
+
+    # 获取悬赏列表
+    if status:
+        bounties = api_client._db.get_all_bounties(status=status)
+    else:
+        bounties = api_client._db.get_all_bounties()
+
+    # 筛选上架状态
+    if active is not None and active != '':
+        is_active = active.lower() == 'true'
+        bounties = [b for b in bounties if b.is_active == is_active]
+
+    # 关键词搜索
+    if keyword:
+        keyword_lower = keyword.lower()
+        bounties = [b for b in bounties if
+                    keyword_lower in b.title.lower() or
+                    keyword_lower in b.device_name.lower() or
+                    keyword_lower in b.publisher_name.lower()]
+
+    return jsonify({
+        'success': True,
+        'bounties': [b.to_dict() for b in bounties]
+    })
+
+
+@app.route('/admin/api/bounties/<bounty_id>/deactivate', methods=['POST'])
+@admin_required
+def api_admin_deactivate_bounty(bounty_id):
+    """下架悬赏API（管理员下架并退还积分）"""
+    bounty = api_client._db.get_bounty_by_id(bounty_id)
+    if not bounty:
+        return jsonify({'success': False, 'message': '悬赏不存在'})
+
+    if bounty.status != BountyStatus.PENDING:
+        return jsonify({'success': False, 'message': '只能下架待认领的悬赏'})
+
+    # 下架悬赏
+    bounty.is_active = False
+    bounty.status = BountyStatus.CANCELLED
+    api_client._db.save_bounty(bounty)
+
+    # 退还发布费10积分
+    points_service.add_points(
+        user_id=bounty.publisher_id,
+        points=10,
+        transaction_type=PointsTransactionType.CREATE_BOUNTY,
+        description=f'管理员下架悬赏退还发布费: {bounty.title}',
+        related_id=bounty.id
+    )
+
+    # 退还悬赏积分
+    points_service.add_points(
+        user_id=bounty.publisher_id,
+        points=bounty.reward_points,
+        transaction_type=PointsTransactionType.RECEIVE_BOUNTY,
+        description=f'管理员下架悬赏退还悬赏积分: {bounty.title}',
+        related_id=bounty.id
+    )
+
+    # 添加操作日志
+    api_client.add_operation_log(
+        f"下架悬赏: {bounty.title} (退还 {bounty.reward_points + 10} 积分)",
+        "悬赏管理"
+    )
+
+    return jsonify({
+        'success': True,
+        'message': '悬赏已下架，积分已退还',
+        'refunded_points': bounty.reward_points + 10
+    })
+
+
+@app.route('/admin/api/bounties/<bounty_id>/activate', methods=['POST'])
+@admin_required
+def api_admin_activate_bounty(bounty_id):
+    """上架悬赏API（管理员重新上架已下架的悬赏）"""
+    bounty = api_client._db.get_bounty_by_id(bounty_id)
+    if not bounty:
+        return jsonify({'success': False, 'message': '悬赏不存在'})
+
+    # 上架悬赏
+    bounty.is_active = True
+    api_client._db.save_bounty(bounty)
+
+    # 添加操作日志
+    api_client.add_operation_log(
+        f"上架悬赏: {bounty.title}",
+        "悬赏管理"
+    )
+
+    return jsonify({
+        'success': True,
+        'message': '悬赏已上架'
+    })
 
 
 # ==================== API 接口 ====================

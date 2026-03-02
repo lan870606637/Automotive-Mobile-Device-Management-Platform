@@ -72,6 +72,12 @@ def login_required(f):
     return decorated_function
 
 
+def get_user_total_points(user_id: str) -> int:
+    """获取用户当前总积分"""
+    user_points = api_client._db.get_user_points(user_id)
+    return user_points.points if user_points else 0
+
+
 def get_current_user():
     """获取当前登录用户信息"""
     user_id = session.get('user_id', '')
@@ -96,6 +102,18 @@ def get_current_user():
 def is_admin_user(borrower_name):
     """检查指定借用人是否为管理员"""
     return api_client.is_user_admin(borrower_name)
+
+
+def get_current_theme_icon(user_id):
+    """获取用户当前主题的图标标识"""
+    if not user_id:
+        return None
+    user = api_client._db.get_user_by_id(user_id)
+    if user and user.current_theme:
+        theme_item = api_client._db.get_shop_item_by_id(user.current_theme)
+        if theme_item:
+            return theme_item.icon
+    return None
 
 
 def get_user_equipment(user_id):
@@ -279,11 +297,59 @@ def inject_globals():
         except Exception:
             pass
 
+    # 获取用户当前鼠标皮肤
+    current_cursor_skin = None
+    if user and user.get('user_id'):
+        try:
+            full_user = api_client._db.get_user_by_id(user['user_id'])
+            if full_user and full_user.current_cursor:
+                cursor_item = api_client._db.get_shop_item_by_id(full_user.current_cursor)
+                if cursor_item:
+                    current_cursor_skin = cursor_item.icon
+        except Exception:
+            pass
+
+    # 鼠标皮肤图标映射
+    cursor_emoji_map = {
+        'cat-paw-pink': '🐾',
+        'unicorn-rainbow': '🦄',
+        'bunny-ears': '🐰',
+        'magic-star': '⭐',
+        'candy-heart': '🍬',
+        'cloud-cotton': '☁️',
+        'butterfly-wing': '🦋',
+        'pearl-shell': '🐚',
+        'cyber-lightsaber': '⚔️',
+        'mechanical-gear': '⚙️',
+        'gaming-blade': '🗡️',
+        'quantum-core': '🔮',
+        'dragon-scale': '🐲',
+        'obsidian-edge': '💎',
+        'minimal-geo': '◆',
+        'gradient-flow': '🌈',
+        'ink-wash': '🎨',
+        'star-trail': '✨',
+        'crystal-prism': '💠',
+    }
+
+    def get_cursor_emoji(icon):
+        return cursor_emoji_map.get(icon, '🖱️')
+
+    def get_cursor_svg_base64(icon):
+        """生成鼠标皮肤的SVG并返回Base64编码"""
+        import base64
+        emoji = cursor_emoji_map.get(icon, '🖱️')
+        svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><text x="0" y="24" font-size="24">{emoji}</text></svg>'''
+        return base64.b64encode(svg.encode('utf-8')).decode('utf-8')
+
     return {
         'is_admin_user': is_admin_user,
         'user_title': user_title,
         'user_equipped_title': user_equipped_title,
         'user_avatar_frame': user_avatar_frame,
+        'current_cursor_skin': current_cursor_skin,
+        'get_cursor_emoji': get_cursor_emoji,
+        'get_cursor_svg_base64': get_cursor_svg_base64,
         **rank_data
     }
 
@@ -942,6 +1008,72 @@ def pc_dashboard():
         if b.status == BountyStatus.PENDING
     ]
 
+    # 获取需要当前用户处理的悬赏（已找到，等待确认）
+    my_pending_bounties = [
+        {
+            'id': b.id,
+            'title': b.title,
+            'device_name': b.device_name,
+            'reward_points': b.reward_points,
+            'claimer_name': b.claimer_name,
+            'finder_description': b.finder_description
+        }
+        for b in all_bounties
+        if b.status == BountyStatus.FOUND and b.publisher_id == user['user_id']
+    ]
+
+    # 获取需要当前用户确认的预约（作为保管人或借用人）
+    pending_confirm_reservations = []
+    for device in all_devices:
+        # 检查用户是否是保管人
+        is_custodian = device.cabinet_number == user['borrower_name']
+        # 检查用户是否是借用人
+        is_borrower = (device.borrower and user['borrower_name'] in device.borrower) and device.status == DeviceStatus.BORROWED
+        
+        if not is_custodian and not is_borrower:
+            continue
+        
+        # 获取该设备的所有预约
+        reservations = api_client.get_device_reservations(device.id, None, False)
+        
+        for r in reservations:
+            # 保管人需要确认的预约
+            if is_custodian and r.status in ['待保管人确认', '待2人确认'] and not r.custodian_approved:
+                if r.custodian_id == user['user_id'] or (not r.custodian_id and device.cabinet_number == user['borrower_name']):
+                    pending_confirm_reservations.append({
+                        'id': r.id,
+                        'reserver_name': r.reserver_name,
+                        'reserver_id': r.reserver_id,
+                        'device_id': device.id,
+                        'device_name': device.name,
+                        'device_type': get_device_type_str(device),
+                        'start_time': r.start_time.strftime('%m-%d %H:%M') if r.start_time else '',
+                        'end_time': r.end_time.strftime('%m-%d %H:%M') if r.end_time else '',
+                        'confirm_role': 'custodian',
+                        'role_display': '保管人确认'
+                    })
+            
+            # 借用人需要确认的预约
+            if is_borrower and r.status in ['待借用人确认', '待2人确认'] and not r.borrower_approved:
+                is_current_borrower = (
+                    r.current_borrower_id == user['user_id'] or 
+                    r.current_borrower_name == user['borrower_name'] or
+                    device.borrower == user['borrower_name']
+                )
+                if is_current_borrower:
+                    pending_confirm_reservations.append({
+                        'id': r.id,
+                        'reserver_name': r.reserver_name,
+                        'reserver_id': r.reserver_id,
+                        'device_id': device.id,
+                        'device_name': device.name,
+                        'device_type': get_device_type_str(device),
+                        'start_time': r.start_time.strftime('%m-%d %H:%M') if r.start_time else '',
+                        'end_time': r.end_time.strftime('%m-%d %H:%M') if r.end_time else '',
+                        'confirm_role': 'borrower',
+                        'role_display': '借用人确认'
+                    })
+
     # 获取当前用户的排行（使用与排行榜页面一致的数据源）
     current_user_name = user['borrower_name']
     
@@ -1022,6 +1154,8 @@ def pc_dashboard():
                          points_rank=points_rank,
                          points_title=points_title,
                          pending_bounties=pending_bounties,
+                         my_pending_bounties=my_pending_bounties,
+                         pending_confirm_reservations=pending_confirm_reservations,
                          first_login_points=first_login_points,
                          points_message=points_message,
                          daily_login_points=daily_login_points,
@@ -1068,7 +1202,8 @@ def pc_device_list():
     # 重新加载数据以获取最新Excel数据
     api_client.reload_data()
 
-    device_type = request.args.get('type', 'car')
+    user = get_current_user()
+    device_type = request.args.get('type', 'all')
     status = request.args.get('status', 'all')
     search = request.args.get('search', '').strip()
     no_cabinet = request.args.get('no_cabinet', '')
@@ -1083,7 +1218,10 @@ def pc_device_list():
     filter_resolution = request.args.get('filter_resolution', '').strip()
 
     # 获取设备
-    if device_type == 'car':
+    if device_type == 'all':
+        devices = api_client.get_all_devices()  # 获取所有设备
+        title = '全部设备'
+    elif device_type == 'car':
         devices = api_client.get_all_devices('车机')
         title = '车机设备'
     elif device_type == 'phone':
@@ -1354,7 +1492,7 @@ def pc_device_list():
                          page=page,
                          total_pages=total_pages,
                          total=total,
-                         user=get_current_user(),
+                         user=user,
                          filter_project=filter_project,
                          filter_connection=filter_connection,
                          filter_os_version=filter_os_version,
@@ -1377,7 +1515,8 @@ def pc_device_list():
                          no_cabinet_count=stats['no_cabinet_count'],
                          circulating_count=stats['circulating_count'],
                          unavailable_count=stats['unavailable_count'],
-                         hide_search=True)
+                         hide_search=True,
+                         current_theme=get_current_theme_icon(user['user_id']))
 
 
 @app.route('/pc/device/<device_id>')
@@ -1532,9 +1671,10 @@ def pc_device_detail(device_id):
                 'user_id': borrower_user.id,
                 'user_name': borrower_user.borrower_name,
                 'avatar': borrower_user.avatar,
-                'avatar_frame': borrower_equipment.get('avatar_frame')
+                'avatar_frame': borrower_equipment.get('avatar_frame'),
+                'title': borrower_equipment.get('title')
             }
-    
+
     custodian_info = None
     if device.cabinet_number:
         custodian_user = api_client.get_user_by_borrower_name(device.cabinet_number)
@@ -1544,7 +1684,8 @@ def pc_device_detail(device_id):
                 'user_id': custodian_user.id,
                 'user_name': custodian_user.borrower_name,
                 'avatar': custodian_user.avatar,
-                'avatar_frame': custodian_equipment.get('avatar_frame')
+                'avatar_frame': custodian_equipment.get('avatar_frame'),
+                'title': custodian_equipment.get('title')
             }
     
     return render_template('pc/device_detail.html',
@@ -1571,6 +1712,7 @@ def pc_device_detail(device_id):
                          device_attachments=device_attachments,
                          borrower_info=borrower_info,
                          custodian_info=custodian_info,
+                         current_theme=get_current_theme_icon(user['user_id']),
                          **stats)
 
 
@@ -1625,6 +1767,7 @@ def pc_device_detail_simple(device_id):
                          is_sealed=is_sealed,
                          is_no_cabinet=is_no_cabinet,
                          user=user,
+                         current_theme=get_current_theme_icon(user['user_id']),
                          **stats)
 
 
@@ -1698,6 +1841,7 @@ def pc_my_custodian_devices():
                          devices=custodian_devices,
                          total_count=len(custodian_devices),
                          user=user,
+                         current_theme=get_current_theme_icon(user['user_id']),
                          **stats)
 
 
@@ -1768,6 +1912,7 @@ def pc_records():
                          page=page,
                          total_pages=total_pages,
                          user=user,
+                         current_theme=get_current_theme_icon(user['user_id']),
                          **stats)
 
 
@@ -1797,6 +1942,7 @@ def pc_all_records():
     
     stats = get_device_stats()
     
+    user = get_current_user()
     return render_template('pc/all_records.html',
                          records=paginated_records,
                          total_records=total,
@@ -1804,7 +1950,8 @@ def pc_all_records():
                          return_count=return_count,
                          page=page,
                          total_pages=total_pages,
-                         user=get_current_user(),
+                         user=user,
+                         current_theme=get_current_theme_icon(user['user_id']),
                          **stats)
 
 
@@ -1813,10 +1960,12 @@ def pc_all_records():
 def pc_user_rankings():
     """PC端用户排行榜页面"""
     stats = get_device_stats()
+    user = get_current_user()
     return render_template('pc/user_rankings.html',
                          ranking_type='borrow',
-                         user=get_current_user(),
+                         user=user,
                          hide_search=True,
+                         current_theme=get_current_theme_icon(user['user_id']),
                          **stats)
 
 
@@ -1939,11 +2088,14 @@ def api_borrow():
             break
 
     api_client.add_operation_log(f"借出设备: {user['borrower_name']}", device.name)
-    
+
     # 借用成功，奖励积分
     points_result = points_service.borrow_reward(user['user_id'], device.name, device.id)
     points_message = f"，{points_result['message']}" if points_result['success'] else ""
-    
+
+    # 获取用户当前总积分
+    total_points = get_user_total_points(user['user_id'])
+
     # 发送通知（用户自己借设备，不需要通知自己）
     # 1. 通知原借用人（如果设备之前被借用且原借用人不是自己）
     if original_borrower and original_borrower != user['borrower_name']:
@@ -1979,8 +2131,13 @@ def api_borrow():
                 device_id=device.id,
                 notification_type="info"
             )
-    
-    return jsonify({'success': True, 'message': f'借用成功{points_message}'})
+
+    return jsonify({
+        'success': True,
+        'message': f'借用成功{points_message}',
+        'points_added': points_result.get('points_change', 0) if points_result.get('success') else 0,
+        'total_points': total_points
+    })
 
 
 @app.route('/api/return', methods=['POST'])
@@ -2096,14 +2253,18 @@ def api_return():
             points_result = points_service.return_reward(original_borrower_user_id, device.name, device.id)
             if points_result['success']:
                 points_message = f"，{points_result['message']}"
-    
+
+    # 获取用户当前总积分
+    total_points = get_user_total_points(user['user_id'])
+    points_change = points_result.get('points_change', 0) if points_result.get('success') else 0
+
     # 检查是否有等待的预约，通知第一个等待的预约人
     device_type = get_device_type_str(device)
     waiting_reservations = api_client._db.get_reservations_by_device(device_id, device_type)
     notified_reserver = None
     for reservation in waiting_reservations:
         # 只通知已同意且预约开始时间在未来或现在的预约
-        if (reservation.status == ReservationStatus.APPROVED.value and 
+        if (reservation.status == ReservationStatus.APPROVED.value and
             reservation.start_time <= datetime.now() + timedelta(days=1)):  # 预约时间在现在或明天内
             api_client.add_notification(
                 user_id=reservation.reserver_id,
@@ -2116,7 +2277,7 @@ def api_return():
             )
             notified_reserver = reservation.reserver_name
             break  # 只通知第一个
-    
+
 
     # 归还通知逻辑：
     # - 借用人自己归还：通知保管人（设备回到保管人处）
@@ -2142,7 +2303,12 @@ def api_return():
                 notification_type="success"
             )
 
-    return jsonify({'success': True, 'message': f'归还成功{points_message}'})
+    return jsonify({
+        'success': True,
+        'message': f'归还成功{points_message}',
+        'points_added': points_change,
+        'total_points': total_points
+    })
 
 
 @app.route('/api/remark/add', methods=['POST'])
@@ -2616,9 +2782,18 @@ def api_add_search_points():
     """添加搜索积分API"""
     user = get_current_user()
     result = points_service.search_reward(user['user_id'])
+
+    # 获取用户当前总积分
+    total_points = 0
+    if result.get('success'):
+        user_points_data = api_client._db.get_user_points(user['user_id'])
+        if user_points_data:
+            total_points = user_points_data.points
+
     return jsonify({
         'success': result.get('success', False),
         'points_added': result.get('points_change', 0) if result.get('success') else 0,
+        'total_points': total_points,
         'message': result.get('message', '')
     })
 
@@ -2707,10 +2882,20 @@ def api_report_lost():
     # 丢失报备成功，发放积分奖励
     points_result = points_service.report_reward(user['user_id'], 'lost', device.name)
     points_message = ''
+    points_change = 0
     if points_result['success']:
         points_message = f'，{points_result["message"]}'
-    
-    return jsonify({'success': True, 'message': '丢失报备成功' + points_message})
+        points_change = points_result.get('points_change', 0)
+
+    # 获取用户当前总积分
+    total_points = get_user_total_points(user['user_id'])
+
+    return jsonify({
+        'success': True,
+        'message': '丢失报备成功' + points_message,
+        'points_added': points_change,
+        'total_points': total_points
+    })
 
 
 @app.route('/api/report-damage', methods=['POST'])
@@ -2818,10 +3003,20 @@ def api_report_damage():
     # 损坏报备成功，发放积分奖励
     points_result = points_service.report_reward(user['user_id'], 'damaged', device.name)
     points_message = ''
+    points_change = 0
     if points_result['success']:
         points_message = f'，{points_result["message"]}'
-    
-    return jsonify({'success': True, 'message': '损坏报备成功' + points_message})
+        points_change = points_result.get('points_change', 0)
+
+    # 获取用户当前总积分
+    total_points = get_user_total_points(user['user_id'])
+
+    return jsonify({
+        'success': True,
+        'message': '损坏报备成功' + points_message,
+        'points_added': points_change,
+        'total_points': total_points
+    })
 
 
 @app.route('/api/ship-device', methods=['POST'])
@@ -3114,10 +3309,20 @@ def api_found_device():
     # 设备找回成功，发放积分奖励
     points_result = points_service.report_reward(user['user_id'], 'found', device.name)
     points_message = ''
+    points_change = 0
     if points_result['success']:
         points_message = f'，{points_result["message"]}'
-    
-    return jsonify({'success': True, 'message': '设备找回成功' + points_message})
+        points_change = points_result.get('points_change', 0)
+
+    # 获取用户当前总积分
+    total_points = get_user_total_points(user['user_id'])
+
+    return jsonify({
+        'success': True,
+        'message': '设备找回成功' + points_message,
+        'points_added': points_change,
+        'total_points': total_points
+    })
 
 
 @app.route('/api/repair-device', methods=['POST'])
@@ -3273,10 +3478,20 @@ def api_repair_device():
     # 设备修复成功，发放积分奖励
     points_result = points_service.report_reward(user['user_id'], 'fixed', device.name)
     points_message = ''
+    points_change = 0
     if points_result['success']:
         points_message = f'，{points_result["message"]}'
-    
-    return jsonify({'success': True, 'message': '操作成功' + points_message})
+        points_change = points_result.get('points_change', 0)
+
+    # 获取用户当前总积分
+    total_points = get_user_total_points(user['user_id'])
+
+    return jsonify({
+        'success': True,
+        'message': '操作成功' + points_message,
+        'points_added': points_change,
+        'total_points': total_points
+    })
 
 
 @app.route('/api/not-found', methods=['POST'])
@@ -3610,12 +3825,19 @@ def api_renew():
     # 续借成功，发放积分奖励
     points_result = points_service.renew_reward(user['user_id'], device.name)
     points_message = ''
+    points_change = 0
     if points_result['success']:
         points_message = f'，{points_result["message"]}'
-    
+        points_change = points_result.get('points_change', 0)
+
+    # 获取用户当前总积分
+    total_points = get_user_total_points(user['user_id'])
+
     return jsonify({
-        'success': True, 
-        'message': f'续借成功，新的预计归还日期: {device.expected_return_date.strftime("%Y-%m-%d")}' + points_message
+        'success': True,
+        'message': f'续借成功，新的预计归还日期: {device.expected_return_date.strftime("%Y-%m-%d")}' + points_message,
+        'points_added': points_change,
+        'total_points': total_points
     })
 
 
@@ -3730,29 +3952,61 @@ def api_user_like():
     """用户点赞API"""
     data = request.get_json()
     to_user_id = data.get('to_user_id')
-    
+
     if not to_user_id:
         return jsonify({'success': False, 'message': '请选择要点赞的用户'})
-    
+
     user = get_current_user()
     success, message = api_client.add_like(user['user_id'], to_user_id)
-    
+
     if success:
         # 点赞成功，发放积分奖励
         points_result = points_service.like_reward(user['user_id'])
         points_message = ''
+        points_added = 0
+        total_points = 0
         if points_result['success']:
             points_message = f'，{points_result["message"]}'
-        
+            points_added = points_result.get('points_change', 0)
+
+        # 获取用户当前总积分
+        user_points_data = api_client._db.get_user_points(user['user_id'])
+        if user_points_data:
+            total_points = user_points_data.points
+
         # 获取点赞后的点赞数
         like_count = api_client.get_user_like_count(to_user_id)
         return jsonify({
             'success': True,
             'message': message + points_message,
-            'like_count': like_count
+            'like_count': like_count,
+            'points_added': points_added,
+            'total_points': total_points
         })
     else:
         return jsonify({'success': False, 'message': message})
+
+
+@app.route('/api/user/current-cursor', methods=['GET'])
+@login_required
+def api_user_current_cursor():
+    """获取用户当前鼠标皮肤API"""
+    user = get_current_user()
+    full_user = api_client._db.get_user_by_id(user['user_id'])
+
+    if not full_user or not full_user.current_cursor:
+        return jsonify({'success': True, 'cursor_skin': None})
+
+    # 获取鼠标皮肤详情
+    cursor_item = api_client._db.get_shop_item_by_id(full_user.current_cursor)
+    if cursor_item and cursor_item.icon:
+        return jsonify({
+            'success': True,
+            'cursor_skin': cursor_item.icon,
+            'cursor_name': cursor_item.name
+        })
+
+    return jsonify({'success': True, 'cursor_skin': None})
 
 
 # ==================== 个人资料API ====================
@@ -3779,9 +4033,10 @@ def pc_points_shop():
     user_inventory = api_client._db.get_user_inventory(user['user_id'])
     owned_item_ids = {item.item_id for item in user_inventory}
 
-    # 获取完整用户信息（用于检查当前装备的主题）
+    # 获取完整用户信息（用于检查当前装备的主题和鼠标皮肤）
     full_user = api_client._db.get_user_by_id(user['user_id'])
     current_theme_id = full_user.current_theme if full_user else ''
+    current_cursor_id = full_user.current_cursor if full_user else ''
 
     # 标记已拥有的商品和装备状态
     for item in shop_items:
@@ -3789,6 +4044,9 @@ def pc_points_shop():
         # 如果是主题皮肤，检查是否正在使用
         if item.item_type and item.item_type.value == '主题皮肤':
             item.is_equipped = (item.id == current_theme_id)
+        # 如果是鼠标皮肤，检查是否正在使用
+        if item.item_type and item.item_type.value == '鼠标皮肤':
+            item.is_equipped = (item.id == current_cursor_id)
     
     # 获取今日积分统计
     today = datetime.now().strftime('%Y-%m-%d')
@@ -3832,6 +4090,7 @@ def pc_points_shop():
                          shop_items=shop_items,
                          today_stats=today_stats,
                          active_nav='points_shop',
+                         current_theme=get_current_theme_icon(user['user_id']),
                          **stats)
 
 
@@ -4011,6 +4270,18 @@ def api_shop_equip():
                 'theme': 'default'
             })
 
+        # 处理默认鼠标
+        if item_id == 'default_cursor':
+            # 恢复默认鼠标
+            full_user.current_cursor = ''
+            api_client._db.save_user(full_user)
+
+            return jsonify({
+                'success': True,
+                'message': '已恢复默认鼠标',
+                'cursor': 'default'
+            })
+
         # 获取商品信息
         item = api_client._db.get_shop_item_by_id(item_id)
         if not item:
@@ -4038,6 +4309,24 @@ def api_shop_equip():
                 'success': True,
                 'message': f'成功应用主题：{item.name}',
                 'theme': item.icon
+            })
+        elif item.item_type and item.item_type.value == '鼠标皮肤':
+            # 装备鼠标皮肤
+            full_user.current_cursor = item_id
+            api_client._db.save_user(full_user)
+
+            # 标记物品为已使用
+            inventory_items = api_client._db.get_user_inventory(user_id)
+            for inv_item in inventory_items:
+                if inv_item.item_id == item_id:
+                    api_client._db.update_inventory_item_status(
+                        inv_item.id, True, datetime.now()
+                    )
+
+            return jsonify({
+                'success': True,
+                'message': f'成功应用鼠标皮肤：{item.name}',
+                'cursor': item.icon
             })
         else:
             return jsonify({'success': False, 'message': '该商品类型不支持装备操作'})
@@ -4069,6 +4358,7 @@ def pc_bounties():
                          user_points=user_points,
                          bounties=all_bounties,
                          active_nav='bounties',
+                         current_theme=get_current_theme_icon(user['user_id']),
                          **stats)
 
 
@@ -4077,7 +4367,38 @@ def pc_bounties():
 def api_get_bounties():
     """获取悬赏列表API"""
     status = request.args.get('status', None)
-    bounties = api_client._db.get_all_bounties(status=status)
+    my_bounties = request.args.get('my_bounties', 'false').lower() == 'true'
+    user = get_current_user()
+
+    # 先自动取消所有过期悬赏
+    expired_bounties = api_client._db.auto_cancel_expired_bounties()
+    if expired_bounties:
+        # 退还积分给发布人
+        from common.models import PointsTransactionType
+        from common.points_service import points_service
+        for bounty in expired_bounties:
+            # 退还发布费10积分
+            points_service.add_points(
+                user_id=bounty.publisher_id,
+                points=10,
+                transaction_type=PointsTransactionType.CREATE_BOUNTY,
+                description=f'悬赏过期自动取消退还发布费: {bounty.title}',
+                related_id=bounty.id
+            )
+            # 退还悬赏积分
+            points_service.add_points(
+                user_id=bounty.publisher_id,
+                points=bounty.reward_points,
+                transaction_type=PointsTransactionType.RECEIVE_BOUNTY,
+                description=f'悬赏过期自动取消退还悬赏积分: {bounty.title}',
+                related_id=bounty.id
+            )
+
+    if my_bounties:
+        # 获取当前用户的悬赏
+        bounties = api_client._db.get_bounties_by_publisher(user['user_id'])
+    else:
+        bounties = api_client._db.get_all_bounties(status=status)
 
     # 转换为字典列表
     bounty_list = []
@@ -4239,7 +4560,16 @@ def api_create_bounty():
     if records and records[0].transaction_type.value == '发布悬赏':
         records[0].related_id = bounty.id
 
-    return jsonify({'success': True, 'message': '悬赏发布成功', 'bounty_id': bounty.id})
+    # 获取用户当前总积分
+    total_points = get_user_total_points(user['user_id'])
+
+    return jsonify({
+        'success': True,
+        'message': '悬赏发布成功',
+        'bounty_id': bounty.id,
+        'points_added': -(10 + reward_points),  # 发布费 + 悬赏积分（负数表示扣除）
+        'total_points': total_points
+    })
 
 
 @app.route('/api/bounties/<bounty_id>/found', methods=['POST'])
@@ -4487,11 +4817,17 @@ def pc_profile():
     inventory_titles = [item for item in inventory if item.item_type == ShopItemType.TITLE]
     inventory_frames = [item for item in inventory if item.item_type == ShopItemType.AVATAR_FRAME]
     inventory_themes = [item for item in inventory if item.item_type and item.item_type.value == '主题皮肤']
+    inventory_cursors = [item for item in inventory if item.item_type and item.item_type.value == '鼠标皮肤']
 
     # 标记当前正在使用的主题
     current_theme_id = full_user.current_theme if full_user else ''
     for theme in inventory_themes:
         theme.is_used = (theme.item_id == current_theme_id)
+
+    # 标记当前正在使用的鼠标皮肤
+    current_cursor_id = full_user.current_cursor if full_user else ''
+    for cursor in inventory_cursors:
+        cursor.is_used = (cursor.item_id == current_cursor_id)
 
     # 获取当前主题图标
     current_theme = None
@@ -4499,6 +4835,9 @@ def pc_profile():
         theme_item = api_client._db.get_shop_item_by_id(current_theme_id)
         if theme_item:
             current_theme = theme_item.icon
+
+    # 获取当前鼠标皮肤
+    current_cursor = current_cursor_id if current_cursor_id else None
 
     # 获取设备统计数据（用于侧边栏显示）
     stats = get_device_stats()
@@ -4510,7 +4849,9 @@ def pc_profile():
                          inventory_titles=inventory_titles,
                          inventory_frames=inventory_frames,
                          inventory_themes=inventory_themes,
+                         inventory_cursors=inventory_cursors,
                          current_theme=current_theme,
+                         current_cursor=current_cursor,
                          hide_search=True,
                          **stats)
 
@@ -4679,10 +5020,21 @@ def api_create_reservation():
         device_name = device.name if device else ''
         points_result = points_service.reserve_reward(user['user_id'], device_name)
         points_message = ''
+        points_change = 0
         if points_result['success']:
             points_message = f'，{points_result["message"]}'
-        
-        return jsonify({'success': True, 'message': '预约成功' + points_message, 'reservation': result.to_dict()})
+            points_change = points_result.get('points_change', 0)
+
+        # 获取用户当前总积分
+        total_points = get_user_total_points(user['user_id'])
+
+        return jsonify({
+            'success': True,
+            'message': '预约成功' + points_message,
+            'reservation': result.to_dict(),
+            'points_added': points_change,
+            'total_points': total_points
+        })
     else:
         return jsonify({'success': False, 'message': result})
 
@@ -4957,6 +5309,7 @@ def pc_my_reservations():
                          user=user,
                          reservations=reservations,
                          hide_search=True,
+                         current_theme=get_current_theme_icon(user['user_id']),
                          **stats)
 
 
@@ -5136,13 +5489,23 @@ def api_transfer():
     message = '转借成功'
     if force:
         message = '强制转借成功，已取消相关预约'
-    
+
     # 转借成功，发放积分奖励
     points_result = points_service.transfer_reward(user['user_id'], device.name)
+    points_change = 0
     if points_result['success']:
         message += f'，{points_result["message"]}'
-    
-    return jsonify({'success': True, 'message': message})
+        points_change = points_result.get('points_change', 0)
+
+    # 获取用户当前总积分
+    total_points = get_user_total_points(user['user_id'])
+
+    return jsonify({
+        'success': True,
+        'message': message,
+        'points_added': points_change,
+        'total_points': total_points
+    })
 
 
 # ==================== 定时任务 ====================
@@ -5174,6 +5537,74 @@ def send_reservation_pending_reminder_job():
         print(f"发送预约待确认提醒邮件失败: {e}")
 
 
+def auto_deduct_overdue_points_job():
+    """定时任务：自动扣除逾期设备积分（每小时执行）"""
+    try:
+        with app.app_context():
+            from datetime import datetime
+            from common.models import DeviceStatus
+
+            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 开始检查逾期设备并扣除积分...")
+
+            # 获取所有借用中的设备
+            all_devices = api_client._db.get_all_devices()
+            borrowed_devices = [d for d in all_devices if d.status == DeviceStatus.BORROWED and d.borrower and d.expected_return_date]
+
+            deducted_count = 0
+            for device in borrowed_devices:
+                # 检查是否逾期
+                now = datetime.now()
+                if now > device.expected_return_date:
+                    time_diff = now - device.expected_return_date
+                    # 逾期超过1分钟才算逾期
+                    if time_diff.total_seconds() > 60:
+                        # 查找借用人
+                        borrower_user = None
+                        for u in api_client._users:
+                            if u.borrower_name == device.borrower:
+                                borrower_user = u
+                                break
+
+                        if borrower_user:
+                            # 检查今天是否已经扣除过该设备的逾期积分
+                            today = now.strftime('%Y-%m-%d')
+                            records = api_client._db.get_points_records(borrower_user.id)
+                            already_deducted_today = False
+
+                            for record in records:
+                                if record.transaction_type == PointsTransactionType.OVERDUE:
+                                    # 检查是否是今天扣除的，并且是否是同一设备
+                                    if record.create_time and record.create_time.strftime('%Y-%m-%d') == today:
+                                        if record.related_id == device.id:
+                                            already_deducted_today = True
+                                            break
+
+                            if not already_deducted_today:
+                                # 扣除逾期积分
+                                points_result = points_service.overdue_penalty(borrower_user.id, device.name, device.id)
+                                if points_result['success']:
+                                    deducted_count += 1
+                                    print(f"  ✓ 已扣除 {borrower_user.borrower_name} 的逾期积分 -15分 (设备: {device.name})")
+
+                                    # 发送通知给借用人
+                                    api_client.add_notification(
+                                        user_id=borrower_user.id,
+                                        user_name=borrower_user.borrower_name,
+                                        title="逾期积分扣除通知",
+                                        content=f"您借用的设备「{device.name}」已逾期，已自动扣除15积分",
+                                        device_name=device.name,
+                                        device_id=device.id,
+                                        notification_type="error"
+                                    )
+
+            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 逾期积分扣除完成，共处理 {deducted_count} 个设备")
+
+    except Exception as e:
+        print(f"自动扣除逾期积分失败: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 # 初始化定时任务
 scheduler = None
 if APSCHEDULER_AVAILABLE:
@@ -5191,15 +5622,21 @@ if APSCHEDULER_AVAILABLE:
         scheduler.remove_job('send_reservation_pending_reminders')
     except:
         pass
-    
+    try:
+        scheduler.remove_job('auto_deduct_overdue_points')
+    except:
+        pass
+
     # 每分钟执行一次预约处理
     scheduler.add_job(process_reservations_job, 'interval', minutes=1, id='process_reservations')
     # 每5分钟检查并发送逾期提醒邮件（需要精确到10分钟的提醒）
     scheduler.add_job(send_overdue_reminder_job, 'interval', minutes=5, id='send_overdue_reminders')
     # 每30分钟检查并发送预约待确认提醒邮件
     scheduler.add_job(send_reservation_pending_reminder_job, 'interval', minutes=30, id='send_reservation_pending_reminders')
+    # 每小时检查并自动扣除逾期积分
+    scheduler.add_job(auto_deduct_overdue_points_job, 'interval', minutes=60, id='auto_deduct_overdue_points')
     scheduler.start()
-    print("✓ 定时任务已启动：每分钟处理预约、每5分钟检查逾期提醒、每30分钟检查预约确认提醒")
+    print("✓ 定时任务已启动：每分钟处理预约、每5分钟检查逾期提醒、每30分钟检查预约确认提醒、每小时自动扣除逾期积分")
 
 
 # ==================== 错误处理 ====================

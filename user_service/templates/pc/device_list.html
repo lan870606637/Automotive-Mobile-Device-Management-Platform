@@ -6,7 +6,9 @@
 
 {% block content %}
 <h1 class="page-title">
-    {% if device_type == 'car' %}
+    {% if device_type == 'all' %}
+    📦 全部设备
+    {% elif device_type == 'car' %}
     🚗 车机设备
     {% elif device_type == 'phone' %}
     📱 手机设备
@@ -17,7 +19,7 @@
     {% elif device_type == 'other' %}
     🔧 其它设备
     {% else %}
-    � 车机设备
+    🚗 车机设备
     {% endif %}
 </h1>
 
@@ -25,12 +27,12 @@
 <div class="search-bar">
     <div class="search-input-wrap">
         <span class="search-icon">🔍</span>
-        <input type="text" id="searchInput" class="search-input" placeholder="搜索：名称、型号、JIRA、项目属性、系统版本、借用人..." onkeyup="handleSearch(event)">
+        <input type="text" id="searchInput" class="search-input" placeholder="搜索：名称、型号、JIRA、项目属性、系统版本、借用人..." autocomplete="off">
         <button class="clear-btn" id="clearSearchBtn" onclick="clearSearch()" style="display:none; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #999;">✕</button>
     </div>
 </div>
 
-{% if device_type == 'car' or device_type == 'instrument' %}
+{% if device_type in ['car', 'instrument'] %}
 <!-- 组合筛选（仅车机和仪表） -->
 <div class="card" style="margin-bottom: 20px;">
     <div class="card-header">
@@ -108,6 +110,7 @@
 {% endif %}
 
 <div class="filter-tabs">
+    <a href="{{ url_for('pc_device_list', type='all') }}" class="filter-tab {% if device_type == 'all' %}active{% endif %}">全部</a>
     <a href="{{ url_for('pc_device_list', type='car') }}" class="filter-tab {% if device_type == 'car' %}active{% endif %}">车机</a>
     <a href="{{ url_for('pc_device_list', type='phone') }}" class="filter-tab {% if device_type == 'phone' %}active{% endif %}">手机</a>
     <a href="{{ url_for('pc_device_list', type='instrument') }}" class="filter-tab {% if device_type == 'instrument' %}active{% endif %}">仪表</a>
@@ -126,7 +129,11 @@
                     <th>型号</th>
                     <th>设备名称</th>
                     <th>JIRA地址</th>
-                    {% if device_type == 'car' or device_type == 'instrument' %}
+                    {% if device_type == 'all' %}
+                    <th>类型</th>
+                    <th>状态</th>
+                    <th style="width: 90px;">操作</th>
+                    {% elif device_type == 'car' or device_type == 'instrument' %}
                     <th>项目属性</th>
                     <th>连接方式</th>
                     <th>系统版本</th>
@@ -134,6 +141,8 @@
                     <th>产品名称</th>
                     <th>屏幕方向</th>
                     <th>分辨率</th>
+                    <th>状态</th>
+                    <th style="width: 90px;">操作</th>
                     {% elif device_type == 'phone' %}
                     <th>系统版本</th>
                     <th>IMEI</th>
@@ -141,15 +150,19 @@
                     <th>运营商</th>
                     <th>固定资产编号</th>
                     <th>购买金额(元)</th>
+                    <th>状态</th>
+                    <th style="width: 90px;">操作</th>
                     {% elif device_type == 'simcard' %}
                     <th>号码</th>
                     <th>运营商</th>
+                    <th>状态</th>
+                    <th style="width: 90px;">操作</th>
                     {% else %}
                     <th>类型</th>
                     <th>备注</th>
-                    {% endif %}
                     <th>状态</th>
                     <th style="width: 90px;">操作</th>
+                    {% endif %}
                 </tr>
             </thead>
             <tbody>
@@ -178,28 +191,8 @@
                         -
                         {% endif %}
                     </td>
-                    {% if device_type == 'car' or device_type == 'instrument' %}
-                    <td>{{ device.project_attribute or '-' }}</td>
-                    <td style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ device.connection_method or '' }}">{{ device.connection_method or '-' }}</td>
-                    <td>{{ device.os_version or '-' }}</td>
-                    <td>{{ device.os_platform or '-' }}</td>
-                    <td>{{ device.product_name or '-' }}</td>
-                    <td>{{ device.screen_orientation or '-' }}</td>
-                    <td>{{ device.screen_resolution or '-' }}</td>
-                    {% elif device_type == 'phone' %}
-                    <td>{{ device.system_version if device.system_version and device.system_version != 'nan' else '-' }}</td>
-                    <td style="font-size: 12px;" title="{{ device.imei or '' }}">{{ device.imei[:15] + '...' if device.imei and device.imei != 'nan' and device.imei|length > 15 else (device.imei if device.imei and device.imei != 'nan' else '-') }}</td>
-                    <td style="font-size: 12px;" title="{{ device.sn or '' }}">{{ device.sn[:15] + '...' if device.sn and device.sn != 'nan' and device.sn|length > 15 else (device.sn if device.sn and device.sn != 'nan' else '-') }}</td>
-                    <td>{{ device.carrier if device.carrier and device.carrier != 'nan' else '-' }}</td>
-                    <td>{{ device.asset_number if device.asset_number and device.asset_number != 'nan' else '-' }}</td>
-                    <td>{{ device.purchase_amount if device.purchase_amount and device.purchase_amount != 'nan' else '-' }}</td>
-                    {% elif device_type == 'simcard' %}
-                    <td>{{ device.model if device.model and device.model != 'nan' else '-' }}</td>
-                    <td>{{ device.carrier if device.carrier and device.carrier != 'nan' else '-' }}</td>
-                    {% else %}
+                    {% if device_type == 'all' %}
                     <td class="device-type">{{ device.device_type.value }}</td>
-                    <td style="color: #8c8c8c; font-size: 13px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ device.remark or '' }}">{{ device.remark if device.remark and device.remark != 'nan' else '-' }}</td>
-                    {% endif %}
                     <td>
                         {% if device.no_cabinet %}
                             {% if device.is_custodian_type %}
@@ -232,6 +225,156 @@
                         <a href="{% if device.no_cabinet or device.is_circulating or device.is_sealed %}{{ url_for('pc_device_detail_simple', device_id=device.id, device_type=device.device_type.value) }}{% else %}{{ url_for('pc_device_detail', device_id=device.id, device_type=device.device_type.value) }}{% endif %}" class="btn btn-primary btn-sm">查看详情</a>
                         {% endif %}
                     </td>
+                    {% elif device_type == 'car' or device_type == 'instrument' %}
+                    <td>{{ device.project_attribute or '-' }}</td>
+                    <td style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ device.connection_method or '' }}">{{ device.connection_method or '-' }}</td>
+                    <td>{{ device.os_version or '-' }}</td>
+                    <td>{{ device.os_platform or '-' }}</td>
+                    <td>{{ device.product_name or '-' }}</td>
+                    <td>{{ device.screen_orientation or '-' }}</td>
+                    <td>{{ device.screen_resolution or '-' }}</td>
+                    <td>
+                        {% if device.no_cabinet %}
+                            {% if device.is_custodian_type %}
+                            <span class="status-tag status-no-cabinet">无保管人</span>
+                            {% else %}
+                            <span class="status-tag status-no-cabinet">无柜号</span>
+                            {% endif %}
+                        {% elif device.is_circulating %}
+                        <span class="status-tag status-circulating">流通</span>
+                        {% elif device.is_sealed %}
+                        <span class="status-tag status-sealed">封存</span>
+                        {% else %}
+                        <span class="status-tag
+                            {% if device.status.value == '在库' %}status-available
+                            {% elif device.status.value == '保管中' %}status-custody
+                            {% elif device.status.value == '借出' %}status-borrowed
+                            {% elif device.status.value == '已寄出' %}status-shipped
+                            {% elif device.status.value == '已损坏' %}status-damaged
+                            {% elif device.status.value == '丢失' %}status-lost
+                            {% elif device.status.value == '报废' %}status-scrapped
+                            {% endif %}">
+                            {{ device.status.value }}
+                        </span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if device.status.value == '报废' %}
+                        <button class="btn btn-default btn-sm" disabled>已报废</button>
+                        {% else %}
+                        <a href="{% if device.no_cabinet or device.is_circulating or device.is_sealed %}{{ url_for('pc_device_detail_simple', device_id=device.id, device_type=device.device_type.value) }}{% else %}{{ url_for('pc_device_detail', device_id=device.id, device_type=device.device_type.value) }}{% endif %}" class="btn btn-primary btn-sm">查看详情</a>
+                        {% endif %}
+                    </td>
+                    {% elif device_type == 'phone' %}
+                    <td>{{ device.system_version if device.system_version and device.system_version != 'nan' else '-' }}</td>
+                    <td style="font-size: 12px;" title="{{ device.imei or '' }}">{{ device.imei[:15] + '...' if device.imei and device.imei != 'nan' and device.imei|length > 15 else (device.imei if device.imei and device.imei != 'nan' else '-') }}</td>
+                    <td style="font-size: 12px;" title="{{ device.sn or '' }}">{{ device.sn[:15] + '...' if device.sn and device.sn != 'nan' and device.sn|length > 15 else (device.sn if device.sn and device.sn != 'nan' else '-') }}</td>
+                    <td>{{ device.carrier if device.carrier and device.carrier != 'nan' else '-' }}</td>
+                    <td>{{ device.asset_number if device.asset_number and device.asset_number != 'nan' else '-' }}</td>
+                    <td>{{ device.purchase_amount if device.purchase_amount and device.purchase_amount != 'nan' else '-' }}</td>
+                    <td>
+                        {% if device.no_cabinet %}
+                            {% if device.is_custodian_type %}
+                            <span class="status-tag status-no-cabinet">无保管人</span>
+                            {% else %}
+                            <span class="status-tag status-no-cabinet">无柜号</span>
+                            {% endif %}
+                        {% elif device.is_circulating %}
+                        <span class="status-tag status-circulating">流通</span>
+                        {% elif device.is_sealed %}
+                        <span class="status-tag status-sealed">封存</span>
+                        {% else %}
+                        <span class="status-tag
+                            {% if device.status.value == '在库' %}status-available
+                            {% elif device.status.value == '保管中' %}status-custody
+                            {% elif device.status.value == '借出' %}status-borrowed
+                            {% elif device.status.value == '已寄出' %}status-shipped
+                            {% elif device.status.value == '已损坏' %}status-damaged
+                            {% elif device.status.value == '丢失' %}status-lost
+                            {% elif device.status.value == '报废' %}status-scrapped
+                            {% endif %}">
+                            {{ device.status.value }}
+                        </span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if device.status.value == '报废' %}
+                        <button class="btn btn-default btn-sm" disabled>已报废</button>
+                        {% else %}
+                        <a href="{% if device.no_cabinet or device.is_circulating or device.is_sealed %}{{ url_for('pc_device_detail_simple', device_id=device.id, device_type=device.device_type.value) }}{% else %}{{ url_for('pc_device_detail', device_id=device.id, device_type=device.device_type.value) }}{% endif %}" class="btn btn-primary btn-sm">查看详情</a>
+                        {% endif %}
+                    </td>
+                    {% elif device_type == 'simcard' %}
+                    <td>{{ device.model if device.model and device.model != 'nan' else '-' }}</td>
+                    <td>{{ device.carrier if device.carrier and device.carrier != 'nan' else '-' }}</td>
+                    <td>
+                        {% if device.no_cabinet %}
+                            {% if device.is_custodian_type %}
+                            <span class="status-tag status-no-cabinet">无保管人</span>
+                            {% else %}
+                            <span class="status-tag status-no-cabinet">无柜号</span>
+                            {% endif %}
+                        {% elif device.is_circulating %}
+                        <span class="status-tag status-circulating">流通</span>
+                        {% elif device.is_sealed %}
+                        <span class="status-tag status-sealed">封存</span>
+                        {% else %}
+                        <span class="status-tag
+                            {% if device.status.value == '在库' %}status-available
+                            {% elif device.status.value == '保管中' %}status-custody
+                            {% elif device.status.value == '借出' %}status-borrowed
+                            {% elif device.status.value == '已寄出' %}status-shipped
+                            {% elif device.status.value == '已损坏' %}status-damaged
+                            {% elif device.status.value == '丢失' %}status-lost
+                            {% elif device.status.value == '报废' %}status-scrapped
+                            {% endif %}">
+                            {{ device.status.value }}
+                        </span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if device.status.value == '报废' %}
+                        <button class="btn btn-default btn-sm" disabled>已报废</button>
+                        {% else %}
+                        <a href="{% if device.no_cabinet or device.is_circulating or device.is_sealed %}{{ url_for('pc_device_detail_simple', device_id=device.id, device_type=device.device_type.value) }}{% else %}{{ url_for('pc_device_detail', device_id=device.id, device_type=device.device_type.value) }}{% endif %}" class="btn btn-primary btn-sm">查看详情</a>
+                        {% endif %}
+                    </td>
+                    {% else %}
+                    <td class="device-type">{{ device.device_type.value }}</td>
+                    <td style="color: #8c8c8c; font-size: 13px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ device.remark or '' }}">{{ device.remark if device.remark and device.remark != 'nan' else '-' }}</td>
+                    <td>
+                        {% if device.no_cabinet %}
+                            {% if device.is_custodian_type %}
+                            <span class="status-tag status-no-cabinet">无保管人</span>
+                            {% else %}
+                            <span class="status-tag status-no-cabinet">无柜号</span>
+                            {% endif %}
+                        {% elif device.is_circulating %}
+                        <span class="status-tag status-circulating">流通</span>
+                        {% elif device.is_sealed %}
+                        <span class="status-tag status-sealed">封存</span>
+                        {% else %}
+                        <span class="status-tag
+                            {% if device.status.value == '在库' %}status-available
+                            {% elif device.status.value == '保管中' %}status-custody
+                            {% elif device.status.value == '借出' %}status-borrowed
+                            {% elif device.status.value == '已寄出' %}status-shipped
+                            {% elif device.status.value == '已损坏' %}status-damaged
+                            {% elif device.status.value == '丢失' %}status-lost
+                            {% elif device.status.value == '报废' %}status-scrapped
+                            {% endif %}">
+                            {{ device.status.value }}
+                        </span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if device.status.value == '报废' %}
+                        <button class="btn btn-default btn-sm" disabled>已报废</button>
+                        {% else %}
+                        <a href="{% if device.no_cabinet or device.is_circulating or device.is_sealed %}{{ url_for('pc_device_detail_simple', device_id=device.id, device_type=device.device_type.value) }}{% else %}{{ url_for('pc_device_detail', device_id=device.id, device_type=device.device_type.value) }}{% endif %}" class="btn btn-primary btn-sm">查看详情</a>
+                        {% endif %}
+                    </td>
+                    {% endif %}
                 </tr>
                 {% endfor %}
             </tbody>
@@ -241,7 +384,34 @@
         {% if total_pages > 1 %}
         <div class="pagination">
             <a href="{{ url_for('pc_device_list', type=device_type, no_cabinet='1' if no_cabinet else '', page=page-1, filter_project=filter_project, filter_connection=filter_connection, filter_os_version=filter_os_version, filter_os_platform=filter_os_platform, filter_product=filter_product, filter_orientation=filter_orientation, filter_resolution=filter_resolution) }}" class="page-btn" {% if page <= 1 %}style="pointer-events: none; opacity: 0.5;"{% endif %}>‹ 上一页</a>
+            
+            <!-- 页码数字 -->
+            <div class="page-numbers">
+                {% set start_page = [1, page - 2]|max %}
+                {% set end_page = [total_pages, page + 2]|min %}
+                {% if start_page > 1 %}
+                    <a href="{{ url_for('pc_device_list', type=device_type, no_cabinet='1' if no_cabinet else '', page=1, filter_project=filter_project, filter_connection=filter_connection, filter_os_version=filter_os_version, filter_os_platform=filter_os_platform, filter_product=filter_product, filter_orientation=filter_orientation, filter_resolution=filter_resolution) }}" class="page-btn page-num">1</a>
+                    {% if start_page > 2 %}<span class="page-ellipsis">...</span>{% endif %}
+                {% endif %}
+                {% for p in range(start_page, end_page + 1) %}
+                    <a href="{{ url_for('pc_device_list', type=device_type, no_cabinet='1' if no_cabinet else '', page=p, filter_project=filter_project, filter_connection=filter_connection, filter_os_version=filter_os_version, filter_os_platform=filter_os_platform, filter_product=filter_product, filter_orientation=filter_orientation, filter_resolution=filter_resolution) }}" class="page-btn page-num {% if p == page %}active{% endif %}">{{ p }}</a>
+                {% endfor %}
+                {% if end_page < total_pages %}
+                    {% if end_page < total_pages - 1 %}<span class="page-ellipsis">...</span>{% endif %}
+                    <a href="{{ url_for('pc_device_list', type=device_type, no_cabinet='1' if no_cabinet else '', page=total_pages, filter_project=filter_project, filter_connection=filter_connection, filter_os_version=filter_os_version, filter_os_platform=filter_os_platform, filter_product=filter_product, filter_orientation=filter_orientation, filter_resolution=filter_resolution) }}" class="page-btn page-num">{{ total_pages }}</a>
+                {% endif %}
+            </div>
+            
             <span class="page-info">{{ page }} / {{ total_pages }} 页 (共{{ total }}台)</span>
+            
+            <!-- 页码输入跳转 -->
+            <div class="page-jump">
+                <span>跳至</span>
+                <input type="number" id="pageInput" class="page-input" min="1" max="{{ total_pages }}" value="{{ page }}" onkeypress="handlePageInput(event)">
+                <span>页</span>
+                <button class="page-btn page-jump-btn" onclick="goToPage()">GO</button>
+            </div>
+            
             <a href="{{ url_for('pc_device_list', type=device_type, no_cabinet='1' if no_cabinet else '', page=page+1, filter_project=filter_project, filter_connection=filter_connection, filter_os_version=filter_os_version, filter_os_platform=filter_os_platform, filter_product=filter_product, filter_orientation=filter_orientation, filter_resolution=filter_resolution) }}" class="page-btn" {% if page >= total_pages %}style="pointer-events: none; opacity: 0.5;"{% endif %}>下一页 ›</a>
         </div>
         {% endif %}
@@ -261,20 +431,26 @@ let searchTimeout;
 // 注意：allDevices 已在 base_pc.html 中声明，这里直接使用
 allDevices = []; // 缓存搜索结果
 let isSearching = false;
+let isComposing = false; // 输入法组合状态
+let originalTableContent = ''; // 保存原始表格内容
+let originalPaginationContent = ''; // 保存原始分页内容
 
 function handleSearch(event) {
+    // 如果正在使用输入法组合，不触发搜索
+    if (isComposing) return;
+
     clearTimeout(searchTimeout);
     const keyword = event.target.value.trim();
-    
+
     // 如果搜索框为空，恢复原始列表
     if (!keyword) {
         restoreOriginalList();
         return;
     }
-    
+
     searchTimeout = setTimeout(() => {
         doSearch(keyword);
-    }, 300);
+    }, 500); // 增加延迟到500ms，减少频繁请求
 }
 
 function doSearch(keyword) {
@@ -336,6 +512,7 @@ function renderSearchResults(devices) {
     };
     
     // 根据当前设备类型确定渲染的列数
+    const isAll = currentDeviceType === 'all';
     const isCarOrInstrument = currentDeviceType === 'car' || currentDeviceType === 'instrument';
     const isPhone = currentDeviceType === 'phone';
     const isSimcard = currentDeviceType === 'simcard';
@@ -347,7 +524,12 @@ function renderSearchResults(devices) {
         
         let extraCols = '';
         
-        if (isCarOrInstrument) {
+        if (isAll) {
+            // 全部设备只显示公共字段
+            extraCols = `
+                <td class="device-type">${device.device_type}</td>
+            `;
+        } else if (isCarOrInstrument) {
             // 车机和仪表显示额外字段
             extraCols = `
                 <td>${device.project_attribute || '-'}</td>
@@ -424,7 +606,20 @@ function renderSearchResults(devices) {
 }
 
 function restoreOriginalList() {
-    location.reload();
+    // 恢复原始表格内容，不刷新页面
+    const tbody = document.querySelector('#deviceTable tbody');
+    const pagination = document.querySelector('.pagination');
+
+    if (tbody && originalTableContent) {
+        tbody.innerHTML = originalTableContent;
+    }
+    if (pagination && originalPaginationContent) {
+        pagination.innerHTML = originalPaginationContent;
+        pagination.style.display = '';
+    }
+
+    // 重置搜索状态
+    allDevices = [];
 }
 
 function getStatusClass(status) {
@@ -508,7 +703,7 @@ function loadAllDevicesForFilterOptions() {
 function initFilters() {
     const isCarOrInstrument = currentDeviceType === 'car' || currentDeviceType === 'instrument';
     if (!isCarOrInstrument) return;
-    
+
     // 从API获取所有设备数据来生成筛选选项
     loadAllDevicesForFilterOptions();
 }
@@ -526,7 +721,7 @@ function initFilterOptions(deviceList) {
 
 
 
-// 应用筛选 - 改为服务端筛选
+// 应用筛选 - 前端筛选，不刷新页面
 function applyFilters() {
     const project = document.getElementById('filterProject')?.value || '';
     const connection = document.getElementById('filterConnection')?.value || '';
@@ -538,29 +733,110 @@ function applyFilters() {
 
     console.log('applyFilters called, osPlatform:', osPlatform);
 
-    // 构建URL参数
-    const params = new URLSearchParams();
-    params.set('type', currentDeviceType);
-    if (project) params.set('filter_project', project);
-    if (connection) params.set('filter_connection', connection);
-    if (osVersion) params.set('filter_os_version', osVersion);
-    if (osPlatform) params.set('filter_os_platform', osPlatform);
-    if (product) params.set('filter_product', product);
-    if (orientation) params.set('filter_orientation', orientation);
-    if (resolution) params.set('filter_resolution', resolution);
+    // 从页面表格中实时读取并筛选
+    const rows = document.querySelectorAll('#deviceTable tbody tr');
+    let visibleCount = 0;
 
-    // 跳转到服务端进行筛选
-    window.location.href = '/pc/devices?' + params.toString();
+    rows.forEach(row => {
+        if (row.classList.contains('empty-state') || row.querySelector('.empty-state')) return;
+
+        const cells = row.querySelectorAll('td');
+        if (cells.length < 5) return;
+
+        // 根据当前设备类型确定列索引
+        let projectAttr = '', connMethod = '', osVer = '', osPlat = '', prodName = '', orient = '', resol = '';
+
+        if (currentDeviceType === 'all') {
+            // 全部设备：序号(0), 型号(1), 设备名称(2), JIRA(3), 类型(4), 状态(5), 操作(6)
+            // 全部设备没有组合筛选字段，显示所有行
+            row.style.display = '';
+            visibleCount++;
+            return;
+        } else if (currentDeviceType === 'car' || currentDeviceType === 'instrument') {
+            // 车机/仪表：序号(0), 型号(1), 设备名称(2), JIRA(3), 项目属性(4), 连接方式(5), 系统版本(6), 系统平台(7), 产品名称(8), 屏幕方向(9), 分辨率(10), 状态(11), 操作(12)
+            projectAttr = cells[4]?.textContent?.trim() || '';
+            connMethod = cells[5]?.textContent?.trim() || '';
+            osVer = cells[6]?.textContent?.trim() || '';
+            osPlat = cells[7]?.textContent?.trim() || '';
+            prodName = cells[8]?.textContent?.trim() || '';
+            orient = cells[9]?.textContent?.trim() || '';
+            resol = cells[10]?.textContent?.trim() || '';
+        } else {
+            // 其他类型没有组合筛选，显示所有行
+            row.style.display = '';
+            visibleCount++;
+            return;
+        }
+
+        // 应用筛选条件
+        let match = true;
+        if (project && !projectAttr.includes(project)) match = false;
+        if (connection && !connMethod.includes(connection)) match = false;
+        if (osVersion && !osVer.includes(osVersion)) match = false;
+        if (osPlatform && !osPlat.includes(osPlatform)) match = false;
+        if (product && !prodName.includes(product)) match = false;
+        if (orientation && !orient.includes(orientation)) match = false;
+        if (resolution && !resol.includes(resolution)) match = false;
+
+        row.style.display = match ? '' : 'none';
+        if (match) visibleCount++;
+    });
+
+    // 更新序号列
+    updateRowNumbers();
+
+    console.log('筛选完成，显示行数:', visibleCount);
 }
 
-// 重置筛选 - 改为服务端重置
+// 更新序号列
+function updateRowNumbers() {
+    const rows = document.querySelectorAll('#deviceTable tbody tr');
+    let index = 1;
+    rows.forEach(row => {
+        if (row.classList.contains('empty-state') || row.querySelector('.empty-state')) return;
+        if (row.style.display === 'none') return;
+
+        const firstCell = row.querySelector('td:first-child');
+        if (firstCell) {
+            firstCell.textContent = index++;
+        }
+    });
+}
+
+// 重置筛选 - 前端重置，不刷新页面
 function resetFilters() {
-    // 跳转到当前设备类型页面，不带筛选参数
-    window.location.href = '/pc/devices?type=' + currentDeviceType;
+    // 重置所有筛选下拉框
+    const filterIds = ['filterProject', 'filterConnection', 'filterOsVersion', 'filterOsPlatform', 'filterProduct', 'filterOrientation', 'filterResolution'];
+    filterIds.forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.value = '';
+        }
+    });
+
+    // 显示所有行
+    const rows = document.querySelectorAll('#deviceTable tbody tr');
+    rows.forEach(row => {
+        if (row.classList.contains('empty-state') || row.querySelector('.empty-state')) return;
+        row.style.display = '';
+    });
+
+    // 更新序号列
+    updateRowNumbers();
 }
 
 // 页面加载完成后初始化筛选器
 document.addEventListener('DOMContentLoaded', function() {
+    // 保存原始表格和分页内容
+    const tbody = document.querySelector('#deviceTable tbody');
+    const pagination = document.querySelector('.pagination');
+    if (tbody) {
+        originalTableContent = tbody.innerHTML;
+    }
+    if (pagination) {
+        originalPaginationContent = pagination.innerHTML;
+    }
+
     // 等待页面完全加载后初始化筛选器
     setTimeout(() => {
         // 从页面表格加载设备数据
@@ -568,6 +844,52 @@ document.addEventListener('DOMContentLoaded', function() {
         allDevices = originalDevices;
         initFilters();
     }, 300);
+
+    // 绑定搜索框事件，使用 input 事件替代 onkeyup，并处理输入法
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        // 输入法开始组合
+        searchInput.addEventListener('compositionstart', function() {
+            isComposing = true;
+        });
+
+        // 输入法结束组合
+        searchInput.addEventListener('compositionend', function(event) {
+            isComposing = false;
+            // 输入法组合完成后触发一次搜索
+            handleSearch(event);
+        });
+
+        // 使用 input 事件监听输入变化
+        searchInput.addEventListener('input', function(event) {
+            handleSearch(event);
+        });
+    }
 });
+
+// ==================== 分页跳转功能 ====================
+function handlePageInput(event) {
+    if (event.key === 'Enter') {
+        goToPage();
+    }
+}
+
+function goToPage() {
+    const pageInput = document.getElementById('pageInput');
+    const targetPage = parseInt(pageInput.value);
+    const maxPage = parseInt(pageInput.getAttribute('max'));
+    
+    if (targetPage < 1 || targetPage > maxPage) {
+        showToast('请输入有效的页码 (1-' + maxPage + ')');
+        return;
+    }
+    
+    // 构建URL参数
+    const params = new URLSearchParams(window.location.search);
+    params.set('page', targetPage);
+    
+    // 跳转到指定页
+    window.location.href = window.location.pathname + '?' + params.toString();
+}
 </script>
 {% endblock %}

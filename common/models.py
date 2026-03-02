@@ -3,9 +3,22 @@
 数据模型定义
 """
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List
 from enum import Enum
+
+
+def _parse_bool(value, default=True):
+    """解析布尔值，处理多种输入格式（bool, int, str）"""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value != 0
+    if isinstance(value, str):
+        return value.lower() in ('true', '1', 'yes', 'on', '是')
+    return default
 
 
 class DeviceStatus(Enum):
@@ -459,6 +472,7 @@ class User:
     current_title: str = ""       # 当前使用的称号ID
     current_avatar_frame: str = ""  # 当前使用的头像边框ID
     current_theme: str = ""       # 当前使用的主题皮肤ID
+    current_cursor: str = ""      # 当前使用的鼠标皮肤ID
     
     @classmethod
     def from_dict(cls, data: dict) -> 'User':
@@ -494,7 +508,8 @@ class User:
             create_time=parse_datetime(data.get('create_time')),
             current_title=data.get('current_title', ''),
             current_avatar_frame=data.get('current_avatar_frame', ''),
-            current_theme=data.get('current_theme', '')
+            current_theme=data.get('current_theme', ''),
+            current_cursor=data.get('current_cursor', '')
         )
     
     def to_dict(self) -> dict:
@@ -514,6 +529,7 @@ class User:
             "current_title": self.current_title,
             "current_avatar_frame": self.current_avatar_frame,
             "current_theme": self.current_theme,
+            "current_cursor": self.current_cursor,
         }
 
 
@@ -1246,13 +1262,31 @@ class Bounty:
     create_time: Optional[datetime] = None
     claim_time: Optional[datetime] = None
     complete_time: Optional[datetime] = None
+    expire_time: Optional[datetime] = None  # 悬赏过期时间（7天自动过期）
     claimer_id: str = ""  # 认领人ID
     claimer_name: str = ""  # 认领人名称
     finder_description: str = ""  # 找到设备的描述
+    is_active: bool = True  # 是否上架（后台管理用）
     
     def __post_init__(self):
         if self.create_time is None:
             self.create_time = datetime.now()
+        if self.expire_time is None:
+            # 默认7天后过期
+            self.expire_time = self.create_time + timedelta(days=7)
+    
+    def is_expired(self) -> bool:
+        """检查悬赏是否已过期"""
+        if self.expire_time is None:
+            return False
+        return datetime.now() > self.expire_time
+    
+    def get_remaining_days(self) -> float:
+        """获取剩余天数"""
+        if self.expire_time is None:
+            return 7.0
+        remaining = self.expire_time - datetime.now()
+        return max(0, remaining.total_seconds() / 86400)
     
     @classmethod
     def from_dict(cls, data: dict) -> 'Bounty':
@@ -1296,9 +1330,11 @@ class Bounty:
             create_time=parse_datetime(data.get('create_time')),
             claim_time=parse_datetime(data.get('claim_time')),
             complete_time=parse_datetime(data.get('complete_time')),
+            expire_time=parse_datetime(data.get('expire_time')),
             claimer_id=data.get('claimer_id', ''),
             claimer_name=data.get('claimer_name', ''),
-            finder_description=data.get('finder_description', '')
+            finder_description=data.get('finder_description', ''),
+            is_active=_parse_bool(data.get('is_active'), True)
         )
     
     def to_dict(self) -> dict:
@@ -1316,9 +1352,13 @@ class Bounty:
             "create_time": self.create_time.strftime("%Y-%m-%d %H:%M:%S") if self.create_time else "",
             "claim_time": self.claim_time.strftime("%Y-%m-%d %H:%M:%S") if self.claim_time else "",
             "complete_time": self.complete_time.strftime("%Y-%m-%d %H:%M:%S") if self.complete_time else "",
+            "expire_time": self.expire_time.strftime("%Y-%m-%d %H:%M:%S") if self.expire_time else "",
             "claimer_id": self.claimer_id,
             "claimer_name": self.claimer_name,
             "finder_description": self.finder_description,
+            "is_active": self.is_active,
+            "is_expired": self.is_expired(),
+            "remaining_days": round(self.get_remaining_days(), 1),
         }
 
 
@@ -1327,6 +1367,7 @@ class ShopItemType(Enum):
     TITLE = "称号"
     AVATAR_FRAME = "头像边框"
     THEME = "主题皮肤"
+    CURSOR = "鼠标皮肤"
 
 
 class ShopItemSource(Enum):

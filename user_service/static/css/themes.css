@@ -575,16 +575,50 @@
     }
 }
 
+/* ============================================
+   侧边栏导航选中状态 - 主题色适配
+   ============================================ */
+
+/* 深海蓝主题 */
+[data-theme="ocean-blue"] .nav-item.active {
+    background: var(--primary);
+    box-shadow: 0 0 15px rgba(0, 212, 255, 0.3);
+}
+
+/* 樱花粉主题 */
+[data-theme="sakura-pink"] .nav-item.active {
+    background: var(--primary);
+    box-shadow: 0 0 15px rgba(255, 107, 157, 0.3);
+}
+
+/* 森林绿主题 */
+[data-theme="forest-green"] .nav-item.active {
+    background: var(--primary);
+    box-shadow: 0 0 15px rgba(116, 198, 157, 0.3);
+}
+
+/* 暗夜紫主题 */
+[data-theme="dark-purple"] .nav-item.active {
+    background: var(--primary);
+    box-shadow: 0 0 15px rgba(162, 155, 254, 0.3);
+}
+
+/* 暖阳橙主题 */
+[data-theme="warm-orange"] .nav-item.active {
+    background: var(--primary);
+    box-shadow: 0 0 15px rgba(225, 112, 85, 0.3);
+}
+
 /* 响应式调整 */
 @media (max-width: 768px) {
     [data-theme] .user-header {
         padding: 16px;
     }
-    
+
     [data-theme] .action-item {
         padding: 16px;
     }
-    
+
     [data-theme] .quick-actions,
     [data-theme] .borrowed-section,
     [data-theme] .notice-section {

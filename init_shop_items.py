@@ -70,6 +70,32 @@ def init_shop_items():
         {"name": "暖阳橙", "description": "温暖阳光风格，活力热情", "price": 500, "icon": "warm-orange"},
     ]
 
+    # 鼠标皮肤列表 - 20个精美设计（适合男生女生）
+    cursor_skins = [
+        # 可爱萌系（适合女生）
+        {"name": "樱花猫爪", "description": "粉嫩樱花色猫爪，萌化少女心", "price": 300, "icon": "cat-paw-pink", "color": "#FFB6C1"},
+        {"name": "彩虹独角兽", "description": "梦幻独角兽角，七彩流光", "price": 400, "icon": "unicorn-rainbow", "color": "#FF69B4"},
+        {"name": "软萌兔耳", "description": "白色兔耳朵，可爱俏皮", "price": 350, "icon": "bunny-ears", "color": "#FFF0F5"},
+        {"name": "魔法星星", "description": "闪烁的魔法星星，梦幻唯美", "price": 320, "icon": "magic-star", "color": "#DDA0DD"},
+        {"name": "糖果爱心", "description": "甜蜜糖果色爱心，甜到心里", "price": 280, "icon": "candy-heart", "color": "#FF1493"},
+        {"name": "云朵棉花糖", "description": "软绵绵的云朵，治愈系", "price": 300, "icon": "cloud-cotton", "color": "#E6E6FA"},
+        {"name": "蝴蝶飞舞", "description": "彩色蝴蝶翅膀，翩翩起舞", "price": 380, "icon": "butterfly-wing", "color": "#DA70D6"},
+        {"name": "珍珠贝壳", "description": "海洋珍珠贝壳，优雅高贵", "price": 420, "icon": "pearl-shell", "color": "#FFE4E1"},
+        # 酷炫科技（适合男生）
+        {"name": "赛博光剑", "description": "霓虹光剑，未来科技感", "price": 450, "icon": "cyber-lightsaber", "color": "#00FFFF"},
+        {"name": "机械齿轮", "description": "精密机械齿轮，工业美学", "price": 400, "icon": "mechanical-gear", "color": "#708090"},
+        {"name": "电竞之刃", "description": "锋利电竞风格，战斗气息", "price": 500, "icon": "gaming-blade", "color": "#DC143C"},
+        {"name": "量子核心", "description": "旋转量子核心，能量澎湃", "price": 480, "icon": "quantum-core", "color": "#4169E1"},
+        {"name": "龙鳞护甲", "description": "古老龙鳞纹理，霸气外露", "price": 550, "icon": "dragon-scale", "color": "#8B0000"},
+        {"name": "黑曜石锋", "description": "黑曜石切割面，冷峻锋利", "price": 420, "icon": "obsidian-edge", "color": "#2F4F4F"},
+        # 中性风格（男女通用）
+        {"name": "极简几何", "description": "简约几何线条，现代极简", "price": 250, "icon": "minimal-geo", "color": "#333333"},
+        {"name": "流光溢彩", "description": "渐变流光效果，炫彩夺目", "price": 380, "icon": "gradient-flow", "color": "#FF6347"},
+        {"name": "水墨丹青", "description": "中国风水墨，古典雅致", "price": 450, "icon": "ink-wash", "color": "#2F4F4F"},
+        {"name": "星空轨迹", "description": "流星划过夜空，浪漫神秘", "price": 400, "icon": "star-trail", "color": "#191970"},
+        {"name": "水晶棱镜", "description": "透明水晶折射，纯净剔透", "price": 350, "icon": "crystal-prism", "color": "#87CEEB"},
+    ]
+
     print("=" * 60)
     print("🛒 初始化积分商城商品数据")
     print("=" * 60)
@@ -145,9 +171,31 @@ def init_shop_items():
             added_count += 1
             print(f"  ✓ {theme_data['name']} - {theme_data['price']}积分 (新增)")
 
+    # 添加鼠标皮肤
+    print("\n🖱️ 添加/更新鼠标皮肤...")
+    for i, cursor_data in enumerate(cursor_skins):
+        item_id = f"cursor_{i+1:03d}"
+        item = ShopItem(
+            id=item_id,
+            name=cursor_data["name"],
+            description=cursor_data["description"],
+            item_type=ShopItemType.CURSOR,
+            price=cursor_data["price"],
+            icon=cursor_data["icon"],
+            color=cursor_data["color"],
+            sort_order=i
+        )
+        db.save_shop_item(item)
+        if item_id in existing_ids:
+            updated_count += 1
+            print(f"  🔄 {cursor_data['name']} - {cursor_data['price']}积分 (更新)")
+        else:
+            added_count += 1
+            print(f"  ✓ {cursor_data['name']} - {cursor_data['price']}积分 (新增)")
+
     print("\n" + "=" * 60)
     print(f"✅ 完成！新增 {added_count} 个，更新 {updated_count} 个")
-    print(f"   共 {len(titles)} 个称号，{len(avatar_frames)} 个头像边框，{len(themes)} 个主题皮肤")
+    print(f"   共 {len(titles)} 个称号，{len(avatar_frames)} 个头像边框，{len(themes)} 个主题皮肤，{len(cursor_skins)} 个鼠标皮肤")
     print("=" * 60)
 
 if __name__ == "__main__":

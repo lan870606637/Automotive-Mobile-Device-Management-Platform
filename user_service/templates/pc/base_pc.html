@@ -8,14 +8,104 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/themes.css') }}">
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     {% block extra_css %}{% endblock %}
+    {% if current_cursor_skin %}
+    <!-- 预加载鼠标皮肤样式，确保页面加载前就已应用 -->
+    <style id="preload-cursor-style">
+        /* 基础覆盖 */
+        * { cursor: url("data:image/svg+xml;base64,{{ get_cursor_svg_base64(current_cursor_skin) }}") 16 16, none !important; }
+        *:active { cursor: url("data:image/svg+xml;base64,{{ get_cursor_svg_base64(current_cursor_skin) }}") 16 16, none !important; }
+        *:hover { cursor: url("data:image/svg+xml;base64,{{ get_cursor_svg_base64(current_cursor_skin) }}") 16 16, none !important; }
+        /* 链接和按钮 */
+        a, a:hover, a:active, a:focus, a:visited, a:link,
+        button, button:hover, button:active, button:focus,
+        .nav-item, .nav-item:hover, .nav-item:active, .nav-item:focus,
+        .btn, .btn:hover, .btn:active, .btn:focus,
+        .modal-close, .modal-close:hover,
+        [role="button"], [role="button"]:hover,
+        [role="link"], [role="link"]:hover,
+        input[type="submit"], input[type="button"], input[type="reset"] {
+            cursor: url("data:image/svg+xml;base64,{{ get_cursor_svg_base64(current_cursor_skin) }}") 16 16, none !important;
+        }
+        /* 覆盖 pc_style.css 中的 cursor: pointer */
+        .btn,
+        .modal-close,
+        .theme-preview-card,
+        .device-card,
+        .stat-card,
+        .action-btn,
+        .icon-btn,
+        .filter-btn,
+        .page-btn,
+        .tab-btn,
+        .menu-item,
+        .dropdown-item,
+        .list-item,
+        .card,
+        .clickable,
+        [onclick] {
+            cursor: url("data:image/svg+xml;base64,{{ get_cursor_svg_base64(current_cursor_skin) }}") 16 16, none !important;
+        }
+        /* 最高优先级覆盖 - 使用双重选择器 */
+        html body .btn,
+        html body .btn:hover,
+        html body a,
+        html body a:hover,
+        html body button,
+        html body button:hover,
+        html body .nav-item,
+        html body .nav-item:hover,
+        html body .modal-close,
+        html body .modal-close:hover,
+        html body .theme-preview-card,
+        html body .device-card,
+        html body .stat-card,
+        html body [onclick] {
+            cursor: url("data:image/svg+xml;base64,{{ get_cursor_svg_base64(current_cursor_skin) }}") 16 16, none !important;
+        }
+    </style>
+    {% endif %}
 </head>
-<body {% if current_theme %}data-theme="{{ current_theme }}"{% endif %}>
+<body {% if current_theme %}data-theme="{{ current_theme }}"{% endif %} {% if current_cursor_skin %}data-cursor="{{ current_cursor_skin }}"{% endif %}>
     <div class="pc-layout">
         <!-- 侧边栏 -->
         <aside class="sidebar">
             <div class="sidebar-header">
-                <span class="logo">🚗</span>
-                <span class="logo-text">设备管理</span>
+                <div class="logo-wrapper">
+                    <svg class="logo-svg" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <!-- 顶层攒尖顶 -->
+                        <path d="M16 6L20 2L24 6" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
+                        <circle cx="20" cy="4" r="1.5" fill="#fff"/>
+                        <!-- 顶层屋檐 -->
+                        <path d="M8 12L20 6L32 12" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M6 12H34" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+                        <!-- 顶层阁身 -->
+                        <rect x="14" y="12" width="12" height="6" stroke="#fff" stroke-width="1.5" fill="none"/>
+                        <path d="M16 14H24" stroke="#fff" stroke-width="1" stroke-linecap="round"/>
+                        <!-- 中层屋檐 -->
+                        <path d="M6 20L20 14L34 20" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M4 20H36" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+                        <!-- 中层阁身 -->
+                        <rect x="12" y="20" width="16" height="7" stroke="#fff" stroke-width="1.5" fill="none"/>
+                        <path d="M14 22H26" stroke="#fff" stroke-width="1" stroke-linecap="round"/>
+                        <path d="M14 24H26" stroke="#fff" stroke-width="1" stroke-linecap="round"/>
+                        <!-- 底层屋檐 -->
+                        <path d="M4 29L20 22L36 29" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M2 29H38" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+                        <!-- 底层阁身 -->
+                        <rect x="10" y="29" width="20" height="8" rx="1" stroke="#fff" stroke-width="2" fill="none"/>
+                        <!-- 拱门 -->
+                        <path d="M16 37V32C16 30 17 29 20 29C23 29 24 30 24 32V37" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        <!-- 飞檐装饰 -->
+                        <path d="M8 12L6 10" stroke="#fff" stroke-width="1" stroke-linecap="round"/>
+                        <path d="M32 12L34 10" stroke="#fff" stroke-width="1" stroke-linecap="round"/>
+                        <path d="M6 20L4 18" stroke="#fff" stroke-width="1" stroke-linecap="round"/>
+                        <path d="M34 20L36 18" stroke="#fff" stroke-width="1" stroke-linecap="round"/>
+                    </svg>
+                </div>
+                <div class="logo-text-wrapper">
+                    <span class="logo-text">Carbit藏宝阁</span>
+                    <span class="logo-subtitle">Treasure House</span>
+                </div>
             </div>
             
             <!-- 总设备迷你数据 -->
@@ -66,7 +156,7 @@
                 </a>
                 <a href="{{ url_for('pc_profile') }}" class="nav-item {% if active_nav == 'profile' %}active{% endif %}">
                     <span class="nav-icon">👤</span>
-                    <span class="nav-text">个人资料</span>
+                    <span class="nav-text">个人中心</span>
                 </a>
             </nav>
             <div class="sidebar-footer">
@@ -520,7 +610,7 @@
                         const statusColor = statusColors[device.status] || '#8c8c8c';
                         const displayStatus = device.status || '未知';
                         return `
-                        <div class="global-search-suggestion-item" onclick="goToDeviceWithPoints('${device.id}', '${device.device_type}')">
+                        <div class="global-search-suggestion-item" onclick="goToDeviceWithPoints('${device.id}', '${device.device_type}', '${escapeHtml(device.name)}')">
                             <span class="suggestion-name">${escapeHtml(device.name)}</span>
                             <span class="suggestion-type">${device.device_type}</span>
                             <span class="suggestion-status" style="font-size: 11px; padding: 2px 8px; border-radius: 4px; background-color: ${statusColor}20; color: ${statusColor}; border: 1px solid ${statusColor}40; margin-left: auto; flex-shrink: 0;">${displayStatus}</span>
@@ -541,6 +631,9 @@
                 const value = document.getElementById('globalDeviceSearch').value.trim();
                 if (!value) return;
 
+                // 保存搜索历史
+                addSearchHistory(value);
+
                 // 调用API添加搜索积分
                 try {
                     const response = await fetch('/api/add-search-points', {
@@ -551,7 +644,7 @@
                     });
                     const data = await response.json();
                     if (data.success && data.points_added > 0) {
-                        showToast(`🎉 搜索设备 +${data.points_added} 积分！`);
+                        showPointsToast(`搜索设备 +${data.points_added} 积分！`, data.total_points || 0);
                     }
                 } catch (error) {
                     console.log('添加搜索积分失败:', error);
@@ -567,24 +660,23 @@
                     return deviceName.includes(searchTerm) || deviceModel.includes(searchTerm);
                 });
 
-                // 如果没有匹配结果，显示提示
-                if (matches.length === 0) {
-                    showToast('无此设备');
-                    return;
-                }
-
                 // 如果只有一个匹配结果，直接跳转到设备详情页
                 if (matches.length === 1) {
                     goToDevice(matches[0].id, matches[0].device_type);
                 } else {
-                    // 否则跳转到设备列表页
-                    window.location.href = `/pc/devices?search=${encodeURIComponent(value)}`;
+                    // 否则跳转到全部设备列表页（让后端搜索）
+                    window.location.href = `/pc/devices?type=all&search=${encodeURIComponent(value)}`;
                 }
             }
         }
 
         // 跳转到设备详情（带积分）
-        async function goToDeviceWithPoints(deviceId, deviceType) {
+        async function goToDeviceWithPoints(deviceId, deviceType, deviceName) {
+            // 保存搜索历史（使用设备名称）
+            if (deviceName) {
+                addSearchHistory(deviceName);
+            }
+
             // 调用API添加搜索积分
             try {
                 const response = await fetch('/api/add-search-points', {
@@ -595,7 +687,7 @@
                 });
                 const data = await response.json();
                 if (data.success && data.points_added > 0) {
-                    showToast(`🎉 搜索设备 +${data.points_added} 积分！`);
+                    showPointsToast(`搜索设备 +${data.points_added} 积分！`, data.total_points || 0);
                 }
             } catch (error) {
                 console.log('添加搜索积分失败:', error);
@@ -620,6 +712,120 @@
             }
         });
 
+        // ==================== 搜索历史记录功能 ====================
+        const SEARCH_HISTORY_KEY = 'globalSearchHistory';
+        const MAX_HISTORY_ITEMS = 10;
+
+        // 获取搜索历史
+        function getSearchHistory() {
+            try {
+                const history = localStorage.getItem(SEARCH_HISTORY_KEY);
+                return history ? JSON.parse(history) : [];
+            } catch (e) {
+                return [];
+            }
+        }
+
+        // 保存搜索历史
+        function saveSearchHistory(history) {
+            try {
+                localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(history));
+            } catch (e) {
+                console.log('保存搜索历史失败:', e);
+            }
+        }
+
+        // 添加搜索记录
+        function addSearchHistory(searchTerm) {
+            if (!searchTerm || !searchTerm.trim()) return;
+            
+            const term = searchTerm.trim();
+            let history = getSearchHistory();
+            
+            // 移除重复项
+            history = history.filter(item => item !== term);
+            
+            // 添加到开头
+            history.unshift(term);
+            
+            // 限制数量
+            if (history.length > MAX_HISTORY_ITEMS) {
+                history = history.slice(0, MAX_HISTORY_ITEMS);
+            }
+            
+            saveSearchHistory(history);
+        }
+
+        // 清除搜索历史
+        function clearSearchHistory() {
+            localStorage.removeItem(SEARCH_HISTORY_KEY);
+            renderSearchHistory();
+        }
+
+        // 删除单条历史记录
+        function removeSearchHistoryItem(index) {
+            let history = getSearchHistory();
+            history.splice(index, 1);
+            saveSearchHistory(history);
+            renderSearchHistory();
+        }
+
+        // 渲染搜索历史
+        function renderSearchHistory() {
+            const suggestionsDiv = document.getElementById('globalSearchSuggestions');
+            const history = getSearchHistory();
+            
+            if (history.length === 0) {
+                suggestionsDiv.innerHTML = '<div class="global-search-no-result">暂无搜索历史</div>';
+            } else {
+                suggestionsDiv.innerHTML = `
+                    <div class="global-search-history-header">
+                        <span>搜索历史</span>
+                        <span class="clear-history" onclick="clearSearchHistory()">清空</span>
+                    </div>
+                    ${history.map((term, index) => {
+                        const escapedTerm = escapeHtml(term);
+                        return `
+                        <div class="global-search-history-item" data-index="${index}">
+                            <span class="history-icon">🕐</span>
+                            <span class="history-text">${escapedTerm}</span>
+                            <span class="history-delete" data-index="${index}">×</span>
+                        </div>
+                        `;
+                    }).join('')}
+                `;
+                
+                // 绑定点击事件 - 点击历史项进行搜索
+                suggestionsDiv.querySelectorAll('.global-search-history-item').forEach(item => {
+                    item.addEventListener('click', function(e) {
+                        if (e.target.classList.contains('history-delete')) {
+                            // 删除按钮点击
+                            const index = parseInt(e.target.getAttribute('data-index'));
+                            removeSearchHistoryItem(index);
+                        } else {
+                            // 历史项点击 - 使用原始值搜索
+                            const index = parseInt(this.getAttribute('data-index'));
+                            const history = getSearchHistory();
+                            const term = history[index];
+                            useHistorySearch(term);
+                        }
+                    });
+                });
+            }
+            suggestionsDiv.style.display = 'block';
+        }
+
+        // 使用历史记录搜索
+        function useHistorySearch(term) {
+            const searchInput = document.getElementById('globalDeviceSearch');
+            searchInput.value = term;
+            searchInput.focus();
+            
+            // 触发搜索
+            const event = new KeyboardEvent('keydown', { key: 'Enter' });
+            handleGlobalSearchKeydown(event);
+        }
+
         // 页面加载时初始化搜索
         document.addEventListener('DOMContentLoaded', function() {
             loadAllDevicesForSearch();
@@ -630,6 +836,14 @@
                     handleGlobalSearchInput(e.target.value);
                 });
                 searchInput.addEventListener('keydown', handleGlobalSearchKeydown);
+                
+                // 点击搜索框显示历史记录
+                searchInput.addEventListener('focus', function() {
+                    const value = this.value.trim();
+                    if (!value) {
+                        renderSearchHistory();
+                    }
+                });
             }
         });
 
@@ -672,18 +886,22 @@
         // 显示下一个预约确认弹窗
         function showNextReservationConfirm() {
             if (currentReservationIndex >= pendingReservations.length) {
+                // 所有预约处理完成，关闭弹窗并刷新页面
+                document.getElementById('reservationConfirmModal').style.display = 'none';
                 pendingReservations = [];
                 currentReservationIndex = 0;
+                // 刷新页面以更新数据
+                location.reload();
                 return;
             }
-            
+
             const reservation = pendingReservations[currentReservationIndex];
             document.getElementById('confirmReserverName').textContent = reservation.reserver_name;
             document.getElementById('confirmDeviceName').textContent = reservation.device_name;
             document.getElementById('confirmStartTime').textContent = reservation.start_time;
             document.getElementById('confirmEndTime').textContent = reservation.end_time;
             document.getElementById('confirmDeviceLink').href = `/pc/device/${reservation.device_id}?device_type=${encodeURIComponent(reservation.device_type)}`;
-            
+
             // 显示弹窗
             document.getElementById('reservationConfirmModal').style.display = 'flex';
         }
@@ -885,7 +1103,7 @@
                 }
                 
                 if (notification.device_name) {
-                    content += `<br><span style="color: #666; font-size: 12px;">相关设备: ${notification.device_name}</span>`;
+                    content += `<br><span class="notification-device-name" style="font-size: 12px;">相关设备: ${notification.device_name}</span>`;
                 }
 
                 const isUnread = !notification.is_read && !getReadNotificationIds().includes(notification.id);
@@ -925,6 +1143,61 @@
                     toast.classList.remove('show');
                 }, duration);
             }
+        }
+
+        // 积分通知函数 - 使用与首次登录相同的样式
+        function showPointsToast(message, points, icon = '🎉') {
+            // 移除已存在的积分通知
+            const existingToast = document.getElementById('pointsToast');
+            if (existingToast) {
+                existingToast.remove();
+            }
+
+            // 创建通知元素
+            const toast = document.createElement('div');
+            toast.id = 'pointsToast';
+            toast.style.cssText = 'position: fixed; top: 20px; right: 20px; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 16px 24px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); z-index: 10000; animation: slideIn 0.5s ease;';
+            toast.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span style="font-size: 32px;">${icon}</span>
+                    <div>
+                        <div style="font-weight: 600; font-size: 16px;">${message}</div>
+                        <div style="font-size: 13px; opacity: 0.9; margin-top: 4px;">当前积分: ${points}</div>
+                    </div>
+                    <button onclick="this.closest('#pointsToast').remove()" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 16px; margin-left: 8px;">×</button>
+                </div>
+            `;
+
+            // 添加动画样式
+            const style = document.createElement('style');
+            style.textContent = `
+                @keyframes slideIn {
+                    from { transform: translateX(100%); opacity: 0; }
+                    to { transform: translateX(0); opacity: 1; }
+                }
+            `;
+            document.head.appendChild(style);
+
+            document.body.appendChild(toast);
+
+            // 5秒后自动消失
+            setTimeout(() => {
+                toast.style.transition = 'all 0.5s ease';
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(100%)';
+                setTimeout(() => toast.remove(), 500);
+            }, 5000);
+        }
+
+        // 处理API响应中的积分通知
+        function handlePointsResponse(data, defaultIcon = '🎉') {
+            if (data.success && data.points_added !== undefined && data.points_added !== 0) {
+                const icon = data.points_added > 0 ? defaultIcon : '💸';
+                const action = data.points_added > 0 ? '获得' : '扣除';
+                showPointsToast(`${action} ${Math.abs(data.points_added)} 积分！`, data.total_points || 0, icon);
+                return true;
+            }
+            return false;
         }
     </script>
 
@@ -1037,7 +1310,821 @@
             color: #999;
             font-size: 14px;
         }
+
+        /* 搜索历史样式 */
+        .global-search-history-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 16px;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 12px;
+            color: #999;
+        }
+
+        .global-search-history-header .clear-history {
+            color: #1890ff;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+
+        .global-search-history-header .clear-history:hover {
+            color: #40a9ff;
+        }
+
+        .global-search-history-item {
+            padding: 10px 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: background 0.2s;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .global-search-history-item:last-child {
+            border-bottom: none;
+        }
+
+        .global-search-history-item:hover {
+            background: #e6f7ff;
+        }
+
+        .global-search-history-item .history-icon {
+            font-size: 14px;
+            color: #999;
+            flex-shrink: 0;
+        }
+
+        .global-search-history-item .history-text {
+            font-size: 14px;
+            color: #333;
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .global-search-history-item .history-delete {
+            font-size: 18px;
+            color: #999;
+            cursor: pointer;
+            padding: 0 4px;
+            transition: color 0.2s;
+            flex-shrink: 0;
+        }
+
+        .global-search-history-item .history-delete:hover {
+            color: #ff4d4f;
+        }
+
+        /* 暗色主题 - 全局搜索联想结果 */
+        [data-theme="ocean-blue"] .global-search-suggestion-item .suggestion-name,
+        [data-theme="dark-purple"] .global-search-suggestion-item .suggestion-name,
+        [data-theme="forest-green"] .global-search-suggestion-item .suggestion-name {
+            color: rgba(255,255,255,0.95);
+        }
+
+        [data-theme="ocean-blue"] .global-search-suggestion-item .suggestion-type,
+        [data-theme="dark-purple"] .global-search-suggestion-item .suggestion-type,
+        [data-theme="forest-green"] .global-search-suggestion-item .suggestion-type {
+            color: rgba(255,255,255,0.7);
+            background: rgba(255,255,255,0.15);
+        }
+
+        [data-theme="ocean-blue"] .global-search-no-result,
+        [data-theme="dark-purple"] .global-search-no-result,
+        [data-theme="forest-green"] .global-search-no-result {
+            color: rgba(255,255,255,0.5);
+        }
+
+        /* 暗色主题 - 搜索历史 */
+        [data-theme="ocean-blue"] .global-search-history-header,
+        [data-theme="dark-purple"] .global-search-history-header,
+        [data-theme="forest-green"] .global-search-history-header {
+            color: rgba(255,255,255,0.5);
+            border-bottom-color: rgba(255,255,255,0.1);
+        }
+
+        [data-theme="ocean-blue"] .global-search-history-item,
+        [data-theme="dark-purple"] .global-search-history-item,
+        [data-theme="forest-green"] .global-search-history-item {
+            border-bottom-color: rgba(255,255,255,0.1);
+        }
+
+        [data-theme="ocean-blue"] .global-search-history-item:hover,
+        [data-theme="dark-purple"] .global-search-history-item:hover,
+        [data-theme="forest-green"] .global-search-history-item:hover {
+            background: rgba(24, 144, 255, 0.2);
+        }
+
+        [data-theme="ocean-blue"] .global-search-history-item .history-text,
+        [data-theme="dark-purple"] .global-search-history-item .history-text,
+        [data-theme="forest-green"] .global-search-history-item .history-text {
+            color: rgba(255,255,255,0.9);
+        }
+
+        [data-theme="ocean-blue"] .global-search-history-item .history-icon,
+        [data-theme="dark-purple"] .global-search-history-item .history-icon,
+        [data-theme="forest-green"] .global-search-history-item .history-icon {
+            color: rgba(255,255,255,0.5);
+        }
+
+        [data-theme="ocean-blue"] .global-search-history-item .history-delete,
+        [data-theme="dark-purple"] .global-search-history-item .history-delete,
+        [data-theme="forest-green"] .global-search-history-item .history-delete {
+            color: rgba(255,255,255,0.5);
+        }
+
+        [data-theme="ocean-blue"] .global-search-history-item .history-delete:hover,
+        [data-theme="dark-purple"] .global-search-history-item .history-delete:hover,
+        [data-theme="forest-green"] .global-search-history-item .history-delete:hover {
+            color: #ff7875;
+        }
+
+        /* ==================== 鼠标皮肤样式 ==================== */
+        /* 自定义鼠标光标 - 跟随鼠标的元素 */
+        .custom-cursor {
+            position: fixed;
+            pointer-events: none;
+            z-index: 99999;
+            font-size: 24px;
+            transform: translate(-50%, -50%);
+            transition: opacity 0.2s;
+            will-change: transform;
+        }
+
+        .custom-cursor.hidden {
+            opacity: 0;
+        }
+
+        /* 鼠标皮肤预览样式 */
+        .cursor-skin-preview {
+            position: fixed;
+            pointer-events: none;
+            z-index: 99999;
+            font-size: 28px;
+            transform: translate(-50%, -50%);
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+            will-change: transform;
+        }
+
+        /* 特定鼠标皮肤的动画效果 */
+        .cursor-skin-cat-paw-pink {
+            animation: cursorBounce 0.5s ease infinite alternate;
+        }
+
+        .cursor-skin-unicorn-rainbow {
+            animation: cursorSparkle 1s ease infinite;
+        }
+
+        .cursor-skin-magic-star {
+            animation: cursorRotate 2s linear infinite;
+        }
+
+        .cursor-skin-butterfly-wing {
+            animation: cursorFlutter 0.3s ease infinite alternate;
+        }
+
+        .cursor-skin-dragon-scale {
+            animation: cursorPulse 1.5s ease infinite;
+        }
+
+        .cursor-skin-quantum-core {
+            animation: cursorSpin 3s linear infinite;
+        }
+
+        .cursor-skin-crystal-prism {
+            animation: cursorShimmer 2s ease infinite;
+        }
+
+        @keyframes cursorBounce {
+            from { transform: translate(-50%, -50%) scale(1); }
+            to { transform: translate(-50%, -50%) scale(1.1); }
+        }
+
+        @keyframes cursorSparkle {
+            0%, 100% { filter: drop-shadow(0 0 2px #ff69b4) drop-shadow(0 0 4px #ff1493); }
+            50% { filter: drop-shadow(0 0 6px #ff69b4) drop-shadow(0 0 12px #ff1493); }
+        }
+
+        @keyframes cursorRotate {
+            from { transform: translate(-50%, -50%) rotate(0deg); }
+            to { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+
+        @keyframes cursorFlutter {
+            from { transform: translate(-50%, -50%) rotate(-5deg); }
+            to { transform: translate(-50%, -50%) rotate(5deg); }
+        }
+
+        @keyframes cursorPulse {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); filter: drop-shadow(0 0 2px #8b0000); }
+            50% { transform: translate(-50%, -50%) scale(1.15); filter: drop-shadow(0 0 8px #dc143c); }
+        }
+
+        @keyframes cursorSpin {
+            from { transform: translate(-50%, -50%) rotate(0deg); }
+            to { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+
+        @keyframes cursorShimmer {
+            0%, 100% { opacity: 1; filter: brightness(1); }
+            50% { opacity: 0.8; filter: brightness(1.3); }
+        }
+
+        /* 隐藏默认光标时的样式 - 应用到所有元素 */
+        html.custom-cursor-active,
+        html.custom-cursor-active *,
+        body.custom-cursor-active,
+        body.custom-cursor-active * {
+            cursor: none !important;
+        }
+
+        /* 禁用点击时的默认光标 - 覆盖所有可能的状态 */
+        html.custom-cursor-active *:active,
+        html.custom-cursor-active *:focus,
+        html.custom-cursor-active *:hover,
+        html.custom-cursor-active *:visited,
+        html.custom-cursor-active *:link,
+        body.custom-cursor-active *:active,
+        body.custom-cursor-active *:focus,
+        body.custom-cursor-active *:hover,
+        body.custom-cursor-active *:visited,
+        body.custom-cursor-active *:link {
+            cursor: none !important;
+        }
+
+        /* 针对侧边栏和导航项的特殊处理 */
+        html.custom-cursor-active .sidebar,
+        html.custom-cursor-active .sidebar *,
+        html.custom-cursor-active .sidebar-nav,
+        html.custom-cursor-active .sidebar-nav *,
+        html.custom-cursor-active .nav-item,
+        html.custom-cursor-active .nav-item *,
+        html.custom-cursor-active a,
+        html.custom-cursor-active a *,
+        html.custom-cursor-active button,
+        html.custom-cursor-active button *,
+        body.custom-cursor-active .sidebar,
+        body.custom-cursor-active .sidebar *,
+        body.custom-cursor-active .sidebar-nav,
+        body.custom-cursor-active .sidebar-nav *,
+        body.custom-cursor-active .nav-item,
+        body.custom-cursor-active .nav-item *,
+        body.custom-cursor-active a,
+        body.custom-cursor-active a *,
+        body.custom-cursor-active button,
+        body.custom-cursor-active button * {
+            cursor: none !important;
+        }
+
+        /* 覆盖 pc_style.css 和 themes.css 中的 cursor: pointer */
+        html.custom-cursor-active .btn,
+        html.custom-cursor-active .btn:hover,
+        html.custom-cursor-active .btn:active,
+        html.custom-cursor-active .btn:focus,
+        html.custom-cursor-active .modal-close,
+        html.custom-cursor-active .modal-close:hover,
+        html.custom-cursor-active .theme-preview-card,
+        html.custom-cursor-active .theme-preview-card:hover,
+        html.custom-cursor-active .device-card,
+        html.custom-cursor-active .device-card:hover,
+        html.custom-cursor-active .stat-card,
+        html.custom-cursor-active .stat-card:hover,
+        html.custom-cursor-active [onclick],
+        body.custom-cursor-active .btn,
+        body.custom-cursor-active .btn:hover,
+        body.custom-cursor-active .btn:active,
+        body.custom-cursor-active .btn:focus,
+        body.custom-cursor-active .modal-close,
+        body.custom-cursor-active .modal-close:hover,
+        body.custom-cursor-active .theme-preview-card,
+        body.custom-cursor-active .theme-preview-card:hover,
+        body.custom-cursor-active .device-card,
+        body.custom-cursor-active .device-card:hover,
+        body.custom-cursor-active .stat-card,
+        body.custom-cursor-active .stat-card:hover,
+        body.custom-cursor-active [onclick] {
+            cursor: none !important;
+        }
+
+        /* 强制所有元素使用自定义光标 */
+        html.custom-cursor-active,
+        body.custom-cursor-active {
+            cursor: url("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"), auto !important;
+        }
+
+        /* 针对Webkit浏览器的额外处理 */
+        html.custom-cursor-active,
+        body.custom-cursor-active {
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+
+        /* 允许文本选择但保持光标隐藏 */
+        html.custom-cursor-active p,
+        html.custom-cursor-active span,
+        html.custom-cursor-active div,
+        body.custom-cursor-active p,
+        body.custom-cursor-active span,
+        body.custom-cursor-active div {
+            -webkit-user-select: text;
+            -moz-user-select: text;
+            -ms-user-select: text;
+            user-select: text;
+        }
     </style>
+
+    <!-- 鼠标皮肤功能 -->
+    <script>
+        // 鼠标皮肤配置
+        const cursorSkinConfig = {
+            'cat-paw-pink': { emoji: '🐾', animation: 'cursorBounce' },
+            'unicorn-rainbow': { emoji: '🦄', animation: 'cursorSparkle' },
+            'bunny-ears': { emoji: '🐰', animation: '' },
+            'magic-star': { emoji: '⭐', animation: 'cursorRotate' },
+            'candy-heart': { emoji: '🍬', animation: '' },
+            'cloud-cotton': { emoji: '☁️', animation: '' },
+            'butterfly-wing': { emoji: '🦋', animation: 'cursorFlutter' },
+            'pearl-shell': { emoji: '🐚', animation: '' },
+            'cyber-lightsaber': { emoji: '⚔️', animation: '' },
+            'mechanical-gear': { emoji: '⚙️', animation: 'cursorSpin' },
+            'gaming-blade': { emoji: '🗡️', animation: '' },
+            'quantum-core': { emoji: '🔮', animation: 'cursorSpin' },
+            'dragon-scale': { emoji: '🐲', animation: 'cursorPulse' },
+            'obsidian-edge': { emoji: '💎', animation: '' },
+            'minimal-geo': { emoji: '◆', animation: '' },
+            'gradient-flow': { emoji: '🌈', animation: '' },
+            'ink-wash': { emoji: '🎨', animation: '' },
+            'star-trail': { emoji: '✨', animation: 'cursorSparkle' },
+            'crystal-prism': { emoji: '💠', animation: 'cursorShimmer' },
+        };
+
+        let cursorElement = null;
+        let currentCursorSkin = null;
+        let mouseX = 0;
+        let mouseY = 0;
+        let rafId = null;
+
+        // 创建SVG光标URL (使用Base64编码)
+        function createCursorUrl(emoji) {
+            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><text x="0" y="24" font-size="24">${emoji}</text></svg>`;
+            const base64 = btoa(unescape(encodeURIComponent(svg)));
+            // 使用 none 而不是 auto 作为 fallback，防止显示默认光标
+            return `url("data:image/svg+xml;base64,${base64}") 16 16, none`;
+        }
+
+        // 初始化鼠标皮肤
+        function initCursorSkin(cursorSkinId) {
+            // 清理旧的鼠标皮肤
+            removeCursorSkin();
+
+            if (!cursorSkinId || cursorSkinId === 'default' || !cursorSkinConfig[cursorSkinId]) {
+                return;
+            }
+
+            currentCursorSkin = cursorSkinId;
+            const config = cursorSkinConfig[cursorSkinId];
+
+            // 方法1: 使用CSS cursor属性直接设置（最可靠，无闪烁）
+            const cursorUrl = createCursorUrl(config.emoji);
+
+            // 为所有元素设置光标 - 使用更具体的选择器
+            const style = document.createElement('style');
+            style.id = 'cursor-skin-style';
+            // 使用 !important 确保优先级最高，并且不使用 auto 作为 fallback
+            style.textContent = `
+                html, body { cursor: ${cursorUrl} !important; }
+                * { cursor: ${cursorUrl} !important; }
+                *:active { cursor: ${cursorUrl} !important; }
+                *:hover { cursor: ${cursorUrl} !important; }
+                *:focus { cursor: ${cursorUrl} !important; }
+                *:visited { cursor: ${cursorUrl} !important; }
+                *:link { cursor: ${cursorUrl} !important; }
+                /* 强制覆盖所有可能的元素 */
+                a, a:hover, a:active, a:focus, a:visited, a:link,
+                button, button:hover, button:active, button:focus,
+                .nav-item, .nav-item:hover, .nav-item:active, .nav-item:focus,
+                .sidebar, .sidebar:hover, .sidebar *, .sidebar *:hover,
+                input, input:hover, input:focus,
+                select, select:hover, select:focus,
+                textarea, textarea:hover, textarea:focus,
+                [role="button"], [role="link"],
+                .btn, .btn:hover, .btn:active, .btn:focus,
+                .modal-close, .modal-close:hover {
+                    cursor: ${cursorUrl} !important;
+                }
+                /* 特别针对 pc_style.css 的高优先级覆盖 */
+                html body .btn,
+                html body .btn:hover,
+                html body .btn:active,
+                html body .btn:focus,
+                html body .modal-close,
+                html body .modal-close:hover,
+                html body a,
+                html body a:hover,
+                html body button,
+                html body button:hover,
+                html body .nav-item,
+                html body .nav-item:hover,
+                html body .theme-preview-card,
+                html body .device-card,
+                html body .stat-card,
+                html body [onclick] {
+                    cursor: ${cursorUrl} !important;
+                }
+                /* 针对所有可能设置了 cursor: pointer 的类 */
+                html body .action-btn,
+                html body .icon-btn,
+                html body .filter-btn,
+                html body .page-btn,
+                html body .tab-btn,
+                html body .menu-item,
+                html body .dropdown-item,
+                html body .list-item,
+                html body .card,
+                html body .clickable {
+                    cursor: ${cursorUrl} !important;
+                }
+            `;
+            document.head.appendChild(style);
+
+            // 同时设置 body 和 html 的 cursor
+            document.body.style.cursor = cursorUrl;
+            document.documentElement.style.cursor = cursorUrl;
+
+            // 方法2: 同时创建跟随元素用于动画效果（可选）
+            if (config.animation) {
+                cursorElement = document.createElement('div');
+                cursorElement.className = 'cursor-skin-preview';
+                cursorElement.textContent = config.emoji;
+                cursorElement.style.animation = `${config.animation} ${getAnimationDuration(config.animation)}`;
+                document.body.appendChild(cursorElement);
+
+                // 绑定鼠标事件用于动画元素
+                document.addEventListener('mousemove', handleMouseMove, { passive: true });
+                document.addEventListener('mouseenter', handleMouseEnter, { passive: true });
+                document.addEventListener('mouseleave', handleMouseLeave, { passive: true });
+
+                // 开始动画循环
+                updateCursorPosition();
+            }
+
+            // 添加 class 到 html 和 body
+            document.body.classList.add('custom-cursor-active');
+            document.documentElement.classList.add('custom-cursor-active');
+
+            // 绑定全局鼠标事件以保持光标
+            document.addEventListener('mousedown', handleMouseEvent, { passive: true });
+            document.addEventListener('mouseup', handleMouseEvent, { passive: true });
+            document.addEventListener('click', handleMouseEvent, { passive: true });
+            document.addEventListener('mouseover', handleMouseEvent, { passive: true });
+            document.addEventListener('mouseenter', handleMouseEvent, { passive: true });
+
+            // 强制应用到所有已存在的元素
+            forceApplyCursorToAllElements(cursorUrl);
+        }
+
+        // 强制将光标样式应用到所有元素
+        function forceApplyCursorToAllElements(cursorUrl) {
+            // 立即应用到 body 和 html
+            document.body.style.cursor = cursorUrl;
+            document.documentElement.style.cursor = cursorUrl;
+
+            // 应用到所有常见交互元素 - 包括 pc_style.css 和 themes.css 中的类
+            const selectors = [
+                'a', 'button', 'input', 'select', 'textarea',
+                '.nav-item', '.sidebar', '.sidebar *',
+                '.btn', '[role="button"]', '[role="link"]',
+                '.modal-close', '.theme-preview-card',
+                '.device-card', '.stat-card', '.action-btn',
+                '.icon-btn', '.filter-btn', '.page-btn',
+                '.tab-btn', '.menu-item', '.dropdown-item',
+                '.list-item', '.card', '.clickable',
+                '[onclick]'
+            ];
+
+            selectors.forEach(selector => {
+                try {
+                    const elements = document.querySelectorAll(selector);
+                    elements.forEach(el => {
+                        el.style.cursor = cursorUrl;
+                    });
+                } catch (e) {
+                    // 忽略无效选择器
+                }
+            });
+
+            // 使用 RAF 确保在下一帧也应用
+            requestAnimationFrame(() => {
+                document.body.style.cursor = cursorUrl;
+                document.documentElement.style.cursor = cursorUrl;
+            });
+
+            // 延迟再次应用，确保动态内容也被覆盖
+            setTimeout(() => {
+                document.body.style.cursor = cursorUrl;
+                document.documentElement.style.cursor = cursorUrl;
+                selectors.forEach(selector => {
+                    try {
+                        const elements = document.querySelectorAll(selector);
+                        elements.forEach(el => {
+                            el.style.cursor = cursorUrl;
+                        });
+                    } catch (e) {}
+                });
+            }, 100);
+        }
+
+        // 获取动画持续时间
+        function getAnimationDuration(animationName) {
+            const durations = {
+                'cursorBounce': '0.5s ease infinite alternate',
+                'cursorSparkle': '1s ease infinite',
+                'cursorRotate': '2s linear infinite',
+                'cursorFlutter': '0.3s ease infinite alternate',
+                'cursorPulse': '1.5s ease infinite',
+                'cursorSpin': '3s linear infinite',
+                'cursorShimmer': '2s ease infinite'
+            };
+            return durations[animationName] || '';
+        }
+
+        // 处理鼠标移动
+        function handleMouseMove(e) {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+
+            // 确保光标元素始终可见
+            if (cursorElement && cursorElement.classList.contains('hidden')) {
+                cursorElement.classList.remove('hidden');
+            }
+        }
+
+        // 处理鼠标进入页面
+        function handleMouseEnter() {
+            if (cursorElement) {
+                cursorElement.classList.remove('hidden');
+            }
+        }
+
+        // 处理鼠标离开页面
+        function handleMouseLeave() {
+            if (cursorElement) {
+                cursorElement.classList.add('hidden');
+            }
+        }
+
+        // 处理鼠标按下/点击 - 防止显示默认光标
+        function handleMouseDown(e) {
+            // 阻止默认行为可能导致的光标变化
+            if (cursorElement) {
+                cursorElement.classList.remove('hidden');
+                // 强制更新位置
+                cursorElement.style.left = e.clientX + 'px';
+                cursorElement.style.top = e.clientY + 'px';
+            }
+        }
+
+        // 处理鼠标释放
+        function handleMouseUp() {
+            if (cursorElement) {
+                cursorElement.classList.remove('hidden');
+            }
+        }
+
+        // 处理点击事件
+        function handleClick(e) {
+            // 点击后立即强制更新光标位置并显示
+            if (cursorElement) {
+                mouseX = e.clientX;
+                mouseY = e.clientY;
+                cursorElement.style.left = mouseX + 'px';
+                cursorElement.style.top = mouseY + 'px';
+                cursorElement.classList.remove('hidden');
+            }
+            // 强制重置光标样式
+            forceCursorReset();
+        }
+
+        // 处理所有鼠标事件，确保光标始终正确
+        function handleMouseEvent(e) {
+            // 强制保持自定义光标
+            if (currentCursorSkin && cursorSkinConfig[currentCursorSkin]) {
+                const config = cursorSkinConfig[currentCursorSkin];
+                const cursorUrl = createCursorUrl(config.emoji);
+
+                document.body.classList.add('custom-cursor-active');
+                document.documentElement.classList.add('custom-cursor-active');
+
+                // 立即强制应用光标样式到目标元素及其父元素
+                if (e.target) {
+                    e.target.style.cursor = cursorUrl;
+                    // 应用到父元素链
+                    let parent = e.target.parentElement;
+                    while (parent) {
+                        parent.style.cursor = cursorUrl;
+                        parent = parent.parentElement;
+                    }
+                }
+
+                // 确保 body 和 html 也应用
+                document.body.style.cursor = cursorUrl;
+                document.documentElement.style.cursor = cursorUrl;
+
+                // 确保光标元素可见并更新位置
+                if (cursorElement) {
+                    cursorElement.classList.remove('hidden');
+                    if (e.clientX && e.clientY) {
+                        mouseX = e.clientX;
+                        mouseY = e.clientY;
+                        cursorElement.style.left = mouseX + 'px';
+                        cursorElement.style.top = mouseY + 'px';
+                    }
+                }
+            }
+        }
+
+        // 光标守护定时器ID
+        let cursorGuardInterval = null;
+
+        // 启动光标守护
+        function startCursorGuard() {
+            // 清除旧的定时器
+            if (cursorGuardInterval) {
+                clearInterval(cursorGuardInterval);
+            }
+            // 每50毫秒检查一次光标状态
+            cursorGuardInterval = setInterval(() => {
+                if (cursorElement && document.body.classList.contains('custom-cursor-active')) {
+                    // 确保光标元素可见
+                    if (cursorElement.classList.contains('hidden')) {
+                        cursorElement.classList.remove('hidden');
+                    }
+                    // 强制更新光标位置
+                    cursorElement.style.left = mouseX + 'px';
+                    cursorElement.style.top = mouseY + 'px';
+                }
+            }, 50);
+        }
+
+        // 停止光标守护
+        function stopCursorGuard() {
+            if (cursorGuardInterval) {
+                clearInterval(cursorGuardInterval);
+                cursorGuardInterval = null;
+            }
+        }
+
+        // 强制重置光标样式
+        function forceCursorReset() {
+            // 临时移除再添加class，强制浏览器重新应用样式
+            document.body.classList.remove('custom-cursor-active');
+            // 强制重绘
+            void document.body.offsetHeight;
+            document.body.classList.add('custom-cursor-active');
+            document.body.style.cursor = 'none';
+        }
+
+        // 更新光标位置
+        function updateCursorPosition() {
+            if (cursorElement) {
+                cursorElement.style.left = mouseX + 'px';
+                cursorElement.style.top = mouseY + 'px';
+            }
+            rafId = requestAnimationFrame(updateCursorPosition);
+        }
+
+        // 移除鼠标皮肤
+        function removeCursorSkin() {
+            if (rafId) {
+                cancelAnimationFrame(rafId);
+                rafId = null;
+            }
+
+            if (cursorElement) {
+                cursorElement.remove();
+                cursorElement = null;
+            }
+
+            // 移除光标样式
+            const style = document.getElementById('cursor-skin-style');
+            if (style) {
+                style.remove();
+            }
+
+            // 移除 class
+            document.body.classList.remove('custom-cursor-active');
+            document.documentElement.classList.remove('custom-cursor-active');
+
+            // 重置 cursor 样式
+            document.body.style.cursor = '';
+            document.documentElement.style.cursor = '';
+
+            // 移除事件监听
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseenter', handleMouseEnter);
+            document.removeEventListener('mouseleave', handleMouseLeave);
+            document.removeEventListener('mousedown', handleMouseDown);
+            document.removeEventListener('mouseup', handleMouseUp);
+            document.removeEventListener('click', handleClick);
+            document.removeEventListener('mousedown', handleMouseEvent);
+            document.removeEventListener('mouseup', handleMouseEvent);
+            document.removeEventListener('click', handleMouseEvent);
+            document.removeEventListener('mouseover', handleMouseEvent);
+            document.removeEventListener('mouseenter', handleMouseEvent);
+
+            // 停止光标守护
+            stopCursorGuard();
+
+            currentCursorSkin = null;
+        }
+
+        // 从服务器获取当前鼠标皮肤
+        async function loadCurrentCursorSkin() {
+            // 首先检查 body 上是否有预加载的鼠标皮肤
+            const bodyCursor = document.body.getAttribute('data-cursor');
+            if (bodyCursor) {
+                initCursorSkin(bodyCursor);
+                return;
+            }
+
+            // 如果没有，则从API获取
+            try {
+                const response = await fetch('/api/user/current-cursor');
+                const data = await response.json();
+
+                if (data.success && data.cursor_skin) {
+                    initCursorSkin(data.cursor_skin);
+                }
+            } catch (error) {
+                console.error('加载鼠标皮肤失败:', error);
+            }
+        }
+
+        // 页面加载时初始化鼠标皮肤
+        // 使用多种事件确保在各种情况下都能正确初始化
+        function initCursorOnLoad() {
+            // 立即尝试初始化（如果DOM已经准备好）
+            if (document.readyState === 'complete' || document.readyState === 'interactive') {
+                loadCurrentCursorSkin();
+            }
+        }
+
+        // DOMContentLoaded 事件
+        document.addEventListener('DOMContentLoaded', function() {
+            loadCurrentCursorSkin();
+        });
+
+        // load 事件（页面完全加载后）
+        window.addEventListener('load', function() {
+            // 确保光标已初始化，如果还没有则重新加载
+            if (!currentCursorSkin) {
+                loadCurrentCursorSkin();
+            }
+        });
+
+        // pageshow 事件（处理浏览器后退/前进按钮）
+        window.addEventListener('pageshow', function(e) {
+            // 如果是从缓存加载的页面（如后退按钮）
+            if (e.persisted) {
+                // 重新初始化光标
+                setTimeout(function() {
+                    removeCursorSkin();
+                    loadCurrentCursorSkin();
+                }, 0);
+            } else if (!currentCursorSkin) {
+                loadCurrentCursorSkin();
+            }
+        });
+
+        // 立即执行一次（处理DOM已就绪的情况）
+        initCursorOnLoad();
+
+        // 使用 MutationObserver 监视 DOM 变化，确保在动态内容加载后也能正确显示
+        const cursorObserver = new MutationObserver(function(mutations) {
+            if (currentCursorSkin && cursorElement) {
+                // 确保光标元素在最上层
+                if (cursorElement.parentNode !== document.body) {
+                    document.body.appendChild(cursorElement);
+                }
+                // 确保光标可见
+                cursorElement.classList.remove('hidden');
+            }
+        });
+
+        // 在DOM就绪后开始观察
+        document.addEventListener('DOMContentLoaded', function() {
+            cursorObserver.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
+        });
+    </script>
+
     {% block extra_js %}{% endblock %}
 </body>
 </html>

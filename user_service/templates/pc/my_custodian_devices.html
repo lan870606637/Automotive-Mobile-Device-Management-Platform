@@ -175,10 +175,16 @@
         <div class="modal-body">
             <p style="margin-bottom: 16px;">设备：<strong id="transferDeviceName"></strong></p>
             <div class="form-group">
-                <label class="form-label">选择转借人</label>
-                <select id="transferTo" class="form-select">
-                    <option value="">请选择</option>
-                </select>
+                <label class="form-label">搜索转借人</label>
+                <div class="user-search-wrapper" style="position: relative;">
+                    <input type="text" id="transferToSearch" class="form-input" placeholder="输入姓名搜索..." autocomplete="off">
+                    <input type="hidden" id="transferTo" value="">
+                    <div id="transferToSuggestions" class="user-suggestions" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #d9d9d9; border-radius: 4px; max-height: 200px; overflow-y: auto; z-index: 1000; box-shadow: 0 2px 8px rgba(0,0,0,0.15);"></div>
+                </div>
+                <div id="transferToSelected" class="selected-user" style="margin-top: 8px; padding: 6px 12px; background: #e6f7ff; border-radius: 4px; display: none;">
+                    <span style="color: #1890ff;"></span>
+                    <span onclick="clearTransferTo()" style="margin-left: 8px; cursor: pointer; color: #999;">×</span>
+                </div>
             </div>
         </div>
         <div class="modal-footer">
@@ -211,10 +217,16 @@
                 </div>
             </div>
             <div class="form-group" id="foundTransferSelect" style="display: none;">
-                <label class="form-label">选择转借人</label>
-                <select id="foundTransferTo" class="form-select">
-                    <option value="">请选择</option>
-                </select>
+                <label class="form-label">搜索转借人</label>
+                <div class="user-search-wrapper" style="position: relative;">
+                    <input type="text" id="foundTransferToSearch" class="form-input" placeholder="输入姓名搜索..." autocomplete="off">
+                    <input type="hidden" id="foundTransferTo" value="">
+                    <div id="foundTransferToSuggestions" class="user-suggestions" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #d9d9d9; border-radius: 4px; max-height: 200px; overflow-y: auto; z-index: 1000; box-shadow: 0 2px 8px rgba(0,0,0,0.15);"></div>
+                </div>
+                <div id="foundTransferToSelected" class="selected-user" style="margin-top: 8px; padding: 6px 12px; background: #e6f7ff; border-radius: 4px; display: none;">
+                    <span style="color: #1890ff;"></span>
+                    <span onclick="clearFoundTransferTo()" style="margin-left: 8px; cursor: pointer; color: #999;">×</span>
+                </div>
             </div>
         </div>
         <div class="modal-footer">
@@ -247,10 +259,16 @@
                 </div>
             </div>
             <div class="form-group" id="repairTransferSelect" style="display: none;">
-                <label class="form-label">选择转借人</label>
-                <select id="repairTransferTo" class="form-select">
-                    <option value="">请选择</option>
-                </select>
+                <label class="form-label">搜索转借人</label>
+                <div class="user-search-wrapper" style="position: relative;">
+                    <input type="text" id="repairTransferToSearch" class="form-input" placeholder="输入姓名搜索..." autocomplete="off">
+                    <input type="hidden" id="repairTransferTo" value="">
+                    <div id="repairTransferToSuggestions" class="user-suggestions" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #d9d9d9; border-radius: 4px; max-height: 200px; overflow-y: auto; z-index: 1000; box-shadow: 0 2px 8px rgba(0,0,0,0.15);"></div>
+                </div>
+                <div id="repairTransferToSelected" class="selected-user" style="margin-top: 8px; padding: 6px 12px; background: #e6f7ff; border-radius: 4px; display: none;">
+                    <span style="color: #1890ff;"></span>
+                    <span onclick="clearRepairTransferTo()" style="margin-left: 8px; cursor: pointer; color: #999;">×</span>
+                </div>
             </div>
         </div>
         <div class="modal-footer">
@@ -270,10 +288,16 @@
         <div class="modal-body">
             <p style="margin-bottom: 16px;">设备：<strong id="transferCustodianDeviceName"></strong></p>
             <div class="form-group">
-                <label class="form-label">选择新保管人</label>
-                <select id="newCustodian" class="form-select">
-                    <option value="">请选择</option>
-                </select>
+                <label class="form-label">搜索新保管人</label>
+                <div class="user-search-wrapper" style="position: relative;">
+                    <input type="text" id="newCustodianSearch" class="form-input" placeholder="输入姓名搜索..." autocomplete="off">
+                    <input type="hidden" id="newCustodian" value="">
+                    <div id="newCustodianSuggestions" class="user-suggestions" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #d9d9d9; border-radius: 4px; max-height: 200px; overflow-y: auto; z-index: 1000; box-shadow: 0 2px 8px rgba(0,0,0,0.15);"></div>
+                </div>
+                <div id="newCustodianSelected" class="selected-user" style="margin-top: 8px; padding: 6px 12px; background: #e6f7ff; border-radius: 4px; display: none;">
+                    <span style="color: #1890ff;"></span>
+                    <span onclick="clearNewCustodian()" style="margin-left: 8px; cursor: pointer; color: #999;">×</span>
+                </div>
             </div>
         </div>
         <div class="modal-footer">
@@ -320,26 +344,131 @@ function confirmReturn() {
     closeReturnModal();
 }
 
+// 用户搜索相关变量
+let allUsers = []; // 缓存所有用户
+let transferToUserList = []; // 转借弹窗可用用户
+let foundTransferToUserList = []; // 我已找到弹窗可用用户
+let repairTransferToUserList = []; // 我已修好弹窗可用用户
+let newCustodianUserList = []; // 转让保管人弹窗可用用户
+
+// 加载所有用户
+function loadAllUsers() {
+    return fetch('/api/users')
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                allUsers = data.users || [];
+            }
+            return allUsers;
+        })
+        .catch(() => []);
+}
+
+// 用户搜索通用函数
+function setupUserSearch(searchInputId, hiddenInputId, suggestionsId, selectedId, userListVarName) {
+    const searchInput = document.getElementById(searchInputId);
+    const hiddenInput = document.getElementById(hiddenInputId);
+    const suggestions = document.getElementById(suggestionsId);
+    const selected = document.getElementById(selectedId);
+
+    if (!searchInput) return;
+
+    // 输入事件
+    searchInput.addEventListener('input', function() {
+        const keyword = this.value.trim().toLowerCase();
+        hiddenInput.value = '';
+        selected.style.display = 'none';
+
+        if (!keyword) {
+            suggestions.style.display = 'none';
+            return;
+        }
+
+        // 获取对应的用户列表变量，如果没有则使用 allUsers
+        let userList = window[userListVarName] || [];
+        if (userList.length === 0 && allUsers.length > 0) {
+            userList = allUsers;
+        }
+
+        // 过滤用户
+        const filtered = userList.filter(u => {
+            return u.name.toLowerCase().includes(keyword);
+        }).slice(0, 10); // 最多显示10个
+
+        if (filtered.length === 0) {
+            suggestions.innerHTML = '<div style="padding: 8px 12px; color: #999;">未找到匹配的用户</div>';
+        } else {
+            suggestions.innerHTML = filtered.map(u => `
+                <div class="user-suggestion-item" data-name="${u.name}" style="padding: 8px 12px; cursor: pointer; hover: background: #f5f5f5;">
+                    ${u.name}
+                </div>
+            `).join('');
+
+            // 绑定点击事件
+            suggestions.querySelectorAll('.user-suggestion-item').forEach(item => {
+                item.addEventListener('click', function() {
+                    const name = this.getAttribute('data-name');
+                    hiddenInput.value = name;
+                    searchInput.value = name;
+                    selected.querySelector('span:first-child').textContent = name;
+                    selected.style.display = 'block';
+                    suggestions.style.display = 'none';
+                });
+            });
+        }
+        suggestions.style.display = 'block';
+    });
+
+    // 点击外部关闭建议
+    document.addEventListener('click', function(e) {
+        if (!searchInput.contains(e.target) && !suggestions.contains(e.target)) {
+            suggestions.style.display = 'none';
+        }
+    });
+}
+
+// 清除选择
+function clearTransferTo() {
+    document.getElementById('transferTo').value = '';
+    document.getElementById('transferToSearch').value = '';
+    document.getElementById('transferToSelected').style.display = 'none';
+}
+
+function clearFoundTransferTo() {
+    document.getElementById('foundTransferTo').value = '';
+    document.getElementById('foundTransferToSearch').value = '';
+    document.getElementById('foundTransferToSelected').style.display = 'none';
+}
+
+function clearRepairTransferTo() {
+    document.getElementById('repairTransferTo').value = '';
+    document.getElementById('repairTransferToSearch').value = '';
+    document.getElementById('repairTransferToSelected').style.display = 'none';
+}
+
+function clearNewCustodian() {
+    document.getElementById('newCustodian').value = '';
+    document.getElementById('newCustodianSearch').value = '';
+    document.getElementById('newCustodianSelected').style.display = 'none';
+}
+
 // 转借
 function transferDevice(deviceId, deviceName, currentBorrower) {
     currentDeviceId = deviceId;
     document.getElementById('transferDeviceName').textContent = deviceName;
 
-    // 加载用户列表（排除当前借用人）
-    fetch('/api/users')
-    .then(res => res.json())
-    .then(data => {
-        if (data.success) {
-            const select = document.getElementById('transferTo');
-            select.innerHTML = '<option value="">请选择</option>';
-            data.users.forEach(u => {
-                // 排除当前借用人（当不是"未借用"时）
-                if (currentBorrower && currentBorrower !== '未借用' && u.name === currentBorrower) {
-                    return;
-                }
-                select.innerHTML += `<option value="${u.name}">${u.name}</option>`;
-            });
-        }
+    // 清除之前的选择
+    clearTransferTo();
+
+    // 加载用户列表
+    loadAllUsers().then(() => {
+        // 排除当前借用人
+        transferToUserList = allUsers.filter(u => {
+            if (currentBorrower && currentBorrower !== '未借用' && u.name === currentBorrower) {
+                return false;
+            }
+            return true;
+        });
     });
 
     document.getElementById('transferModal').classList.add('active');
@@ -355,7 +484,7 @@ function confirmTransfer() {
         showToast('请选择转借人');
         return;
     }
-    
+
     fetch('/api/transfer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -391,23 +520,16 @@ function showToast(message) {
 function foundDevice(deviceId, deviceName) {
     currentDeviceId = deviceId;
     document.getElementById('foundDeviceName').textContent = deviceName;
-    
+
+    // 清除之前的选择
+    clearFoundTransferTo();
+
     // 加载用户列表（排除自己）
-    fetch('/api/users')
-    .then(res => res.json())
-    .then(data => {
-        if (data.success) {
-            const select = document.getElementById('foundTransferTo');
-            select.innerHTML = '<option value="">请选择</option>';
-            const currentUser = '{{ user.borrower_name }}';
-            data.users.forEach(u => {
-                if (u.name !== currentUser) {
-                    select.innerHTML += `<option value="${u.name}">${u.name}</option>`;
-                }
-            });
-        }
+    const currentUser = '{{ user.borrower_name }}';
+    loadAllUsers().then(() => {
+        foundTransferToUserList = allUsers.filter(u => u.name !== currentUser);
     });
-    
+
     document.getElementById('foundModal').classList.add('active');
 }
 
@@ -452,23 +574,16 @@ function confirmFound() {
 function repairDevice(deviceId, deviceName) {
     currentDeviceId = deviceId;
     document.getElementById('repairDeviceName').textContent = deviceName;
-    
+
+    // 清除之前的选择
+    clearRepairTransferTo();
+
     // 加载用户列表（排除自己）
-    fetch('/api/users')
-    .then(res => res.json())
-    .then(data => {
-        if (data.success) {
-            const select = document.getElementById('repairTransferTo');
-            select.innerHTML = '<option value="">请选择</option>';
-            const currentUser = '{{ user.borrower_name }}';
-            data.users.forEach(u => {
-                if (u.name !== currentUser) {
-                    select.innerHTML += `<option value="${u.name}">${u.name}</option>`;
-                }
-            });
-        }
+    const currentUser = '{{ user.borrower_name }}';
+    loadAllUsers().then(() => {
+        repairTransferToUserList = allUsers.filter(u => u.name !== currentUser);
     });
-    
+
     document.getElementById('repairModal').classList.add('active');
 }
 
@@ -546,23 +661,16 @@ document.getElementById('repairModal').addEventListener('click', function(e) {
 function transferCustodian(deviceId, deviceName) {
     currentDeviceId = deviceId;
     document.getElementById('transferCustodianDeviceName').textContent = deviceName;
-    
+
+    // 清除之前的选择
+    clearNewCustodian();
+
     // 加载用户列表（排除自己）
-    fetch('/api/users')
-    .then(res => res.json())
-    .then(data => {
-        if (data.success) {
-            const select = document.getElementById('newCustodian');
-            select.innerHTML = '<option value="">请选择</option>';
-            const currentUser = '{{ user.borrower_name }}';
-            data.users.forEach(u => {
-                if (u.name !== currentUser) {
-                    select.innerHTML += `<option value="${u.name}">${u.name}</option>`;
-                }
-            });
-        }
+    const currentUser = '{{ user.borrower_name }}';
+    loadAllUsers().then(() => {
+        newCustodianUserList = allUsers.filter(u => u.name !== currentUser);
     });
-    
+
     document.getElementById('transferCustodianModal').classList.add('active');
 }
 
@@ -603,5 +711,29 @@ function confirmTransferCustodian() {
 document.getElementById('transferCustodianModal').addEventListener('click', function(e) {
     if (e.target === this) closeTransferCustodianModal();
 });
+
+// 页面加载完成后初始化用户搜索
+document.addEventListener('DOMContentLoaded', function() {
+    // 预加载用户列表
+    loadAllUsers();
+
+    // 初始化各个搜索框（传入变量名字符串）
+    setupUserSearch('transferToSearch', 'transferTo', 'transferToSuggestions', 'transferToSelected', 'transferToUserList');
+    setupUserSearch('foundTransferToSearch', 'foundTransferTo', 'foundTransferToSuggestions', 'foundTransferToSelected', 'foundTransferToUserList');
+    setupUserSearch('repairTransferToSearch', 'repairTransferTo', 'repairTransferToSuggestions', 'repairTransferToSelected', 'repairTransferToUserList');
+    setupUserSearch('newCustodianSearch', 'newCustodian', 'newCustodianSuggestions', 'newCustodianSelected', 'newCustodianUserList');
+});
+
+// 添加用户建议项的hover样式
+const style = document.createElement('style');
+style.textContent = `
+    .user-suggestion-item:hover {
+        background: #e6f7ff;
+    }
+    .user-suggestion-item {
+        transition: background 0.2s;
+    }
+`;
+document.head.appendChild(style);
 </script>
 {% endblock %}

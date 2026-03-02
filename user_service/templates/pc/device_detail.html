@@ -504,12 +504,19 @@
                         <span class="user-role-icon">👤</span>
                         借用人
                     </div>
-                    <div class="user-info-content">
-                        <div class="user-avatar-wrapper" id="borrowerAvatarWrapper">
-                            {% if borrower_info and borrower_info.avatar %}
-                            <img src="{{ borrower_info.avatar }}" alt="头像" class="user-avatar-img">
+                    <div class="user-info-content" style="align-items: center; justify-content: center;">
+                        <div class="user-avatar-section" style="display: flex; flex-direction: column; align-items: center;">
+                            <div class="user-avatar-wrapper" id="borrowerAvatarWrapper">
+                                {% if borrower_info and borrower_info.avatar %}
+                                <img src="{{ borrower_info.avatar }}" alt="头像" class="user-avatar-img">
+                                {% else %}
+                                <div class="user-avatar-default">{{ device.borrower[:1] if device.borrower else '?' }}</div>
+                                {% endif %}
+                            </div>
+                            {% if borrower_info and borrower_info.title %}
+                            <div class="user-title-badge" style="margin-top: 6px; font-size: 11px; font-weight: 600; padding: 2px 8px; background: {{ borrower_info.title.color }}20; color: {{ borrower_info.title.color }}; border: 1px solid {{ borrower_info.title.color }}40; border-radius: 4px; white-space: nowrap; display: inline-block;">{{ borrower_info.title.name }}</div>
                             {% else %}
-                            <div class="user-avatar-default">{{ device.borrower[:1] if device.borrower else '?' }}</div>
+                            <div class="user-title-badge" style="margin-top: 6px; font-size: 11px; color: #bfbfbf; font-style: italic; white-space: nowrap; display: inline-block;">暂无称号</div>
                             {% endif %}
                         </div>
                         <div class="user-details">
@@ -528,11 +535,18 @@
                             借用人
                         </div>
                         <div class="user-info-content">
-                            <div class="user-avatar-wrapper" id="borrowerAvatarWrapper">
-                                {% if borrower_info and borrower_info.avatar %}
-                                <img src="{{ borrower_info.avatar }}" alt="头像" class="user-avatar-img">
+                            <div class="user-avatar-section" style="display: flex; flex-direction: column; align-items: center;">
+                                <div class="user-avatar-wrapper" id="borrowerAvatarWrapper">
+                                    {% if borrower_info and borrower_info.avatar %}
+                                    <img src="{{ borrower_info.avatar }}" alt="头像" class="user-avatar-img">
+                                    {% else %}
+                                    <div class="user-avatar-default">{{ device.borrower[:1] if device.borrower else '?' }}</div>
+                                    {% endif %}
+                                </div>
+                                {% if borrower_info and borrower_info.title %}
+                                <div class="user-title-badge" style="margin-top: 6px; font-size: 11px; font-weight: 600; padding: 2px 8px; background: {{ borrower_info.title.color }}20; color: {{ borrower_info.title.color }}; border: 1px solid {{ borrower_info.title.color }}40; border-radius: 4px; white-space: nowrap; display: inline-block;">{{ borrower_info.title.name }}</div>
                                 {% else %}
-                                <div class="user-avatar-default">{{ device.borrower[:1] if device.borrower else '?' }}</div>
+                                <div class="user-title-badge" style="margin-top: 6px; font-size: 11px; color: #bfbfbf; font-style: italic; white-space: nowrap; display: inline-block;">暂无称号</div>
                                 {% endif %}
                             </div>
                             <div class="user-details">
@@ -541,7 +555,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- 保管人卡片 -->
                     <div class="user-info-card custodian">
                         <div class="user-info-label">
@@ -549,11 +563,18 @@
                             保管人
                         </div>
                         <div class="user-info-content">
-                            <div class="user-avatar-wrapper" id="custodianAvatarWrapper">
-                                {% if custodian_info and custodian_info.avatar %}
-                                <img src="{{ custodian_info.avatar }}" alt="头像" class="user-avatar-img">
+                            <div class="user-avatar-section" style="display: flex; flex-direction: column; align-items: center;">
+                                <div class="user-avatar-wrapper" id="custodianAvatarWrapper">
+                                    {% if custodian_info and custodian_info.avatar %}
+                                    <img src="{{ custodian_info.avatar }}" alt="头像" class="user-avatar-img">
+                                    {% else %}
+                                    <div class="user-avatar-default">{{ device.cabinet_number[:1] if device.cabinet_number else '?' }}</div>
+                                    {% endif %}
+                                </div>
+                                {% if custodian_info and custodian_info.title %}
+                                <div class="user-title-badge" style="margin-top: 6px; font-size: 11px; font-weight: 600; padding: 2px 8px; background: {{ custodian_info.title.color }}20; color: {{ custodian_info.title.color }}; border: 1px solid {{ custodian_info.title.color }}40; border-radius: 4px; white-space: nowrap; display: inline-block;">{{ custodian_info.title.name }}</div>
                                 {% else %}
-                                <div class="user-avatar-default">{{ device.cabinet_number[:1] if device.cabinet_number else '?' }}</div>
+                                <div class="user-title-badge" style="margin-top: 6px; font-size: 11px; color: #bfbfbf; font-style: italic; white-space: nowrap; display: inline-block;">暂无称号</div>
                                 {% endif %}
                             </div>
                             <div class="user-details">
@@ -1559,7 +1580,12 @@ function submitBorrow() {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({device_id: deviceId, reason: fullReason, expected_return_date: date})
     }).then(r => r.json()).then(data => {
-        if (data.success) { showToast('借用成功！'); setTimeout(() => location.reload(), 1000); }
+        if (data.success) {
+            // 显示积分通知
+            handlePointsResponse(data, '📱');
+            showToast('借用成功！');
+            setTimeout(() => location.reload(), 1500);
+        }
         else { showToast(data.message || '借用失败'); }
     }).catch(() => showToast('提交失败，请重试'));
 }
@@ -1586,7 +1612,12 @@ function submitReturn() {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({device_id: deviceId, reason: fullRemark})
     }).then(r => r.json()).then(data => {
-        if (data.success) { showToast('归还成功！'); setTimeout(() => window.location.href = '/pc', 1000); }
+        if (data.success) {
+            // 显示积分通知
+            handlePointsResponse(data, '✅');
+            showToast('归还成功！');
+            setTimeout(() => window.location.href = '/pc', 1500);
+        }
         else { showToast(data.message || '归还失败'); }
     }).catch(() => showToast('提交失败，请重试'));
 }
@@ -1625,7 +1656,12 @@ function submitTransfer() {
         return r.json();
     }).then(data => {
         if (data === null) return; // 已经处理了冲突情况
-        if (data.success) { showToast('转借成功'); setTimeout(() => window.location.href = '/pc', 1000); }
+        if (data.success) {
+            // 显示积分通知
+            handlePointsResponse(data, '🔄');
+            showToast('转借成功');
+            setTimeout(() => window.location.href = '/pc', 1500);
+        }
         else { showToast(data.message || '转借失败'); }
     }).catch(() => showToast('提交失败，请重试'));
     closeModal('transferModal');
@@ -1648,7 +1684,12 @@ function submitRenew() {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({device_id: deviceId, new_return_date: newReturnDate})
     }).then(r => r.json()).then(data => {
-        if (data.success) { showToast('续期成功'); setTimeout(() => location.reload(), 1000); }
+        if (data.success) {
+            // 显示积分通知
+            handlePointsResponse(data, '⏰');
+            showToast('续期成功');
+            setTimeout(() => location.reload(), 1500);
+        }
         else { showToast(data.message || '续期失败'); }
     }).catch(() => showToast('提交失败，请重试'));
     closeModal('renewModal');
@@ -1660,7 +1701,12 @@ function submitReportLost() {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({device_id: deviceId})
     }).then(r => r.json()).then(data => {
-        if (data.success) { showToast('丢失报备成功'); setTimeout(() => location.reload(), 1000); }
+        if (data.success) {
+            // 显示积分通知
+            handlePointsResponse(data, '📋');
+            showToast('丢失报备成功');
+            setTimeout(() => location.reload(), 1500);
+        }
         else { showToast(data.message || '报备失败'); }
     }).catch(() => showToast('提交失败，请重试'));
     closeModal('reportLostModal');
@@ -1677,7 +1723,12 @@ function submitReportDamage() {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({device_id: deviceId, damage_reason: reason})
     }).then(r => r.json()).then(data => {
-        if (data.success) { showToast('损坏报备成功'); setTimeout(() => location.reload(), 1000); }
+        if (data.success) {
+            // 显示积分通知
+            handlePointsResponse(data, '📋');
+            showToast('损坏报备成功');
+            setTimeout(() => location.reload(), 1500);
+        }
         else { showToast(data.message || '报备失败'); }
     }).catch(() => showToast('提交失败，请重试'));
     closeModal('reportDamageModal');
@@ -1715,7 +1766,12 @@ function submitFound(action) {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(data)
     }).then(r => r.json()).then(data => {
-        if (data.success) { showToast('操作成功'); setTimeout(() => location.reload(), 1000); }
+        if (data.success) {
+            // 显示积分通知
+            handlePointsResponse(data, '📋');
+            showToast('操作成功');
+            setTimeout(() => location.reload(), 1500);
+        }
         else { showToast(data.message || '操作失败'); }
     }).catch(() => showToast('提交失败，请重试'));
     closeModal('foundModal');
@@ -1736,7 +1792,12 @@ function submitRepaired(action) {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(data)
     }).then(r => r.json()).then(data => {
-        if (data.success) { showToast('操作成功'); setTimeout(() => location.reload(), 1000); }
+        if (data.success) {
+            // 显示积分通知
+            handlePointsResponse(data, '📋');
+            showToast('操作成功');
+            setTimeout(() => location.reload(), 1500);
+        }
         else { showToast(data.message || '操作失败'); }
     }).catch(() => showToast('提交失败，请重试'));
     closeModal('repairedModal');
@@ -2029,6 +2090,8 @@ function submitReserve() {
     }).then(r => r.json()).then(data => {
         if (data.success) {
             const reservation = data.reservation;
+            // 显示积分通知
+            handlePointsResponse(data, '📌');
             showToast(`已预约${reservation.device_name}，${reservation.start_time}至${reservation.end_time}`, 4000);
             closeModal('reserveModal');
             setTimeout(() => location.reload(), 1500);

@@ -191,6 +191,8 @@ def init_database():
         _migrate_mysql_create_shop_tables()
         # 添加用户装扮字段
         _migrate_mysql_add_user_equip_fields()
+        # 添加用户鼠标皮肤字段
+        _migrate_mysql_add_user_cursor_field()
         return
 
     # SQLite初始化逻辑...
@@ -283,6 +285,9 @@ def init_database():
         
         # 添加用户装扮字段
         _migrate_sqlite_add_user_equip_fields(cursor)
+        
+        # 添加用户鼠标皮肤字段
+        _migrate_sqlite_add_user_cursor_field(cursor)
 
         # 创建其他表...
         # (省略其他表的创建代码，保持原有逻辑)
@@ -828,12 +833,12 @@ class DatabaseStore:
                 sql = """UPDATE users SET
                     email = %s, password = %s, borrower_name = %s, avatar = %s, signature = %s,
                     borrow_count = %s, return_count = %s, is_frozen = %s, is_admin = %s, is_deleted = %s, is_first_login = %s,
-                    current_title = %s, current_avatar_frame = %s, current_theme = %s
+                    current_title = %s, current_avatar_frame = %s, current_theme = %s, current_cursor = %s
                     WHERE id = %s
                 """ if IS_MYSQL else """UPDATE users SET
                     email = ?, password = ?, borrower_name = ?, avatar = ?, signature = ?,
                     borrow_count = ?, return_count = ?, is_frozen = ?, is_admin = ?, is_deleted = ?, is_first_login = ?,
-                    current_title = ?, current_avatar_frame = ?, current_theme = ?
+                    current_title = ?, current_avatar_frame = ?, current_theme = ?, current_cursor = ?
                     WHERE id = ?
                 """
                 params = (
@@ -846,6 +851,7 @@ class DatabaseStore:
                     user.current_title,
                     user.current_avatar_frame,
                     user.current_theme,
+                    user.current_cursor,
                     user.id
                 )
                 cursor.execute(sql, params)
@@ -853,13 +859,13 @@ class DatabaseStore:
                 sql = """INSERT INTO users (
                     id, email, password, borrower_name, avatar, signature, borrow_count,
                     return_count, is_frozen, is_admin, is_deleted, is_first_login, create_time,
-                    current_title, current_avatar_frame, current_theme
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, %s, CURRENT_TIMESTAMP, %s, %s, %s)
+                    current_title, current_avatar_frame, current_theme, current_cursor
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, %s, CURRENT_TIMESTAMP, %s, %s, %s, %s)
                 """ if IS_MYSQL else """INSERT INTO users (
                     id, email, password, borrower_name, avatar, signature, borrow_count,
                     return_count, is_frozen, is_admin, is_deleted, is_first_login, create_time,
-                    current_title, current_avatar_frame, current_theme
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, CURRENT_TIMESTAMP, ?, ?, ?)
+                    current_title, current_avatar_frame, current_theme, current_cursor
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
                 """
                 params = (
                     user.id, user.email, user.password,
@@ -869,7 +875,8 @@ class DatabaseStore:
                     1 if user.is_first_login else 0,
                     user.current_title,
                     user.current_avatar_frame,
-                    user.current_theme
+                    user.current_theme,
+                    user.current_cursor
                 )
                 cursor.execute(sql, params)
             
@@ -1752,13 +1759,15 @@ class DatabaseStore:
                     title = %s, description = %s, publisher_id = %s, publisher_name = %s,
                     reward_points = %s, status = %s, device_name = %s, device_id = %s,
                     device_previous_status = %s, claim_time = %s, complete_time = %s,
-                    claimer_id = %s, claimer_name = %s, finder_description = %s
+                    expire_time = %s, claimer_id = %s, claimer_name = %s, finder_description = %s,
+                    is_active = %s
                     WHERE id = %s
                 """ if IS_MYSQL else """UPDATE bounties SET
                     title = ?, description = ?, publisher_id = ?, publisher_name = ?,
                     reward_points = ?, status = ?, device_name = ?, device_id = ?,
                     device_previous_status = ?, claim_time = ?, complete_time = ?,
-                    claimer_id = ?, claimer_name = ?, finder_description = ?
+                    expire_time = ?, claimer_id = ?, claimer_name = ?, finder_description = ?,
+                    is_active = ?
                     WHERE id = ?
                 """
                 params = (
@@ -1767,20 +1776,24 @@ class DatabaseStore:
                     bounty.status.value if bounty.status else None,
                     bounty.device_name, bounty.device_id, bounty.device_previous_status,
                     format_datetime(bounty.claim_time), format_datetime(bounty.complete_time),
+                    format_datetime(bounty.expire_time),
                     bounty.claimer_id, bounty.claimer_name, bounty.finder_description,
+                    bounty.is_active,
                     bounty.id
                 )
             else:
                 sql = """INSERT INTO bounties (
                     id, title, description, publisher_id, publisher_name, reward_points,
                     status, device_name, device_id, device_previous_status, create_time,
-                    claim_time, complete_time, claimer_id, claimer_name, finder_description
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    claim_time, complete_time, expire_time, claimer_id, claimer_name, finder_description,
+                    is_active
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """ if IS_MYSQL else """INSERT INTO bounties (
                     id, title, description, publisher_id, publisher_name, reward_points,
                     status, device_name, device_id, device_previous_status, create_time,
-                    claim_time, complete_time, claimer_id, claimer_name, finder_description
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    claim_time, complete_time, expire_time, claimer_id, claimer_name, finder_description,
+                    is_active
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
                 params = (
                     bounty.id, bounty.title, bounty.description, bounty.publisher_id,
@@ -1789,7 +1802,9 @@ class DatabaseStore:
                     bounty.device_name, bounty.device_id, bounty.device_previous_status,
                     format_datetime(bounty.create_time),
                     format_datetime(bounty.claim_time), format_datetime(bounty.complete_time),
-                    bounty.claimer_id, bounty.claimer_name, bounty.finder_description
+                    format_datetime(bounty.expire_time),
+                    bounty.claimer_id, bounty.claimer_name, bounty.finder_description,
+                    bounty.is_active
                 )
             
             cursor.execute(sql, params)
@@ -1805,7 +1820,33 @@ class DatabaseStore:
                 (bounty_id,)
             )
             return cursor.rowcount > 0
-    
+
+    def get_expired_bounties(self) -> List[Bounty]:
+        """获取所有已过期的待认领悬赏"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            cursor.execute(
+                "SELECT * FROM bounties WHERE status = '待认领' AND expire_time < %s" if IS_MYSQL else
+                "SELECT * FROM bounties WHERE status = '待认领' AND expire_time < ?",
+                (now,)
+            )
+            rows = cursor.fetchall()
+            return [Bounty.from_dict(row_to_dict(row)) for row in rows]
+
+    def auto_cancel_expired_bounties(self) -> List[Bounty]:
+        """自动取消所有已过期的悬赏，返回被取消的悬赏列表"""
+        expired_bounties = self.get_expired_bounties()
+        cancelled_bounties = []
+
+        for bounty in expired_bounties:
+            # 更新状态为已取消
+            bounty.status = BountyStatus.CANCELLED
+            self.save_bounty(bounty)
+            cancelled_bounties.append(bounty)
+
+        return cancelled_bounties
+
     # ========== 积分商城相关操作 ==========
     
     def get_shop_item_by_id(self, item_id: str) -> Optional[ShopItem]:
@@ -2217,6 +2258,30 @@ def _migrate_mysql_add_user_equip_fields():
         print(f"⚠ MySQL 用户装扮字段迁移警告: {e}")
 
 
+def _migrate_sqlite_add_user_cursor_field(cursor):
+    """SQLite: 添加用户鼠标皮肤字段"""
+    try:
+        cursor.execute("SELECT current_cursor FROM users LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE users ADD COLUMN current_cursor TEXT DEFAULT ''")
+        print("✓ SQLite: 已添加 current_cursor 列到 users 表")
+
+
+def _migrate_mysql_add_user_cursor_field():
+    """MySQL: 添加用户鼠标皮肤字段"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT current_cursor FROM users LIMIT 1")
+            except Exception:
+                cursor.execute("ALTER TABLE users ADD COLUMN current_cursor VARCHAR(64) DEFAULT ''")
+                conn.commit()
+                print("✓ MySQL: 已添加 current_cursor 列到 users 表")
+    except Exception as e:
+        print(f"⚠ MySQL 用户鼠标皮肤字段迁移警告: {e}")
+
+
 def _migrate_sqlite_create_bounties_table(cursor):
     """SQLite: 创建悬赏表"""
     cursor.execute('''
@@ -2260,6 +2325,20 @@ def _migrate_sqlite_create_bounties_table(cursor):
     except sqlite3.OperationalError:
         cursor.execute("ALTER TABLE bounties ADD COLUMN device_previous_status TEXT")
         print("✓ SQLite: 已添加 device_previous_status 列到 bounties 表")
+
+    # 检查并添加 expire_time 列
+    try:
+        cursor.execute("SELECT expire_time FROM bounties LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE bounties ADD COLUMN expire_time TIMESTAMP")
+        print("✓ SQLite: 已添加 expire_time 列到 bounties 表")
+
+    # 检查并添加 is_active 列
+    try:
+        cursor.execute("SELECT is_active FROM bounties LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE bounties ADD COLUMN is_active INTEGER DEFAULT 1")
+        print("✓ SQLite: 已添加 is_active 列到 bounties 表")
 
 
 def _migrate_mysql_create_bounties_table():
@@ -2311,5 +2390,21 @@ def _migrate_mysql_create_bounties_table():
                 cursor.execute("ALTER TABLE bounties ADD COLUMN device_previous_status VARCHAR(32)")
                 conn.commit()
                 print("✓ MySQL: 已添加 device_previous_status 列到 bounties 表")
+
+            # 检查并添加 expire_time 列
+            try:
+                cursor.execute("SELECT expire_time FROM bounties LIMIT 1")
+            except Exception:
+                cursor.execute("ALTER TABLE bounties ADD COLUMN expire_time DATETIME")
+                conn.commit()
+                print("✓ MySQL: 已添加 expire_time 列到 bounties 表")
+
+            # 检查并添加 is_active 列
+            try:
+                cursor.execute("SELECT is_active FROM bounties LIMIT 1")
+            except Exception:
+                cursor.execute("ALTER TABLE bounties ADD COLUMN is_active TINYINT DEFAULT 1")
+                conn.commit()
+                print("✓ MySQL: 已添加 is_active 列到 bounties 表")
     except Exception as e:
         print(f"⚠ MySQL 悬赏表迁移警告: {e}")

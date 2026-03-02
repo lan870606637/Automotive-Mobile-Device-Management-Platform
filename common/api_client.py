@@ -2041,6 +2041,9 @@ class APIClient:
         for r in existing_reservations:
             if exclude_id and r.id == exclude_id:
                 continue
+            # 如果是当前用户自己的预约，不视为冲突
+            if current_user_id and r.reserver_id == current_user_id:
+                continue
             # 时间重叠检测
             if not (end_time <= r.start_time or start_time >= r.end_time):
                 return True, {

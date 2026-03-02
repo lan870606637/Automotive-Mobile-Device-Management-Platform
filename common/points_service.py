@@ -276,7 +276,19 @@ class PointsService:
         )
     
     def borrow_reward(self, user_id: str, device_name: str, device_id: str) -> Dict[str, Any]:
-        """借用设备奖励"""
+        """借用设备奖励（每天最多5次）"""
+        # 检查今天借用次数
+        today = datetime.now().strftime('%Y-%m-%d')
+        records = self.db.get_points_records(user_id)
+        borrow_count = 0
+        for record in records:
+            if record.transaction_type == PointsTransactionType.BORROW:
+                if record.create_time and record.create_time.strftime('%Y-%m-%d') == today:
+                    borrow_count += 1
+
+        if borrow_count >= 5:
+            return {'success': False, 'message': '今天借用设备积分已达上限（5次）'}
+
         return self.add_points(
             user_id=user_id,
             points=self.POINTS_RULES['BORROW'],
@@ -284,9 +296,21 @@ class PointsService:
             description=f'借用设备: {device_name}',
             related_id=device_id
         )
-    
+
     def return_reward(self, user_id: str, device_name: str, device_id: str) -> Dict[str, Any]:
-        """归还设备奖励"""
+        """归还设备奖励（每天最多5次）"""
+        # 检查今天归还次数
+        today = datetime.now().strftime('%Y-%m-%d')
+        records = self.db.get_points_records(user_id)
+        return_count = 0
+        for record in records:
+            if record.transaction_type == PointsTransactionType.RETURN:
+                if record.create_time and record.create_time.strftime('%Y-%m-%d') == today:
+                    return_count += 1
+
+        if return_count >= 5:
+            return {'success': False, 'message': '今天归还设备积分已达上限（5次）'}
+
         return self.add_points(
             user_id=user_id,
             points=self.POINTS_RULES['RETURN'],

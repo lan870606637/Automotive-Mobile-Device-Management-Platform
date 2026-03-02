@@ -1,213 +1,300 @@
 {% extends "pc/base_pc.html" %}
 
-{% block title %}个人资料 - 设备管理系统{% endblock %}
+{% block title %}个人中心 - 设备管理系统{% endblock %}
 
 {% set active_nav = 'profile' %}
 
 {% block content %}
-<h1 class="page-title">👤 个人资料</h1>
+<h1 class="page-title">👤 个人中心</h1>
 
-<div class="profile-container" style="max-width: 600px; margin: 0 auto;">
-    <!-- 头像卡片 -->
-    <div class="profile-card" style="background: white; border-radius: 16px; padding: 32px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); text-align: center; margin-bottom: 24px;">
-        <div class="avatar-wrapper" style="position: relative; display: inline-block; margin-bottom: 20px;">
-            <div class="avatar-preview" id="avatarPreview" style="width: 120px; height: 120px; border-radius: 50%; overflow: hidden; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); display: flex; align-items: center; justify-content: center; font-size: 48px; color: white; cursor: pointer; transition: all 0.3s ease; border: 4px solid #f0f0f0;">
-                {% if full_user and full_user.avatar %}
-                <img src="{{ full_user.avatar }}" alt="头像" style="width: 100%; height: 100%; object-fit: cover;">
-                {% else %}
-                <span id="avatarText">{{ user.borrower_name[0] if user.borrower_name else '?' }}</span>
-                {% endif %}
+<div class="profile-layout">
+    <!-- 左侧：用户信息卡片 -->
+    <div class="profile-sidebar">
+        <div class="profile-card user-card">
+            <div class="avatar-wrapper">
+                <div class="avatar-preview" id="avatarPreview">
+                    {% if full_user and full_user.avatar %}
+                    <img src="{{ full_user.avatar }}" alt="头像">
+                    {% else %}
+                    <span id="avatarText">{{ user.borrower_name[0] if user.borrower_name else '?' }}</span>
+                    {% endif %}
+                </div>
+                <div class="avatar-overlay" onclick="document.getElementById('avatarInput').click()">
+                    <span>📷</span>
+                </div>
+                <input type="file" id="avatarInput" accept="image/*" style="display: none;" onchange="handleAvatarUpload(this)">
             </div>
-            <div class="avatar-overlay" onclick="document.getElementById('avatarInput').click()" style="position: absolute; bottom: 0; right: 0; width: 36px; height: 36px; background: #667eea; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4); transition: all 0.3s ease;">
-                <span style="font-size: 16px;">📷</span>
-            </div>
-            <input type="file" id="avatarInput" accept="image/*" style="display: none;" onchange="handleAvatarUpload(this)">
-        </div>
 
-        <h2 style="font-size: 24px; font-weight: 600; color: #333; margin: 0 0 8px 0;">{{ user.borrower_name or '未设置' }}</h2>
-        <p style="font-size: 14px; color: #666; margin: 0;">{{ user.email }}</p>
+            <h2 class="user-name">{{ user.borrower_name or '未设置' }}</h2>
+            <p class="user-email">{{ user.email }}</p>
 
-        <!-- 个性签名显示/编辑区域 -->
-        <div style="margin-top: 16px; padding: 0 20px;">
-            <div id="signatureDisplay" style="display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;">
-                <span id="signatureText" style="font-size: 14px; color: #888; font-style: italic; max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                    {{ full_user.signature or '✏️ 点击添加个性签名' }}
-                </span>
-                <button type="button" class="btn btn-sm btn-default" onclick="editSignature()" style="padding: 4px 12px; font-size: 12px;">
-                    编辑
-                </button>
-            </div>
-            <div id="signatureEdit" style="display: none; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;">
-                <input type="text" id="signatureInput" maxlength="100" placeholder="输入你的个性签名（最多100字）" value="{{ full_user.signature or '' }}"
-                       style="padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px; width: 300px; max-width: 100%;">
-                <div style="display: flex; gap: 6px;">
-                    <button type="button" class="btn btn-sm btn-primary" onclick="saveSignature()" style="padding: 4px 12px; font-size: 12px;">
-                        保存
-                    </button>
-                    <button type="button" class="btn btn-sm btn-default" onclick="cancelEditSignature()" style="padding: 4px 12px; font-size: 12px;">
-                        取消
-                    </button>
+            <!-- 个性签名 -->
+            <div class="signature-section">
+                <div id="signatureDisplay" class="signature-display">
+                    <span id="signatureText">{{ full_user.signature or '✏️ 点击添加个性签名' }}</span>
+                    <button type="button" class="btn-icon" onclick="editSignature()">✏️</button>
+                </div>
+                <div id="signatureEdit" class="signature-edit" style="display: none;">
+                    <input type="text" id="signatureInput" maxlength="100" placeholder="输入个性签名（最多100字）" value="{{ full_user.signature or '' }}">
+                    <div class="signature-actions">
+                        <button type="button" class="btn btn-sm btn-primary" onclick="saveSignature()">保存</button>
+                        <button type="button" class="btn btn-sm btn-default" onclick="cancelEditSignature()">取消</button>
+                    </div>
                 </div>
             </div>
-            <div id="signatureHint" style="font-size: 12px; color: #999; margin-top: 4px; display: none;">最多100个字符</div>
-        </div>
 
-        <div style="margin-top: 20px;">
-            <button type="button" class="btn btn-primary" onclick="document.getElementById('avatarInput').click()" style="padding: 10px 24px; border-radius: 8px; font-size: 14px;">
+            <div class="user-stats">
+                <div class="stat-item">
+                    <span class="stat-value">{{ inventory|length if inventory else 0 }}</span>
+                    <span class="stat-label">物品</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value">{{ user.points or 0 }}</span>
+                    <span class="stat-label">积分</span>
+                </div>
+            </div>
+
+            <button type="button" class="btn btn-primary btn-block" onclick="document.getElementById('avatarInput').click()">
                 📷 更换头像
             </button>
         </div>
-    </div>
 
-    <!-- 基本信息卡片 -->
-    <div class="profile-card" style="background: white; border-radius: 16px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); margin-bottom: 24px;">
-        <h3 style="font-size: 16px; font-weight: 600; color: #333; margin: 0 0 20px 0; padding-bottom: 12px; border-bottom: 1px solid #f0f0f0;">📋 基本信息</h3>
-
-        <div class="info-item" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f8f8f8;">
-            <span style="color: #666; font-size: 14px;">用户ID</span>
-            <span style="color: #333; font-size: 14px; font-family: monospace;">{{ user.user_id[:8] }}...</span>
-        </div>
-
-        <div class="info-item" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f8f8f8;">
-            <span style="color: #666; font-size: 14px;">借用人名称</span>
-            <span style="color: #333; font-size: 14px;">{{ user.borrower_name or '未设置' }}</span>
-        </div>
-
-        <div class="info-item" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f8f8f8;">
-            <span style="color: #666; font-size: 14px;">邮箱</span>
-            <span style="color: #333; font-size: 14px;">{{ user.email }}</span>
-        </div>
-
-        <div class="info-item" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0;">
-            <span style="color: #666; font-size: 14px;">管理员权限</span>
-            <span style="color: #333; font-size: 14px;">{{ '是' if user.is_admin else '否' }}</span>
+        <!-- 快捷操作 -->
+        <div class="profile-card action-card">
+            <div class="action-buttons">
+                <a href="{{ url_for('change_password') }}" class="action-btn">
+                    <div class="action-btn-icon">🔐</div>
+                    <div class="action-btn-text">修改密码</div>
+                </a>
+                <a href="{{ url_for('logout') }}" class="action-btn action-btn-danger">
+                    <div class="action-btn-icon">🚪</div>
+                    <div class="action-btn-text">退出登录</div>
+                </a>
+            </div>
         </div>
     </div>
 
-    <!-- 我的物品卡片 -->
-    <div class="profile-card" style="background: white; border-radius: 16px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); margin-bottom: 24px;">
-        <h3 style="font-size: 16px; font-weight: 600; color: #333; margin: 0 0 20px 0; padding-bottom: 12px; border-bottom: 1px solid #f0f0f0;">🎒 我的物品</h3>
-        
-        {% if inventory %}
-        <!-- 称号分类 -->
-        {% if inventory_titles %}
-        <div class="inventory-section" style="margin-bottom: 20px;">
-            <div class="inventory-category" style="font-size: 14px; color: #666; margin-bottom: 12px; font-weight: 500;">
-                🏆 称号 ({{ inventory_titles|length }})
-            </div>
-            <div class="inventory-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px;">
-                {% for item in inventory_titles %}
-                <div class="inventory-item {% if item.is_used %}equipped{% endif %}" onclick="showItemDetail('{{ item.id }}', '{{ item.item_name }}', '{{ item.item_type }}', '{{ item.source }}', '{{ item.acquire_time }}', {{ item.is_used|tojson }})" style="border: 2px solid {{ item.item_color or '#e8e8e8' }}; border-radius: 10px; padding: 12px; text-align: center; cursor: pointer; transition: all 0.3s; {% if item.is_used %}background: linear-gradient(135deg, {{ item.item_color }}20 0%, {{ item.item_color }}05 100%);{% endif %}">
-                    <div class="item-icon" style="width: 50px; height: 50px; border-radius: 50%; background: {{ item.item_color or '#f0f0f0' }}; margin: 0 auto 8px; display: flex; align-items: center; justify-content: center; font-size: 24px;">🏆</div>
-                    <div class="item-name" style="font-size: 13px; font-weight: 600; color: #262626; margin-bottom: 4px;">{{ item.item_name }}</div>
-                    <div class="item-status" style="font-size: 11px; color: {% if item.is_used %}#52c41a{% else %}#8c8c8c{% endif %};">
-                        {% if item.is_used %}✅ 使用中{% else %}点击使用{% endif %}
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
+    <!-- 右侧：标签页内容区 -->
+    <div class="profile-main">
+        <!-- 标签页导航 -->
+        <div class="profile-tabs">
+            <button class="tab-btn active" data-tab="info" onclick="switchTab('info')">📋 基本信息</button>
+            <button class="tab-btn" data-tab="inventory" onclick="switchTab('inventory')">🎒 我的物品</button>
+            <button class="tab-btn" data-tab="themes" onclick="switchTab('themes')">🎨 主题皮肤</button>
+            <button class="tab-btn" data-tab="cursors" onclick="switchTab('cursors')">🖱️ 鼠标皮肤</button>
         </div>
-        {% endif %}
-        
-        <!-- 头像边框分类 -->
-        {% if inventory_frames %}
-        <div class="inventory-section" style="margin-bottom: 20px;">
-            <div class="inventory-category" style="font-size: 14px; color: #666; margin-bottom: 12px; font-weight: 500;">
-                🖼️ 头像边框 ({{ inventory_frames|length }})
-            </div>
-            <div class="inventory-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px;">
-                {% for item in inventory_frames %}
-                <div class="inventory-item {% if item.is_used %}equipped{% endif %}" onclick="showItemDetail('{{ item.id }}', '{{ item.item_name }}', '{{ item.item_type }}', '{{ item.source }}', '{{ item.acquire_time }}', {{ item.is_used|tojson }})" style="border: 2px solid {{ item.item_color or '#e8e8e8' }}; border-radius: 10px; padding: 12px; text-align: center; cursor: pointer; transition: all 0.3s; {% if item.is_used %}background: linear-gradient(135deg, {{ item.item_color }}20 0%, {{ item.item_color }}05 100%);{% endif %}">
-                    <div class="item-icon" style="width: 50px; height: 50px; border-radius: 50%; background: {{ item.item_color or '#f0f0f0' }}; margin: 0 auto 8px; display: flex; align-items: center; justify-content: center; font-size: 24px; border: 4px solid {{ item.item_color or '#ddd' }};">🖼️</div>
-                    <div class="item-name" style="font-size: 13px; font-weight: 600; color: #262626; margin-bottom: 4px;">{{ item.item_name }}</div>
-                    <div class="item-status" style="font-size: 11px; color: {% if item.is_used %}#52c41a{% else %}#8c8c8c{% endif %};">
-                        {% if item.is_used %}✅ 使用中{% else %}点击使用{% endif %}
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-        {% endif %}
 
-        <!-- 主题皮肤分类 -->
-        <div class="inventory-section" style="margin-bottom: 20px;">
-            <div class="inventory-category" style="font-size: 14px; color: #666; margin-bottom: 12px; font-weight: 500;">
-                🎨 主题皮肤 ({% if inventory_themes %}{{ inventory_themes|length + 1 }}{% else %}1{% endif %})
-            </div>
-            <div class="inventory-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px;">
-                <!-- 默认主题 -->
-                <div class="inventory-item theme-inventory-item {% if not current_theme %}equipped{% endif %}" onclick="showDefaultThemeDetail()" style="border: 2px solid {% if not current_theme %}#52c41a{% else %}#e8e8e8{% endif %}; border-radius: 12px; padding: 16px; text-align: center; cursor: pointer; transition: all 0.3s; {% if not current_theme %}background: linear-gradient(135deg, #f6ffed 0%, #ffffff 100%); box-shadow: 0 2px 8px rgba(82, 196, 26, 0.15);{% endif %}">
-                    <div class="theme-preview-small" style="margin: 0 auto 12px; height: 80px; border-radius: 8px; display: flex; flex-direction: column; justify-content: center; align-items: center; background: linear-gradient(135deg, #f5f5f5 0%, #ffffff 50%, #e8e8e8 100%); border: 2px solid #d9d9d9;">
-                        <div class="theme-preview-name" style="font-size: 14px; margin-bottom: 4px; color: #262626;">默认主题</div>
-                        <div class="theme-preview-colors" style="justify-content: center;">
-                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #1890ff;"></div>
-                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #52c41a;"></div>
-                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #f5f5f5;"></div>
+        <!-- 标签页内容 -->
+        <div class="tab-content">
+            <!-- 基本信息 -->
+            <div id="tab-info" class="tab-panel active">
+                <div class="profile-card">
+                    <h3>📋 基本信息</h3>
+                    <div class="info-list">
+                        <div class="info-row">
+                            <span class="info-label">用户ID</span>
+                            <span class="info-value">{{ user.user_id[:8] }}...</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">借用人名称</span>
+                            <span class="info-value">{{ user.borrower_name or '未设置' }}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">邮箱</span>
+                            <span class="info-value">{{ user.email }}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">管理员权限</span>
+                            <span class="info-value">{{ '是' if user.is_admin else '否' }}</span>
                         </div>
                     </div>
-                    <div class="item-name" style="font-size: 13px; font-weight: 600; color: #262626; margin-bottom: 4px;">默认主题</div>
-                    <div class="item-status" style="font-size: 11px; color: {% if not current_theme %}#52c41a{% else %}#8c8c8c{% endif %};">
-                        {% if not current_theme %}✅ 使用中{% else %}点击使用{% endif %}
-                    </div>
                 </div>
-                {% if inventory_themes %}
-                {% for item in inventory_themes %}
-                <div class="inventory-item theme-inventory-item {% if item.is_used %}equipped{% endif %}" onclick="showThemeDetail('{{ item.item_id }}', {{ item.item_name|tojson }}, '{{ item.item_icon }}', {{ item.source.value|tojson }}, '{{ item.acquire_time }}', {{ item.is_used|tojson }})" style="border: 2px solid {% if item.is_used %}#52c41a{% else %}#e8e8e8{% endif %}; border-radius: 12px; padding: 16px; text-align: center; cursor: pointer; transition: all 0.3s; {% if item.is_used %}background: linear-gradient(135deg, #f6ffed 0%, #ffffff 100%); box-shadow: 0 2px 8px rgba(82, 196, 26, 0.15);{% endif %}">
-                    <div class="theme-preview-small theme-preview-{{ item.item_icon }}" style="margin: 0 auto 12px; height: 80px; border-radius: 8px; display: flex; flex-direction: column; justify-content: center; align-items: center;">
-                        <div class="theme-preview-name" style="font-size: 14px; margin-bottom: 4px;">{{ item.item_name }}</div>
-                        <div class="theme-preview-colors" style="justify-content: center;">
-                            {% if item.item_icon == 'ocean-blue' %}
-                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #1e3a5f;"></div>
-                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #00d4ff;"></div>
-                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #0a1628;"></div>
-                            {% elif item.item_icon == 'sakura-pink' %}
-                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #ff6b9d;"></div>
-                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #ffb8d0;"></div>
-                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #fff0f5;"></div>
-                            {% elif item.item_icon == 'forest-green' %}
-                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #2d6a4f;"></div>
-                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #74c69d;"></div>
-                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #d8f3dc;"></div>
-                            {% elif item.item_icon == 'dark-purple' %}
-                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #6c5ce7;"></div>
-                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #fd79a8;"></div>
-                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #2d3436;"></div>
-                            {% elif item.item_icon == 'warm-orange' %}
-                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #e17055;"></div>
-                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #fdcb6e;"></div>
-                            <div class="theme-color-dot" style="width: 16px; height: 16px; background: #fff9e6;"></div>
-                            {% endif %}
+            </div>
+
+            <!-- 我的物品 -->
+            <div id="tab-inventory" class="tab-panel">
+                <div class="profile-card">
+                    <h3>🎒 我的物品</h3>
+                    {% if inventory %}
+                    <!-- 称号 -->
+                    {% if inventory_titles %}
+                    <div class="inventory-category">
+                        <div class="category-title">🏆 称号 ({{ inventory_titles|length }})</div>
+                        <div class="inventory-grid">
+                            {% for item in inventory_titles %}
+                            <div class="inventory-item {% if item.is_used %}equipped{% endif %}" onclick="showItemDetail('{{ item.id }}', '{{ item.item_name }}', '{{ item.item_type }}', '{{ item.source }}', '{{ item.acquire_time }}', {{ item.is_used|tojson }})" style="border-color: {{ item.item_color or '#e8e8e8' }}">
+                                <div class="item-icon" style="background: {{ item.item_color or '#f0f0f0' }}">🏆</div>
+                                <div class="item-name">{{ item.item_name }}</div>
+                                <div class="item-status {% if item.is_used %}active{% endif %}">
+                                    {% if item.is_used %}✅ 使用中{% else %}点击使用{% endif %}
+                                </div>
+                            </div>
+                            {% endfor %}
                         </div>
                     </div>
-                    <div class="item-name" style="font-size: 13px; font-weight: 600; color: #262626; margin-bottom: 4px;">{{ item.item_name }}</div>
-                    <div class="item-status" style="font-size: 11px; color: {% if item.is_used %}#52c41a{% else %}#8c8c8c{% endif %};">
-                        {% if item.is_used %}✅ 使用中{% else %}点击使用{% endif %}
+                    {% endif %}
+                    
+                    <!-- 头像边框 -->
+                    {% if inventory_frames %}
+                    <div class="inventory-category">
+                        <div class="category-title">🖼️ 头像边框 ({{ inventory_frames|length }})</div>
+                        <div class="inventory-grid">
+                            {% for item in inventory_frames %}
+                            <div class="inventory-item {% if item.is_used %}equipped{% endif %}" onclick="showItemDetail('{{ item.id }}', '{{ item.item_name }}', '{{ item.item_type }}', '{{ item.source }}', '{{ item.acquire_time }}', {{ item.is_used|tojson }})" style="border-color: {{ item.item_color or '#e8e8e8' }}">
+                                <div class="item-icon" style="background: {{ item.item_color or '#f0f0f0' }}; border: 3px solid {{ item.item_color or '#ddd' }}">🖼️</div>
+                                <div class="item-name">{{ item.item_name }}</div>
+                                <div class="item-status {% if item.is_used %}active{% endif %}">
+                                    {% if item.is_used %}✅ 使用中{% else %}点击使用{% endif %}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% else %}
+                    <div class="empty-state">
+                        <div class="empty-icon">🎒</div>
+                        <div class="empty-title">暂无物品</div>
+                        <div class="empty-desc">去积分商城购买吧！</div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- 主题皮肤 -->
+            <div id="tab-themes" class="tab-panel">
+                <div class="profile-card">
+                    <h3>🎨 主题皮肤</h3>
+                    <div class="theme-grid">
+                        <!-- 默认主题 -->
+                        <div class="theme-item {% if not current_theme %}active{% endif %}" onclick="showDefaultThemeDetail()">
+                            <div class="theme-preview default-theme">
+                                <div class="theme-name">默认主题</div>
+                                <div class="theme-colors">
+                                    <span class="color-dot" style="background: #1890ff;"></span>
+                                    <span class="color-dot" style="background: #52c41a;"></span>
+                                    <span class="color-dot" style="background: #f5f5f5;"></span>
+                                </div>
+                            </div>
+                            <div class="theme-status">
+                                {% if not current_theme %}✅ 使用中{% else %}点击使用{% endif %}
+                            </div>
+                        </div>
+                        
+                        <!-- 已购买主题 -->
+                        {% if inventory_themes %}
+                        {% for item in inventory_themes %}
+                        <div class="theme-item {% if item.is_used %}active{% endif %}" onclick='showThemeDetail("{{ item.item_id }}", {{ item.item_name|tojson }}, "{{ item.item_icon }}", "{{ item.source }}", "{{ item.acquire_time }}", {{ item.is_used|tojson }})'>
+                            <div class="theme-preview theme-preview-{{ item.item_icon }}">
+                                <div class="theme-name">{{ item.item_name }}</div>
+                                <div class="theme-colors">
+                                    {% if item.item_icon == 'ocean-blue' %}
+                                    <span class="color-dot" style="background: #1e3a5f;"></span>
+                                    <span class="color-dot" style="background: #00d4ff;"></span>
+                                    <span class="color-dot" style="background: #0a1628;"></span>
+                                    {% elif item.item_icon == 'sakura-pink' %}
+                                    <span class="color-dot" style="background: #ff6b9d;"></span>
+                                    <span class="color-dot" style="background: #ffb8d0;"></span>
+                                    <span class="color-dot" style="background: #fff0f5;"></span>
+                                    {% elif item.item_icon == 'forest-green' %}
+                                    <span class="color-dot" style="background: #2d6a4f;"></span>
+                                    <span class="color-dot" style="background: #74c69d;"></span>
+                                    <span class="color-dot" style="background: #d8f3dc;"></span>
+                                    {% elif item.item_icon == 'dark-purple' %}
+                                    <span class="color-dot" style="background: #6c5ce7;"></span>
+                                    <span class="color-dot" style="background: #fd79a8;"></span>
+                                    <span class="color-dot" style="background: #2d3436;"></span>
+                                    {% elif item.item_icon == 'warm-orange' %}
+                                    <span class="color-dot" style="background: #e17055;"></span>
+                                    <span class="color-dot" style="background: #fdcb6e;"></span>
+                                    <span class="color-dot" style="background: #fff9e6;"></span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="theme-status">
+                                {% if item.is_used %}✅ 使用中{% else %}点击使用{% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                        {% endif %}
                     </div>
                 </div>
-                {% endfor %}
-                {% endif %}
+            </div>
+
+            <!-- 鼠标皮肤 -->
+            <div id="tab-cursors" class="tab-panel">
+                <div class="profile-card">
+                    <h3>🖱️ 鼠标皮肤</h3>
+                    <div class="cursor-grid">
+                        <!-- 默认鼠标 -->
+                        <div class="cursor-item {% if not current_cursor %}active{% endif %}" onclick="showDefaultCursorDetail()">
+                            <div class="cursor-preview default-cursor">
+                                <div class="cursor-icon">🖱️</div>
+                                <div class="cursor-name">默认鼠标</div>
+                            </div>
+                            <div class="cursor-status">
+                                {% if not current_cursor %}✅ 使用中{% else %}点击使用{% endif %}
+                            </div>
+                        </div>
+
+                        <!-- 已购买鼠标皮肤 -->
+                        {% if inventory_cursors %}
+                        {% for item in inventory_cursors %}
+                        <div class="cursor-item {% if item.is_used %}active{% endif %}" onclick='showCursorDetail("{{ item.item_id }}", {{ item.item_name|tojson }}, "{{ item.item_icon }}", "{{ item.source }}", "{{ item.acquire_time }}", {{ item.is_used|tojson }})'>
+                            <div class="cursor-preview" style="background: linear-gradient(135deg, {{ item.item_color or '#f0f0f0' }}20 0%, {{ item.item_color or '#f0f0f0' }}40 100%); border-color: {{ item.item_color or '#e8e8e8' }};">
+                                <div class="cursor-icon">{{ get_cursor_emoji(item.item_icon) }}</div>
+                                <div class="cursor-name">{{ item.item_name }}</div>
+                            </div>
+                            <div class="cursor-status">
+                                {% if item.is_used %}✅ 使用中{% else %}点击使用{% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                        {% endif %}
+                    </div>
+                </div>
             </div>
         </div>
-        {% else %}
-        <div class="empty-inventory" style="text-align: center; padding: 40px 20px; color: #8c8c8c;">
-            <div style="font-size: 48px; margin-bottom: 12px;">🎒</div>
-            <div style="font-size: 14px;">暂无物品</div>
-            <div style="font-size: 12px; margin-top: 8px;">去积分商城购买吧！</div>
-        </div>
-        {% endif %}
     </div>
+</div>
 
-    <!-- 快捷操作卡片 -->
-    <div class="profile-card" style="background: white; border-radius: 16px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.08);">
-        <h3 style="font-size: 16px; font-weight: 600; color: #333; margin: 0 0 20px 0; padding-bottom: 12px; border-bottom: 1px solid #f0f0f0;">⚙️ 快捷操作</h3>
+<!-- 鼠标皮肤详情弹窗 -->
+<div id="cursorDetailModal" class="pc-modal" style="display: none;">
+    <div class="pc-modal-content" style="max-width: 400px;">
+        <div class="pc-modal-header">
+            <h3>鼠标皮肤详情</h3>
+            <button class="pc-modal-close" onclick="closeCursorDetailModal()">&times;</button>
+        </div>
+        <div class="pc-modal-body" style="padding: 24px; text-align: center;">
+            <div id="cursorDetailIcon" style="font-size: 80px; margin-bottom: 16px; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.2));"></div>
+            <div id="cursorDetailName" style="font-size: 20px; font-weight: 600; color: #262626; margin-bottom: 8px;"></div>
+            <div id="cursorDetailSource" style="font-size: 13px; color: #999; margin-bottom: 4px;"></div>
+            <div id="cursorDetailTime" style="font-size: 13px; color: #999; margin-bottom: 12px;"></div>
+            <div id="cursorDetailStatus" style="font-size: 14px; color: #52c41a; font-weight: 500;"></div>
+        </div>
+        <div class="pc-modal-footer">
+            <button type="button" class="btn btn-default" onclick="closeCursorDetailModal()">关闭</button>
+            <button type="button" id="useCursorBtn" class="btn btn-primary" onclick="useCurrentCursor()">应用鼠标皮肤</button>
+        </div>
+    </div>
+</div>
 
-        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-            <a href="{{ url_for('change_password') }}" class="btn btn-default" style="flex: 1; min-width: 140px; text-align: center; padding: 12px; border-radius: 8px; text-decoration: none;">
-                🔐 修改密码
-            </a>
-            <a href="{{ url_for('logout') }}" class="btn btn-danger" style="flex: 1; min-width: 140px; text-align: center; padding: 12px; border-radius: 8px; text-decoration: none; background: #ff4d4f; color: white;">
-                🚪 退出登录
-            </a>
+<!-- 默认鼠标详情弹窗 -->
+<div id="defaultCursorModal" class="pc-modal" style="display: none;">
+    <div class="pc-modal-content" style="max-width: 400px;">
+        <div class="pc-modal-header">
+            <h3>鼠标皮肤详情</h3>
+            <button class="pc-modal-close" onclick="closeDefaultCursorModal()">&times;</button>
+        </div>
+        <div class="pc-modal-body" style="padding: 24px; text-align: center;">
+            <div style="font-size: 80px; margin-bottom: 16px;">🖱️</div>
+            <div style="font-size: 20px; font-weight: 600; color: #262626; margin-bottom: 8px;">默认鼠标</div>
+            <div style="font-size: 13px; color: #999; margin-bottom: 4px;">来源：系统默认</div>
+            <div id="defaultCursorStatus" style="font-size: 14px; color: #52c41a; font-weight: 500; margin-top: 12px;"></div>
+        </div>
+        <div class="pc-modal-footer">
+            <button type="button" class="btn btn-default" onclick="closeDefaultCursorModal()">关闭</button>
+            <button type="button" id="useDefaultCursorBtn" class="btn btn-primary" onclick="useDefaultCursor()">应用默认鼠标</button>
         </div>
     </div>
 </div>
@@ -305,68 +392,467 @@
 </div>
 
 <style>
-.avatar-wrapper:hover .avatar-preview {
-    transform: scale(1.05);
-    box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
+/* 个人中心布局 */
+.profile-layout {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 24px;
+    max-width: 1200px;
+}
+
+/* 左侧边栏 */
+.profile-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.profile-card {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+.profile-card h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #333;
+    margin: 0 0 16px 0;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+/* 用户卡片 */
+.user-card {
+    text-align: center;
+}
+
+.avatar-wrapper {
+    position: relative;
+    display: inline-block;
+    margin-bottom: 16px;
+}
+
+.avatar-preview {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 40px;
+    color: white;
+    border: 3px solid #f0f0f0;
+}
+
+.avatar-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.avatar-overlay {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 32px;
+    height: 32px;
+    background: #667eea;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4);
+    transition: all 0.3s;
 }
 
 .avatar-overlay:hover {
     transform: scale(1.1);
-    background: #5a6fd6 !important;
+    background: #5a6fd6;
 }
 
-.btn-danger {
-    background: #ff4d4f;
-    color: white;
+.avatar-overlay span {
+    font-size: 14px;
+}
+
+.user-name {
+    font-size: 20px;
+    font-weight: 600;
+    color: #333;
+    margin: 0 0 4px 0;
+}
+
+.user-email {
+    font-size: 13px;
+    color: #888;
+    margin: 0 0 16px 0;
+}
+
+/* 个性签名 */
+.signature-section {
+    margin-bottom: 20px;
+}
+
+.signature-display {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: #f8f8f8;
+    border-radius: 6px;
+}
+
+.signature-display span {
+    font-size: 13px;
+    color: #666;
+    font-style: italic;
+}
+
+.btn-icon {
+    background: none;
     border: none;
+    cursor: pointer;
+    padding: 4px;
+    opacity: 0.6;
+    transition: opacity 0.3s;
 }
 
-.btn-danger:hover {
-    background: #ff7875;
+.btn-icon:hover {
+    opacity: 1;
 }
 
-.profile-card {
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+.signature-edit {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
-.profile-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+.signature-edit input {
+    padding: 8px 12px;
+    border: 1px solid #d9d9d9;
+    border-radius: 6px;
+    font-size: 13px;
 }
 
-/* 主题预览小卡片样式 */
-.theme-preview-small {
-    padding: 12px;
+.signature-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+}
+
+/* 用户统计 */
+.user-stats {
+    display: flex;
+    justify-content: center;
+    gap: 32px;
+    padding: 16px 0;
+    margin-bottom: 16px;
+    border-top: 1px solid #f0f0f0;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.stat-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.stat-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: #333;
+}
+
+.stat-label {
+    font-size: 12px;
+    color: #888;
+    margin-top: 2px;
+}
+
+.btn-block {
+    width: 100%;
+    padding: 10px;
     border-radius: 8px;
 }
 
-.theme-preview-small .theme-preview-name {
-    font-weight: 600;
+/* 快捷操作 - 新设计 */
+.action-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
 }
 
-.theme-preview-small .theme-color-dot {
+.action-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 16px 12px;
+    border-radius: 12px;
+    text-decoration: none;
+    background: linear-gradient(135deg, #f5f7fa 0%, #e4e7f1 100%);
+    border: 1px solid #e1e4e8;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.action-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    background: linear-gradient(135deg, #e8ecf5 0%, #d8dce8 100%);
+}
+
+.action-btn-danger {
+    background: linear-gradient(135deg, #fff2f0 0%, #ffe4e1 100%);
+    border-color: #ffccc7;
+}
+
+.action-btn-danger:hover {
+    background: linear-gradient(135deg, #ffe8e6 0%, #ffd8d4 100%);
+    box-shadow: 0 4px 12px rgba(255,77,79,0.15);
+}
+
+.action-btn-icon {
+    font-size: 24px;
+    margin-bottom: 8px;
+}
+
+.action-btn-text {
+    font-size: 13px;
+    font-weight: 500;
+    color: #333;
+}
+
+.action-btn-danger .action-btn-text {
+    color: #ff4d4f;
+}
+
+/* 右侧主内容区 */
+.profile-main {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+/* 标签页导航 */
+.profile-tabs {
+    display: flex;
+    gap: 8px;
+    background: white;
+    padding: 8px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+.tab-btn {
+    padding: 10px 20px;
+    border: none;
+    background: transparent;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.3s;
+    color: #666;
+}
+
+.tab-btn:hover {
+    background: #f5f5f5;
+    color: #333;
+}
+
+.tab-btn.active {
+    background: var(--primary, #1890ff);
+    color: white;
+}
+
+/* 标签页内容 */
+.tab-content {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    min-height: 400px;
+}
+
+.tab-panel {
+    display: none;
+    padding: 24px;
+}
+
+.tab-panel.active {
+    display: block;
+}
+
+/* 基本信息 */
+.info-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 0;
+    border-bottom: 1px solid #f5f5f5;
+}
+
+.info-row:last-child {
+    border-bottom: none;
+}
+
+.info-label {
+    color: #666;
+    font-size: 14px;
+}
+
+.info-value {
+    color: #333;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+/* 物品分类 */
+.inventory-category {
+    margin-bottom: 24px;
+}
+
+.category-title {
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 12px;
+    font-weight: 500;
+}
+
+.inventory-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px;
+}
+
+.inventory-item {
+    border: 2px solid #e8e8e8;
+    border-radius: 10px;
+    padding: 12px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.inventory-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.inventory-item.equipped {
+    border-color: #52c41a;
+    background: linear-gradient(135deg, #f6ffed 0%, #ffffff 100%);
+}
+
+.item-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    margin: 0 auto 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+}
+
+.item-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #262626;
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.item-status {
+    font-size: 11px;
+    color: #8c8c8c;
+}
+
+.item-status.active {
+    color: #52c41a;
+}
+
+/* 主题网格 */
+.theme-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
+}
+
+.theme-item {
+    border: 2px solid #e8e8e8;
+    border-radius: 12px;
+    padding: 16px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.theme-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.theme-item.active {
+    border-color: #52c41a;
+    background: linear-gradient(135deg, #f6ffed 0%, #ffffff 100%);
+}
+
+.theme-preview {
+    height: 80px;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.theme-preview.default-theme {
+    background: linear-gradient(135deg, #f5f5f5 0%, #ffffff 50%, #e8e8e8 100%);
+    border: 1px solid #d9d9d9;
+}
+
+.theme-name {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.theme-colors {
+    display: flex;
+    gap: 6px;
+}
+
+.color-dot {
     width: 16px;
     height: 16px;
     border-radius: 50%;
-    border: 2px solid rgba(255, 255, 255, 0.5);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    border: 2px solid rgba(255,255,255,0.5);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
 
-/* 主题库存项样式 */
-.theme-inventory-item {
-    transition: all 0.3s ease;
+.theme-status {
+    text-align: center;
+    font-size: 12px;
+    color: #8c8c8c;
 }
 
-.theme-inventory-item:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+.theme-item.active .theme-status {
+    color: #52c41a;
 }
 
-.theme-inventory-item.equipped {
-    border-color: #52c41a !important;
-}
-
-/* 主题预览卡片样式（复用themes.css中的定义） */
+/* 主题预览样式 */
 .theme-preview-ocean-blue {
     background: linear-gradient(135deg, #1e3a5f 0%, #2d5a8a 50%, #0d1b2a 100%);
     color: #e8f4f8;
@@ -375,7 +861,7 @@
 .theme-preview-sakura-pink {
     background: linear-gradient(135deg, #fff0f5 0%, #ffe4ec 50%, #ffb8d0 100%);
     color: #5a3d5c;
-    border: 2px solid #ffb8d0;
+    border: 1px solid #ffb8d0;
 }
 
 .theme-preview-forest-green {
@@ -392,24 +878,398 @@
     background: linear-gradient(135deg, #fff9e6 0%, #fdcb6e 50%, #e17055 100%);
     color: #2d3436;
 }
+
+/* 空状态 */
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: #8c8c8c;
+}
+
+.empty-icon {
+    font-size: 48px;
+    margin-bottom: 12px;
+}
+
+.empty-title {
+    font-size: 14px;
+    margin-bottom: 8px;
+}
+
+.empty-desc {
+    font-size: 12px;
+}
+
+/* 暗色主题适配 */
+[data-theme="ocean-blue"] .profile-card,
+[data-theme="dark-purple"] .profile-card,
+[data-theme="forest-green"] .profile-card {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+[data-theme="ocean-blue"] .profile-card h3,
+[data-theme="dark-purple"] .profile-card h3,
+[data-theme="forest-green"] .profile-card h3 {
+    color: rgba(255,255,255,0.9);
+    border-bottom-color: rgba(255,255,255,0.15);
+}
+
+[data-theme="ocean-blue"] .user-name,
+[data-theme="dark-purple"] .user-name,
+[data-theme="forest-green"] .user-name {
+    color: rgba(255,255,255,0.95);
+}
+
+[data-theme="ocean-blue"] .user-email,
+[data-theme="dark-purple"] .user-email,
+[data-theme="forest-green"] .user-email {
+    color: rgba(255,255,255,0.6);
+}
+
+[data-theme="ocean-blue"] .signature-display,
+[data-theme="dark-purple"] .signature-display,
+[data-theme="forest-green"] .signature-display {
+    background: rgba(255,255,255,0.1);
+}
+
+[data-theme="ocean-blue"] .signature-display span,
+[data-theme="dark-purple"] .signature-display span,
+[data-theme="forest-green"] .signature-display span {
+    color: rgba(255,255,255,0.7);
+}
+
+[data-theme="ocean-blue"] .signature-edit input,
+[data-theme="dark-purple"] .signature-edit input,
+[data-theme="forest-green"] .signature-edit input {
+    background: rgba(255,255,255,0.1);
+    border-color: rgba(255,255,255,0.2);
+    color: rgba(255,255,255,0.9);
+}
+
+[data-theme="ocean-blue"] .stat-value,
+[data-theme="dark-purple"] .stat-value,
+[data-theme="forest-green"] .stat-value {
+    color: rgba(255,255,255,0.95);
+}
+
+[data-theme="ocean-blue"] .stat-label,
+[data-theme="dark-purple"] .stat-label,
+[data-theme="forest-green"] .stat-label {
+    color: rgba(255,255,255,0.6);
+}
+
+[data-theme="ocean-blue"] .user-stats,
+[data-theme="dark-purple"] .user-stats,
+[data-theme="forest-green"] .user-stats {
+    border-color: rgba(255,255,255,0.15);
+}
+
+/* 快捷操作暗色 */
+[data-theme="ocean-blue"] .action-btn,
+[data-theme="dark-purple"] .action-btn,
+[data-theme="forest-green"] .action-btn {
+    background: rgba(255,255,255,0.1);
+    border-color: rgba(255,255,255,0.2);
+}
+
+[data-theme="ocean-blue"] .action-btn:hover,
+[data-theme="dark-purple"] .action-btn:hover,
+[data-theme="forest-green"] .action-btn:hover {
+    background: rgba(255,255,255,0.15);
+}
+
+[data-theme="ocean-blue"] .action-btn-text,
+[data-theme="dark-purple"] .action-btn-text,
+[data-theme="forest-green"] .action-btn-text {
+    color: rgba(255,255,255,0.9);
+}
+
+[data-theme="ocean-blue"] .action-btn-danger,
+[data-theme="dark-purple"] .action-btn-danger,
+[data-theme="forest-green"] .action-btn-danger {
+    background: rgba(255,77,79,0.15);
+    border-color: rgba(255,77,79,0.3);
+}
+
+[data-theme="ocean-blue"] .action-btn-danger:hover,
+[data-theme="dark-purple"] .action-btn-danger:hover,
+[data-theme="forest-green"] .action-btn-danger:hover {
+    background: rgba(255,77,79,0.25);
+}
+
+/* 标签页暗色 */
+[data-theme="ocean-blue"] .profile-tabs,
+[data-theme="dark-purple"] .profile-tabs,
+[data-theme="forest-green"] .profile-tabs {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+[data-theme="ocean-blue"] .tab-btn,
+[data-theme="dark-purple"] .tab-btn,
+[data-theme="forest-green"] .tab-btn {
+    color: rgba(255,255,255,0.7);
+}
+
+[data-theme="ocean-blue"] .tab-btn:hover,
+[data-theme="dark-purple"] .tab-btn:hover,
+[data-theme="forest-green"] .tab-btn:hover {
+    background: rgba(255,255,255,0.1);
+    color: rgba(255,255,255,0.9);
+}
+
+[data-theme="ocean-blue"] .tab-content,
+[data-theme="dark-purple"] .tab-content,
+[data-theme="forest-green"] .tab-content {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+/* 基本信息暗色 */
+[data-theme="ocean-blue"] .info-label,
+[data-theme="dark-purple"] .info-label,
+[data-theme="forest-green"] .info-label {
+    color: rgba(255,255,255,0.6);
+}
+
+[data-theme="ocean-blue"] .info-value,
+[data-theme="dark-purple"] .info-value,
+[data-theme="forest-green"] .info-value {
+    color: rgba(255,255,255,0.9);
+}
+
+[data-theme="ocean-blue"] .info-row,
+[data-theme="dark-purple"] .info-row,
+[data-theme="forest-green"] .info-row {
+    border-color: rgba(255,255,255,0.1);
+}
+
+/* 物品网格暗色 */
+[data-theme="ocean-blue"] .category-title,
+[data-theme="dark-purple"] .category-title,
+[data-theme="forest-green"] .category-title {
+    color: rgba(255,255,255,0.7);
+}
+
+[data-theme="ocean-blue"] .inventory-item,
+[data-theme="dark-purple"] .inventory-item,
+[data-theme="forest-green"] .inventory-item {
+    background: rgba(255,255,255,0.05);
+    border-color: rgba(255,255,255,0.15);
+}
+
+[data-theme="ocean-blue"] .inventory-item:hover,
+[data-theme="dark-purple"] .inventory-item:hover,
+[data-theme="forest-green"] .inventory-item:hover {
+    background: rgba(255,255,255,0.1);
+}
+
+[data-theme="ocean-blue"] .item-name,
+[data-theme="dark-purple"] .item-name,
+[data-theme="forest-green"] .item-name {
+    color: rgba(255,255,255,0.9);
+}
+
+[data-theme="ocean-blue"] .item-status,
+[data-theme="dark-purple"] .item-status,
+[data-theme="forest-green"] .item-status {
+    color: rgba(255,255,255,0.5);
+}
+
+/* 主题网格暗色 */
+[data-theme="ocean-blue"] .theme-item,
+[data-theme="dark-purple"] .theme-item,
+[data-theme="forest-green"] .theme-item {
+    background: rgba(255,255,255,0.05);
+    border-color: rgba(255,255,255,0.15);
+}
+
+[data-theme="ocean-blue"] .theme-item:hover,
+[data-theme="dark-purple"] .theme-item:hover,
+[data-theme="forest-green"] .theme-item:hover {
+    background: rgba(255,255,255,0.1);
+}
+
+[data-theme="ocean-blue"] .theme-status,
+[data-theme="dark-purple"] .theme-status,
+[data-theme="forest-green"] .theme-status {
+    color: rgba(255,255,255,0.6);
+}
+
+/* 空状态暗色 */
+[data-theme="ocean-blue"] .empty-state,
+[data-theme="dark-purple"] .empty-state,
+[data-theme="forest-green"] .empty-state {
+    color: rgba(255,255,255,0.5);
+}
+
+/* 鼠标皮肤网格 */
+.cursor-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 16px;
+}
+
+.cursor-item {
+    border: 2px solid #e8e8e8;
+    border-radius: 12px;
+    padding: 12px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.cursor-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.cursor-item.active {
+    border-color: #52c41a;
+    background: linear-gradient(135deg, #f6ffed 0%, #ffffff 100%);
+}
+
+.cursor-preview {
+    height: 100px;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 8px;
+    border: 2px solid transparent;
+}
+
+.cursor-preview.default-cursor {
+    background: linear-gradient(135deg, #f5f5f5 0%, #ffffff 50%, #e8e8e8 100%);
+    border: 2px solid #d9d9d9;
+}
+
+.cursor-icon {
+    font-size: 40px;
+    margin-bottom: 4px;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+}
+
+.cursor-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #262626;
+    text-align: center;
+}
+
+.cursor-status {
+    text-align: center;
+    font-size: 12px;
+    color: #8c8c8c;
+}
+
+.cursor-item.active .cursor-status {
+    color: #52c41a;
+}
+
+/* 鼠标皮肤暗色适配 */
+[data-theme="ocean-blue"] .cursor-item,
+[data-theme="dark-purple"] .cursor-item,
+[data-theme="forest-green"] .cursor-item {
+    background: rgba(255,255,255,0.05);
+    border-color: rgba(255,255,255,0.15);
+}
+
+[data-theme="ocean-blue"] .cursor-item:hover,
+[data-theme="dark-purple"] .cursor-item:hover,
+[data-theme="forest-green"] .cursor-item:hover {
+    background: rgba(255,255,255,0.1);
+}
+
+[data-theme="ocean-blue"] .cursor-name,
+[data-theme="dark-purple"] .cursor-name,
+[data-theme="forest-green"] .cursor-name {
+    color: rgba(255,255,255,0.9);
+}
+
+[data-theme="ocean-blue"] .cursor-status,
+[data-theme="dark-purple"] .cursor-status,
+[data-theme="forest-green"] .cursor-status {
+    color: rgba(255,255,255,0.6);
+}
+
+/* 响应式 */
+@media (max-width: 992px) {
+    .profile-layout {
+        grid-template-columns: 1fr;
+    }
+    
+    .profile-sidebar {
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+    
+    .user-card {
+        flex: 1;
+        min-width: 280px;
+    }
+    
+    .action-card {
+        flex: 0 0 200px;
+    }
+}
+
+@media (max-width: 768px) {
+    .profile-tabs {
+        flex-wrap: wrap;
+    }
+    
+    .tab-btn {
+        flex: 1;
+        min-width: 100px;
+    }
+    
+    .inventory-grid {
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    }
+    
+    .theme-grid {
+        grid-template-columns: 1fr;
+    }
+}
 </style>
 
 <script>
 let currentAvatarFile = null;
+let currentItemId = null;
+let currentItemType = null;
+let currentThemeId = null;
+let currentThemeIcon = null;
+
+// 标签页切换
+function switchTab(tabName) {
+    // 更新按钮状态
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.dataset.tab === tabName) {
+            btn.classList.add('active');
+        }
+    });
+    
+    // 更新内容显示
+    document.querySelectorAll('.tab-panel').forEach(panel => {
+        panel.classList.remove('active');
+    });
+    document.getElementById('tab-' + tabName).classList.add('active');
+}
 
 // 处理头像上传
 function handleAvatarUpload(input) {
     const file = input.files[0];
     if (!file) return;
 
-    // 检查文件类型
     const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
     if (!allowedTypes.includes(file.type)) {
         showToast('只支持 jpg, png, gif, webp 格式的图片', 'error');
         return;
     }
 
-    // 检查文件大小 (最大 5MB)
     if (file.size > 5 * 1024 * 1024) {
         showToast('图片大小不能超过 5MB', 'error');
         return;
@@ -417,7 +1277,6 @@ function handleAvatarUpload(input) {
 
     currentAvatarFile = file;
 
-    // 显示预览
     const reader = new FileReader();
     reader.onload = function(e) {
         document.getElementById('cropImage').src = e.target.result;
@@ -426,14 +1285,12 @@ function handleAvatarUpload(input) {
     reader.readAsDataURL(file);
 }
 
-// 关闭裁剪弹窗
 function closeAvatarCropModal() {
     document.getElementById('avatarCropModal').style.display = 'none';
     currentAvatarFile = null;
     document.getElementById('avatarInput').value = '';
 }
 
-// 确认上传头像
 async function confirmAvatarUpload() {
     if (!currentAvatarFile) return;
 
@@ -453,11 +1310,9 @@ async function confirmAvatarUpload() {
         if (data.success) {
             showToast('头像上传成功', 'success');
 
-            // 更新头像显示
             const avatarPreview = document.getElementById('avatarPreview');
-            avatarPreview.innerHTML = `<img src="${data.avatar_url}" alt="头像" style="width: 100%; height: 100%; object-fit: cover;">`;
+            avatarPreview.innerHTML = `<img src="${data.avatar_url}" alt="头像">`;
 
-            // 更新侧边栏头像
             const sidebarAvatar = document.querySelector('.user-avatar-mini');
             if (sidebarAvatar) {
                 sidebarAvatar.innerHTML = `<img src="${data.avatar_url}" alt="头像" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">`;
@@ -468,12 +1323,11 @@ async function confirmAvatarUpload() {
             showToast(data.message || '上传失败', 'error');
         }
     } catch (error) {
-        console.error('上传头像失败:', error);
         showToast('上传失败，请重试', 'error');
     }
 }
 
-// Toast 提示函数
+// Toast 提示
 function showToast(message, type = 'info') {
     const toast = document.getElementById('toast');
     if (!toast) return;
@@ -486,36 +1340,21 @@ function showToast(message, type = 'info') {
     }, 3000);
 }
 
-// ==================== 个性签名功能 ====================
-
-// 进入编辑模式
+// 个性签名
 function editSignature() {
     document.getElementById('signatureDisplay').style.display = 'none';
     document.getElementById('signatureEdit').style.display = 'flex';
-    document.getElementById('signatureHint').style.display = 'block';
     document.getElementById('signatureInput').focus();
 }
 
-// 取消编辑
 function cancelEditSignature() {
     document.getElementById('signatureDisplay').style.display = 'flex';
     document.getElementById('signatureEdit').style.display = 'none';
-    document.getElementById('signatureHint').style.display = 'none';
-    // 恢复原始值
-    const originalValue = document.getElementById('signatureText').textContent.trim();
-    if (originalValue === '✏️ 点击添加个性签名') {
-        document.getElementById('signatureInput').value = '';
-    } else {
-        document.getElementById('signatureInput').value = originalValue;
-    }
 }
 
-// 保存签名
 async function saveSignature() {
-    const signatureInput = document.getElementById('signatureInput');
-    const signature = signatureInput.value.trim();
+    const signature = document.getElementById('signatureInput').value.trim();
 
-    // 检查长度
     if (signature.length > 100) {
         showToast('签名长度不能超过100个字符', 'error');
         return;
@@ -531,47 +1370,26 @@ async function saveSignature() {
         const data = await response.json();
 
         if (data.success) {
-            // 更新显示
             const signatureText = document.getElementById('signatureText');
             if (signature) {
                 signatureText.textContent = signature;
-                signatureText.style.color = '#666';
-                signatureText.style.fontStyle = 'normal';
             } else {
                 signatureText.textContent = '✏️ 点击添加个性签名';
-                signatureText.style.color = '#888';
-                signatureText.style.fontStyle = 'italic';
             }
 
-            // 切换回显示模式
             document.getElementById('signatureDisplay').style.display = 'flex';
             document.getElementById('signatureEdit').style.display = 'none';
-            document.getElementById('signatureHint').style.display = 'none';
 
             showToast('签名更新成功', 'success');
         } else {
             showToast(data.message || '保存失败', 'error');
         }
     } catch (error) {
-        console.error('保存签名失败:', error);
         showToast('保存失败，请重试', 'error');
     }
 }
 
-// 监听回车键保存
-if (document.getElementById('signatureInput')) {
-    document.getElementById('signatureInput').addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') {
-            saveSignature();
-        }
-    });
-}
-
-// ==================== 物品使用功能 ====================
-let currentItemId = null;
-let currentItemType = null;
-
-// 显示物品详情
+// 物品详情
 function showItemDetail(itemId, itemName, itemType, source, acquireTime, isUsed) {
     currentItemId = itemId;
     currentItemType = itemType;
@@ -584,17 +1402,14 @@ function showItemDetail(itemId, itemName, itemType, source, acquireTime, isUsed)
     const timeDiv = document.getElementById('itemDetailTime');
     const useBtn = document.getElementById('useItemBtn');
     
-    // 设置图标
     iconDiv.textContent = itemType === '称号' ? '🏆' : '🖼️';
     iconDiv.style.background = itemType === '称号' ? '#fff7e6' : '#e6f7ff';
     
-    // 设置信息
     nameDiv.textContent = itemName;
     typeDiv.textContent = '类型：' + itemType;
     sourceDiv.textContent = '来源：' + source;
     timeDiv.textContent = '获得时间：' + (acquireTime ? acquireTime.split(' ')[0] : '未知');
     
-    // 设置按钮状态
     if (isUsed) {
         useBtn.textContent = '已使用';
         useBtn.disabled = true;
@@ -608,14 +1423,12 @@ function showItemDetail(itemId, itemName, itemType, source, acquireTime, isUsed)
     modal.style.display = 'flex';
 }
 
-// 关闭物品详情弹窗
 function closeItemDetailModal() {
     document.getElementById('itemDetailModal').style.display = 'none';
     currentItemId = null;
     currentItemType = null;
 }
 
-// 使用当前物品
 async function useCurrentItem() {
     if (!currentItemId) return;
 
@@ -631,22 +1444,16 @@ async function useCurrentItem() {
         if (data.success) {
             showToast('🎉 ' + data.message, 'success');
             closeItemDetailModal();
-            // 刷新页面
             setTimeout(() => location.reload(), 1000);
         } else {
             showToast(data.message || '使用失败', 'error');
         }
     } catch (error) {
-        console.error('使用物品失败:', error);
         showToast('使用失败，请重试', 'error');
     }
 }
 
-// ==================== 主题皮肤功能 ====================
-let currentThemeId = null;
-let currentThemeIcon = null;
-
-// 主题描述映射
+// 主题功能
 const themeDescriptions = {
     'ocean-blue': '深邃海洋风格，沉稳专业，适合商务场景',
     'sakura-pink': '浪漫樱花风格，温柔甜美，适合女性用户',
@@ -655,7 +1462,6 @@ const themeDescriptions = {
     'warm-orange': '温暖阳光风格，活力热情，充满正能量'
 };
 
-// 显示主题详情
 function showThemeDetail(itemId, itemName, itemIcon, source, acquireTime, isUsed) {
     currentThemeId = itemId;
     currentThemeIcon = itemIcon;
@@ -670,19 +1476,9 @@ function showThemeDetail(itemId, itemName, itemIcon, source, acquireTime, isUsed
     const statusDiv = document.getElementById('themeDetailStatus');
     const useBtn = document.getElementById('useThemeBtn');
 
-    // 设置预览卡片样式
     previewDiv.className = 'theme-preview-card theme-preview-' + itemIcon;
-    previewDiv.style.margin = '0 0 16px 0';
-    previewDiv.style.height = '120px';
-    previewDiv.style.display = 'flex';
-    previewDiv.style.flexDirection = 'column';
-    previewDiv.style.justifyContent = 'center';
-    previewDiv.style.alignItems = 'center';
-
-    // 设置主题名称
     nameDiv.textContent = itemName;
 
-    // 设置颜色点
     const colorMap = {
         'ocean-blue': ['#1e3a5f', '#00d4ff', '#0a1628'],
         'sakura-pink': ['#ff6b9d', '#ffb8d0', '#fff0f5'],
@@ -696,14 +1492,10 @@ function showThemeDetail(itemId, itemName, itemIcon, source, acquireTime, isUsed
         `<div class="theme-color-dot" style="width: 24px; height: 24px; background: ${color};"></div>`
     ).join('');
 
-    // 设置描述
     descDiv.textContent = themeDescriptions[itemIcon] || '';
-
-    // 设置来源和时间
     sourceDiv.textContent = '来源：' + source;
     timeDiv.textContent = '获得时间：' + (acquireTime ? acquireTime.split(' ')[0] : '未知');
 
-    // 设置状态
     if (isUsed) {
         statusDiv.textContent = '✅ 当前正在使用此主题';
         statusDiv.style.display = 'block';
@@ -720,23 +1512,16 @@ function showThemeDetail(itemId, itemName, itemIcon, source, acquireTime, isUsed
     modal.style.display = 'flex';
 }
 
-// 关闭主题详情弹窗
 function closeThemeDetailModal() {
     document.getElementById('themeDetailModal').style.display = 'none';
     currentThemeId = null;
     currentThemeIcon = null;
 }
 
-// 使用当前主题
 async function useCurrentTheme() {
-    if (!currentThemeId) {
-        showToast('主题ID为空', 'error');
-        return;
-    }
+    if (!currentThemeId) return;
 
     try {
-        showToast('正在应用主题...', 'info');
-
         const response = await fetch('/api/shop/equip', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -748,26 +1533,21 @@ async function useCurrentTheme() {
         if (data.success) {
             showToast('✨ ' + data.message, 'success');
             closeThemeDetailModal();
-            // 刷新页面
             setTimeout(() => location.reload(), 1000);
         } else {
             showToast(data.message || '应用主题失败', 'error');
         }
     } catch (error) {
-        console.error('应用主题失败:', error);
         showToast('应用主题失败，请重试', 'error');
     }
 }
 
-// ==================== 默认主题功能 ====================
-
-// 显示默认主题详情
+// 默认主题
 function showDefaultThemeDetail() {
     const modal = document.getElementById('defaultThemeModal');
     const statusDiv = document.getElementById('defaultThemeStatus');
     const useBtn = document.getElementById('useDefaultThemeBtn');
 
-    // 检查是否正在使用默认主题
     const isUsingDefault = !{{ (current_theme or '')|tojson }};
 
     if (isUsingDefault) {
@@ -786,16 +1566,12 @@ function showDefaultThemeDetail() {
     modal.style.display = 'flex';
 }
 
-// 关闭默认主题弹窗
 function closeDefaultThemeModal() {
     document.getElementById('defaultThemeModal').style.display = 'none';
 }
 
-// 使用默认主题
 async function useDefaultTheme() {
     try {
-        showToast('正在恢复默认主题...', 'info');
-
         const response = await fetch('/api/shop/equip', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -807,14 +1583,155 @@ async function useDefaultTheme() {
         if (data.success) {
             showToast('✨ ' + data.message, 'success');
             closeDefaultThemeModal();
-            // 刷新页面
             setTimeout(() => location.reload(), 1000);
         } else {
             showToast(data.message || '应用主题失败', 'error');
         }
     } catch (error) {
-        console.error('应用默认主题失败:', error);
         showToast('应用主题失败，请重试', 'error');
+    }
+}
+
+// 鼠标皮肤功能
+let currentCursorId = null;
+let currentCursorIcon = null;
+
+const cursorEmojiMap = {
+    'cat-paw-pink': '🐾',
+    'unicorn-rainbow': '🦄',
+    'bunny-ears': '🐰',
+    'magic-star': '⭐',
+    'candy-heart': '🍬',
+    'cloud-cotton': '☁️',
+    'butterfly-wing': '🦋',
+    'pearl-shell': '🐚',
+    'cyber-lightsaber': '⚔️',
+    'mechanical-gear': '⚙️',
+    'gaming-blade': '🗡️',
+    'quantum-core': '🔮',
+    'dragon-scale': '🐲',
+    'obsidian-edge': '💎',
+    'minimal-geo': '◆',
+    'gradient-flow': '🌈',
+    'ink-wash': '🎨',
+    'star-trail': '✨',
+    'crystal-prism': '💠',
+};
+
+function getCursorEmoji(icon) {
+    return cursorEmojiMap[icon] || '🖱️';
+}
+
+function showCursorDetail(itemId, itemName, itemIcon, source, acquireTime, isUsed) {
+    currentCursorId = itemId;
+    currentCursorIcon = itemIcon;
+
+    const modal = document.getElementById('cursorDetailModal');
+    const iconDiv = document.getElementById('cursorDetailIcon');
+    const nameDiv = document.getElementById('cursorDetailName');
+    const sourceDiv = document.getElementById('cursorDetailSource');
+    const timeDiv = document.getElementById('cursorDetailTime');
+    const statusDiv = document.getElementById('cursorDetailStatus');
+    const useBtn = document.getElementById('useCursorBtn');
+
+    iconDiv.textContent = getCursorEmoji(itemIcon);
+    nameDiv.textContent = itemName;
+    sourceDiv.textContent = '来源：' + source;
+    timeDiv.textContent = '获得时间：' + (acquireTime ? acquireTime.split(' ')[0] : '未知');
+
+    if (isUsed) {
+        statusDiv.textContent = '✅ 当前正在使用此鼠标皮肤';
+        statusDiv.style.display = 'block';
+        useBtn.textContent = '已应用';
+        useBtn.disabled = true;
+        useBtn.style.opacity = '0.6';
+    } else {
+        statusDiv.style.display = 'none';
+        useBtn.textContent = '应用鼠标皮肤';
+        useBtn.disabled = false;
+        useBtn.style.opacity = '1';
+    }
+
+    modal.style.display = 'flex';
+}
+
+function closeCursorDetailModal() {
+    document.getElementById('cursorDetailModal').style.display = 'none';
+    currentCursorId = null;
+    currentCursorIcon = null;
+}
+
+async function useCurrentCursor() {
+    if (!currentCursorId) return;
+
+    try {
+        const response = await fetch('/api/shop/equip', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ item_id: currentCursorId })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast('🖱️ ' + data.message, 'success');
+            closeCursorDetailModal();
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '应用鼠标皮肤失败', 'error');
+        }
+    } catch (error) {
+        showToast('应用鼠标皮肤失败，请重试', 'error');
+    }
+}
+
+// 默认鼠标
+function showDefaultCursorDetail() {
+    const modal = document.getElementById('defaultCursorModal');
+    const statusDiv = document.getElementById('defaultCursorStatus');
+    const useBtn = document.getElementById('useDefaultCursorBtn');
+
+    const isUsingDefault = !{{ (current_cursor or '')|tojson }};
+
+    if (isUsingDefault) {
+        statusDiv.textContent = '✅ 当前正在使用默认鼠标';
+        statusDiv.style.display = 'block';
+        useBtn.textContent = '已应用';
+        useBtn.disabled = true;
+        useBtn.style.opacity = '0.6';
+    } else {
+        statusDiv.style.display = 'none';
+        useBtn.textContent = '应用默认鼠标';
+        useBtn.disabled = false;
+        useBtn.style.opacity = '1';
+    }
+
+    modal.style.display = 'flex';
+}
+
+function closeDefaultCursorModal() {
+    document.getElementById('defaultCursorModal').style.display = 'none';
+}
+
+async function useDefaultCursor() {
+    try {
+        const response = await fetch('/api/shop/equip', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ item_id: 'default_cursor' })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast('🖱️ ' + data.message, 'success');
+            closeDefaultCursorModal();
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '应用默认鼠标失败', 'error');
+        }
+    } catch (error) {
+        showToast('应用默认鼠标失败，请重试', 'error');
     }
 }
 </script>

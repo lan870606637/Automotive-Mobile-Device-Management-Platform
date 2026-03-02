@@ -207,8 +207,8 @@ setTimeout(function() {
                     </a>
                     <a href="{{ url_for('pc_my_reservations') }}" style="text-decoration: none; text-align: center; padding: 12px 8px; background: #fff7e6; border-radius: 8px; border: 1px solid #ffd591;">
                         <div style="font-size: 24px; margin-bottom: 4px;">📅</div>
-                        <div style="font-size: 12px; color: #666;">我的预约</div>
-                        <div style="font-size: 18px; font-weight: 600; color: #fa8c16;">{{ my_reservation_count }}</div>
+                        <div style="font-size: 12px; color: #666;">我的预约及待办</div>
+                        <div style="font-size: 18px; font-weight: 600; color: #fa8c16;">{{ my_reservation_count + (my_pending_bounties|length if my_pending_bounties else 0) + (pending_confirm_reservations|length if pending_confirm_reservations else 0) }}</div>
                     </a>
                 </div>
             </div>
@@ -349,31 +349,33 @@ setTimeout(function() {
             </div>
         </div>
 
-        <!-- 右侧：我的预约 -->
+        <!-- 右侧：我的预约及待办 -->
         <div class="card" style="margin-bottom: 0;">
             <div class="card-header">
                 <span class="card-title">
-                    📅 我的预约
-                    {% if my_reservation_count > 0 %}
+                    📋 我的预约及待办
+                    {% set total_todo = (my_reservations|length if my_reservations else 0) + (my_pending_bounties|length if my_pending_bounties else 0) + (pending_confirm_reservations|length if pending_confirm_reservations else 0) %}
+                    {% if total_todo > 0 %}
                     <span style="font-size: 14px; color: #666; font-weight: normal;">
-                        （共{{ my_reservation_count }}个）
+                        （共{{ total_todo }}个）
                     </span>
                     {% endif %}
                 </span>
                 <a href="{{ url_for('pc_my_reservations') }}" class="btn btn-default btn-sm">查看全部</a>
             </div>
             <div class="card-body" style="padding: 12px;">
-                {% if my_reservations %}
+                {% if (my_reservations and my_reservations|length > 0) or (my_pending_bounties and my_pending_bounties|length > 0) or (pending_confirm_reservations and pending_confirm_reservations|length > 0) %}
                 <table class="data-table" style="font-size: 13px;">
                     <thead>
                         <tr>
-                            <th>设备名称</th>
-                            <th>预约时间</th>
+                            <th>事项</th>
+                            <th>时间/描述</th>
                             <th>状态</th>
                             <th>操作</th>
                         </tr>
                     </thead>
                     <tbody>
+                        <!-- 1. 我的预约 -->
                         {% for reservation in my_reservations %}
                         <tr>
                             <td>
@@ -383,8 +385,8 @@ setTimeout(function() {
                             </td>
                             <td>
                                 <span style="font-size: 12px;">
-                                    {{ reservation.start_time.strftime('%m-%d') if reservation.start_time else '-' }} 
-                                    至 
+                                    {{ reservation.start_time.strftime('%m-%d') if reservation.start_time else '-' }}
+                                    至
                                     {{ reservation.end_time.strftime('%m-%d') if reservation.end_time else '-' }}
                                 </span>
                             </td>
@@ -416,12 +418,60 @@ setTimeout(function() {
                             </td>
                         </tr>
                         {% endfor %}
+
+                        <!-- 2. 悬赏待确认（我发布的悬赏被别人找到，等待我确认） -->
+                        {% for bounty in my_pending_bounties %}
+                        <tr style="background: #fff7e6;">
+                            <td>
+                                <span style="color: #722ed1; font-weight: 500;">💰 {{ bounty.device_name or '未指定设备' }}</span>
+                            </td>
+                            <td>
+                                <span style="font-size: 11px; color: #666;">
+                                    {{ bounty.finder_description[:20] if bounty.finder_description else '等待确认' }}{% if bounty.finder_description and bounty.finder_description|length > 20 %}...{% endif %}
+                                </span>
+                            </td>
+                            <td>
+                                <span style="color: #fa8c16; font-size: 11px; padding: 2px 6px; background: #fff7e6; border-radius: 4px;">悬赏待确认</span>
+                            </td>
+                            <td>
+                                <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                                    <button onclick="confirmBounty('{{ bounty.id }}', true, '{{ bounty.claimer_name }}')" class="btn btn-sm" style="font-size: 11px; padding: 4px 8px; background: #52c41a; color: white; border: none;">✅ 确认找到</button>
+                                    <button onclick="confirmBounty('{{ bounty.id }}', false, '{{ bounty.claimer_name }}')" class="btn btn-sm" style="font-size: 11px; padding: 4px 8px; background: #ff4d4f; color: white; border: none;">❌ 未找到</button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+
+                        <!-- 3. 预约借用待确认（我是保管人或借用人，需要确认别人的预约） -->
+                        {% for pr in pending_confirm_reservations %}
+                        <tr style="background: #e6f7ff;">
+                            <td>
+                                <a href="{{ url_for('pc_device_detail', device_id=pr.device_id) }}" style="color: #1890ff; text-decoration: none;">
+                                    {{ pr.device_name }}
+                                </a>
+                            </td>
+                            <td>
+                                <span style="font-size: 11px; color: #666;">
+                                    {{ pr.start_time }} 至 {{ pr.end_time }}
+                                </span>
+                            </td>
+                            <td>
+                                <span style="color: #1890ff; font-size: 11px; padding: 2px 6px; background: #e6f7ff; border-radius: 4px;">{{ pr.role_display }}</span>
+                            </td>
+                            <td>
+                                <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                                    <button onclick="approveReservation('{{ pr.id }}', '{{ pr.confirm_role }}')" class="btn btn-sm" style="font-size: 11px; padding: 4px 8px; background: #52c41a; color: white; border: none;">✅ 同意</button>
+                                    <button onclick="rejectReservation('{{ pr.id }}')" class="btn btn-sm" style="font-size: 11px; padding: 4px 8px; background: #ff4d4f; color: white; border: none;">❌ 不同意</button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
                     </tbody>
                 </table>
                 {% else %}
                 <div class="empty-state" style="padding: 24px;">
                     <div class="empty-icon" style="font-size: 32px;">📭</div>
-                    <p class="empty-title" style="font-size: 13px;">您当前没有预约</p>
+                    <p class="empty-title" style="font-size: 13px;">您当前没有预约及待办事项</p>
                     <a href="{{ url_for('pc_device_list') }}" class="btn btn-primary btn-sm">去预约设备</a>
                 </div>
                 {% endif %}
@@ -812,7 +862,12 @@ function submitReturn() {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({device_id: currentDeviceId, reason: fullRemark})
     }).then(r => r.json()).then(data => {
-        if (data.success) { showToast('归还成功！'); setTimeout(() => window.location.href = '/pc', 1000); }
+        if (data.success) {
+            // 显示积分通知
+            handlePointsResponse(data, '✅');
+            showToast('归还成功！');
+            setTimeout(() => window.location.href = '/pc', 1500);
+        }
         else { showToast(data.message || '归还失败'); }
     }).catch(() => showToast('提交失败，请重试'));
 }
@@ -1175,21 +1230,21 @@ async function submitRebook() {
         showToast('设备信息丢失，请重试');
         return;
     }
-    
+
     const startTime = document.getElementById('rebookStartTime').value;
     const endTime = document.getElementById('rebookEndTime').value;
     const reason = document.querySelector('input[name="rebookReason"]:checked')?.value || '测试';
-    
+
     if (!startTime || !endTime) {
         showToast('请选择预约时间', 4000);
         return;
     }
-    
+
     if (new Date(startTime) >= new Date(endTime)) {
         showToast('结束时间必须晚于开始时间', 4000);
         return;
     }
-    
+
     try {
         const response = await fetch('/api/reservations/create', {
             method: 'POST',
@@ -1202,7 +1257,7 @@ async function submitRebook() {
                 reason: reason
             })
         });
-        
+
         const data = await response.json();
         if (data.success) {
             showToast('预约成功', 4000);
@@ -1214,6 +1269,89 @@ async function submitRebook() {
         }
     } catch (e) {
         showToast('预约失败，请重试', 4000);
+    }
+}
+
+// ==================== 悬赏确认功能 ====================
+async function confirmBounty(bountyId, confirmed, claimerName) {
+    if (confirmed) {
+        const name = claimerName || '找到人';
+        if (!confirm(`确定要确认这个悬赏吗？\n\n找到人：${name}\n确认后悬赏积分将发放给找到人。`)) {
+            return;
+        }
+    } else {
+        const name = claimerName || '找到人';
+        if (!confirm(`确定标记为未找到吗？\n\n找到人：${name}\n悬赏将重新开放，其他人可以继续寻找。`)) {
+            return;
+        }
+    }
+
+    try {
+        const response = await fetch(`/api/bounties/${bountyId}/confirm`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({confirmed: confirmed})
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            showToast(data.message || (confirmed ? '已确认找到设备' : '已标记为未找到'), 4000);
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '操作失败', 4000);
+        }
+    } catch (e) {
+        showToast('操作失败，请重试', 4000);
+    }
+}
+
+// ==================== 预约确认功能（同意/拒绝） ====================
+async function approveReservation(reservationId, role) {
+    if (!confirm('确定要同意这个预约吗？')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/reservations/${reservationId}/approve`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({role: role})
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            showToast('已同意预约', 4000);
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '操作失败', 4000);
+        }
+    } catch (e) {
+        showToast('操作失败，请重试', 4000);
+    }
+}
+
+async function rejectReservation(reservationId) {
+    const reason = prompt('请输入拒绝原因（可选）：');
+    if (reason === null) {
+        return; // 用户点击了取消
+    }
+
+    try {
+        const response = await fetch(`/api/reservations/${reservationId}/reject`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({reason: reason})
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            showToast('已拒绝预约', 4000);
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '操作失败', 4000);
+        }
+    } catch (e) {
+        showToast('操作失败，请重试', 4000);
     }
 }
 

@@ -34,11 +34,12 @@
 <div class="card" style="margin-bottom: 20px;">
     <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
         <span class="card-title">🎁 积分商品</span>
-        <div style="display: flex; gap: 8px;">
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end;">
             <button class="btn btn-sm {{ 'btn-primary' if item_type == 'all' else 'btn-default' }}" onclick="filterItems('all')">全部</button>
             <button class="btn btn-sm {{ 'btn-primary' if item_type == '称号' else 'btn-default' }}" onclick="filterItems('称号')">🏆 称号</button>
             <button class="btn btn-sm {{ 'btn-primary' if item_type == '头像边框' else 'btn-default' }}" onclick="filterItems('头像边框')">🖼️ 头像边框</button>
             <button class="btn btn-sm {{ 'btn-primary' if item_type == '主题皮肤' else 'btn-default' }}" onclick="filterItems('主题皮肤')">🎨 主题皮肤</button>
+            <button class="btn btn-sm {{ 'btn-primary' if item_type == '鼠标皮肤' else 'btn-default' }}" onclick="filterItems('鼠标皮肤')">🖱️ 鼠标皮肤</button>
         </div>
     </div>
     <div class="card-body">
@@ -84,6 +85,30 @@
                         <button class="btn btn-sm btn-success" disabled>✓ 使用中</button>
                         {% else %}
                         <button class="btn btn-sm btn-primary" onclick="equipTheme('{{ item.id }}', '{{ item.name }}')">使用</button>
+                        {% endif %}
+                    {% elif user_points.points >= item.price %}
+                    <button class="btn btn-sm btn-primary" onclick="buyItem('{{ item.id }}', '{{ item.name }}', {{ item.price }})">购买</button>
+                    {% else %}
+                    <button class="btn btn-sm btn-default" disabled>积分不足</button>
+                    {% endif %}
+                </div>
+            </div>
+            {% elif item.item_type.value == '鼠标皮肤' %}
+            <!-- 鼠标皮肤特殊展示 -->
+            <div class="shop-item cursor-item" data-type="{{ item.item_type.value if item.item_type else '' }}" data-cursor-icon="{{ item.icon }}">
+                <div class="cursor-preview-card" style="background: linear-gradient(135deg, {{ item.color or '#f0f0f0' }}20 0%, {{ item.color or '#f0f0f0' }}40 100%); border: 2px solid {{ item.color or '#e8e8e8' }}; border-radius: 12px; padding: 20px; text-align: center; min-height: 120px; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                    <div class="cursor-icon" style="font-size: 48px; margin-bottom: 8px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));">{{ get_cursor_emoji(item.icon) }}</div>
+                    <div class="cursor-name" style="font-size: 14px; font-weight: 600; color: #262626;">{{ item.name }}</div>
+                </div>
+                <div class="shop-item-info" style="margin-top: 12px;">
+                    <div class="shop-item-price">
+                        <span class="price-tag">💰 {{ item.price }} 积分</span>
+                    </div>
+                    {% if item.owned %}
+                        {% if item.is_equipped %}
+                        <button class="btn btn-sm btn-success" disabled>✓ 使用中</button>
+                        {% else %}
+                        <button class="btn btn-sm btn-primary" onclick="equipCursor('{{ item.id }}', '{{ item.name }}')">使用</button>
                         {% endif %}
                     {% elif user_points.points >= item.price %}
                     <button class="btn btn-sm btn-primary" onclick="buyItem('{{ item.id }}', '{{ item.name }}', {{ item.price }})">购买</button>
@@ -484,6 +509,36 @@ async function equipTheme(itemId, itemName) {
     } catch (error) {
         console.error('主题更换失败:', error);
         showToast('主题更换失败，请重试');
+    }
+}
+
+// 装备鼠标皮肤
+async function equipCursor(itemId, itemName) {
+    if (!confirm(`确定要使用 "${itemName}" 鼠标皮肤吗？`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/shop/equip', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ item_id: itemId })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast(`🖱️ 鼠标皮肤更换成功！已应用 "${itemName}"`);
+            // 刷新页面
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '鼠标皮肤更换失败');
+        }
+    } catch (error) {
+        console.error('鼠标皮肤更换失败:', error);
+        showToast('鼠标皮肤更换失败，请重试');
     }
 }
 

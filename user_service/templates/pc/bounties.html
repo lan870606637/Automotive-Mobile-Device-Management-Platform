@@ -35,19 +35,21 @@
         • <strong>认领悬赏：</strong>找到悬赏中的设备后，点击完成悬赏并描述设备位置<br>
         • <strong>确认完成：</strong>发布人确认后，认领人获得悬赏积分<br>
         • <strong>取消悬赏：</strong>只能取消待认领的悬赏，取消后退还所有积分<br>
+        • <strong>自动过期：</strong>悬赏发布7天后自动取消，自动退还所有积分<br>
         • <strong>积分说明：</strong>积分可正可负，发布悬赏前请确保积分充足
     </div>
 </div>
 
 <!-- 悬赏列表 -->
 <div class="card">
-    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
         <span class="card-title">📋 悬赏列表</span>
-        <div style="display: flex; gap: 8px;">
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
             <button class="btn btn-sm btn-primary" onclick="filterBounties('all')">全部</button>
             <button class="btn btn-sm btn-default" onclick="filterBounties('pending')">寻找中</button>
             <button class="btn btn-sm btn-default" onclick="filterBounties('claimed')">待确认</button>
             <button class="btn btn-sm btn-default" onclick="filterBounties('completed')">已完成</button>
+            <button class="btn btn-sm btn-warning" onclick="filterBounties('my')">我的悬赏</button>
         </div>
     </div>
     <div class="card-body">
@@ -79,6 +81,13 @@
                                 <span class="info-value">{{ bounty.publisher_name }}</span>
                                 <span class="info-label" style="margin-left: 20px;">⏰ 发布时间：</span>
                                 <span class="info-value">{{ bounty.create_time.strftime('%Y-%m-%d %H:%M') if bounty.create_time else '-' }}</span>
+                                {% if bounty.status.value == '待认领' %}
+                                <span class="info-label" style="margin-left: 20px;">⏳ 剩余时间：</span>
+                                <span class="info-value" style="color: {% if bounty.get_remaining_days() < 1 %}#ff4d4f{% elif bounty.get_remaining_days() < 3 %}#faad14{% else %}#52c41a{% endif %};">
+                                    {% set days = bounty.get_remaining_days() %}
+                                    {% if days >= 1 %}{{ days|round(1) }}天{% else %}{{ (days * 24)|round(0)|int }}小时{% endif %}
+                                </span>
+                                {% endif %}
                             </div>
                             {% if bounty.claimer_name %}
                             <div class="info-row">
@@ -698,6 +707,8 @@ function submitBounty() {
         }),
         success: function(response) {
             if (response.success) {
+                // 显示积分通知
+                handlePointsResponse(response, '🎯');
                 alert(response.message);
                 closeCreateBountyModal();
                 location.reload();
@@ -815,27 +826,170 @@ function cancelBounty(bountyId) {
 // 筛选悬赏
 function filterBounties(status) {
     // 更新按钮状态
-    $('.card-header .btn').removeClass('btn-primary').addClass('btn-default');
+    $('.card-header .btn').removeClass('btn-primary').removeClass('btn-warning').addClass('btn-default');
     event.target.classList.remove('btn-default');
-    event.target.classList.add('btn-primary');
-
-    // 筛选显示
-    if (status === 'all') {
-        $('.bounty-item').show();
+    if (status === 'my') {
+        event.target.classList.add('btn-warning');
     } else {
-        $('.bounty-item').each(function() {
-            const itemStatus = $(this).data('status');
-            if (status === 'pending' && itemStatus === '待认领') {
-                $(this).show();
-            } else if (status === 'claimed' && itemStatus === '已找到') {
-                $(this).show();
-            } else if (status === 'completed' && itemStatus === '已完成') {
-                $(this).show();
-            } else {
-                $(this).hide();
-            }
-        });
+        event.target.classList.add('btn-primary');
     }
+
+    // 我的悬赏需要重新加载数据
+    if (status === 'my') {
+        loadMyBounties();
+        return;
+    }
+
+    // 其他筛选，重新加载全部数据
+    loadAllBounties(status);
+}
+
+// 加载全部悬赏
+function loadAllBounties(filterStatus) {
+    $.ajax({
+        url: '/api/bounties',
+        type: 'GET',
+        success: function(response) {
+            if (response.success) {
+                renderBounties(response.bounties, filterStatus);
+            }
+        }
+    });
+}
+
+// 加载我的悬赏
+function loadMyBounties() {
+    $.ajax({
+        url: '/api/bounties?my_bounties=true',
+        type: 'GET',
+        success: function(response) {
+            if (response.success) {
+                renderBounties(response.bounties, 'my');
+            }
+        }
+    });
+}
+
+// 渲染悬赏列表
+function renderBounties(bounties, filterStatus) {
+    const container = $('#bountiesList');
+    if (bounties.length === 0) {
+        container.html(`
+            <div class="empty-state">
+                <div class="empty-icon">🎯</div>
+                <div class="empty-text">暂无悬赏任务</div>
+                <div class="empty-subtext">点击"发布悬赏"按钮发布第一个悬赏吧！</div>
+            </div>
+        `);
+        return;
+    }
+
+    let html = '';
+    const currentUserId = '{{ user.user_id }}';
+
+    bounties.forEach(function(bounty) {
+        // 根据筛选条件过滤
+        if (filterStatus === 'pending' && bounty.status !== '待认领') return;
+        if (filterStatus === 'claimed' && bounty.status !== '已找到') return;
+        if (filterStatus === 'completed' && bounty.status !== '已完成') return;
+
+        let remainingTimeHtml = '';
+        if (bounty.status === '待认领' && bounty.remaining_days !== undefined) {
+            const days = bounty.remaining_days;
+            const color = days < 1 ? '#ff4d4f' : (days < 3 ? '#faad14' : '#52c41a');
+            const timeText = days >= 1 ? days.toFixed(1) + '天' : Math.round(days * 24) + '小时';
+            remainingTimeHtml = `
+                <span class="info-label" style="margin-left: 20px;">⏳ 剩余时间：</span>
+                <span class="info-value" style="color: ${color};">${timeText}</span>
+            `;
+        }
+
+        let actionsHtml = '';
+        if (bounty.status === '待认领') {
+            if (bounty.publisher_id !== currentUserId) {
+                actionsHtml = `<button class="btn btn-success" onclick="showFoundModal('${bounty.id}')">已找到</button>`;
+            } else {
+                actionsHtml = `<button class="btn btn-danger" onclick="cancelBounty('${bounty.id}')">取消悬赏</button>`;
+            }
+        } else if (bounty.status === '已找到') {
+            if (bounty.publisher_id === currentUserId) {
+                actionsHtml = `
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        <button class="btn btn-primary" onclick="confirmBounty('${bounty.id}', true)">✅ 确认找到</button>
+                        <button class="btn btn-default" onclick="confirmBounty('${bounty.id}', false)">❌ 未找到</button>
+                    </div>
+                    <div style="margin-top: 8px; font-size: 12px; color: #666; max-width: 200px;">
+                        📍 ${bounty.finder_description ? bounty.finder_description.substring(0, 30) + (bounty.finder_description.length > 30 ? '...' : '') : ''}
+                        <br>👤 找到人: ${bounty.claimer_name || ''}
+                    </div>
+                `;
+            }
+        } else if (bounty.status === '已完成') {
+            actionsHtml = `
+                <span class="completed-text">✅ 已完成</span>
+                ${bounty.complete_time ? `<span class="complete-time">${bounty.complete_time}</span>` : ''}
+            `;
+        }
+
+        html += `
+            <div class="bounty-item" data-status="${bounty.status}" data-bounty-id="${bounty.id}">
+                <div class="bounty-header">
+                    <div class="bounty-title">${bounty.title}</div>
+                    <div class="bounty-reward">
+                        <span class="reward-badge">💰 ${bounty.reward_points} 积分</span>
+                        <span class="status-badge status-${bounty.status}">${bounty.status}</span>
+                    </div>
+                </div>
+                <div class="bounty-content">
+                    <div class="bounty-info">
+                        <div class="info-row">
+                            <span class="info-label">🔍 寻找设备：</span>
+                            <span class="info-value">${bounty.device_name}</span>
+                        </div>
+                        ${bounty.description ? `
+                        <div class="info-row">
+                            <span class="info-label">📝 悬赏描述：</span>
+                            <span class="info-value">${bounty.description}</span>
+                        </div>
+                        ` : ''}
+                        <div class="info-row">
+                            <span class="info-label">👤 发布人：</span>
+                            <span class="info-value">${bounty.publisher_name}</span>
+                            <span class="info-label" style="margin-left: 20px;">⏰ 发布时间：</span>
+                            <span class="info-value">${bounty.create_time}</span>
+                            ${remainingTimeHtml}
+                        </div>
+                        ${bounty.claimer_name ? `
+                        <div class="info-row">
+                            <span class="info-label">🙋 认领人：</span>
+                            <span class="info-value">${bounty.claimer_name}</span>
+                            ${bounty.claim_time ? `
+                            <span class="info-label" style="margin-left: 20px;">⏰ 认领时间：</span>
+                            <span class="info-value">${bounty.claim_time}</span>
+                            ` : ''}
+                        </div>
+                        ` : ''}
+                        ${bounty.finder_description ? `
+                        <div class="info-row">
+                            <span class="info-label">📍 找到位置：</span>
+                            <span class="info-value">${bounty.finder_description}</span>
+                        </div>
+                        ` : ''}
+                    </div>
+                    <div class="bounty-actions">
+                        ${actionsHtml}
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+
+    container.html(html || `
+        <div class="empty-state">
+            <div class="empty-icon">🎯</div>
+            <div class="empty-text">暂无符合条件的悬赏</div>
+        </div>
+    `);
 }
 
 // 点击弹窗外部关闭
