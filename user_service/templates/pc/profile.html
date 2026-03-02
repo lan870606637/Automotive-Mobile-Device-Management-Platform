@@ -479,14 +479,15 @@
     font-size: 14px;
 }
 
-.user-name {
+/* 个人中心页面的用户名称 - 使用更高特异性避免与侧边栏样式冲突 */
+.profile-sidebar .user-name {
     font-size: 20px;
     font-weight: 600;
     color: #333;
     margin: 0 0 4px 0;
 }
 
-.user-email {
+.profile-sidebar .user-email {
     font-size: 13px;
     color: #888;
     margin: 0 0 16px 0;
@@ -915,15 +916,15 @@
     border-bottom-color: rgba(255,255,255,0.15);
 }
 
-[data-theme="ocean-blue"] .user-name,
-[data-theme="dark-purple"] .user-name,
-[data-theme="forest-green"] .user-name {
+[data-theme="ocean-blue"] .profile-sidebar .user-name,
+[data-theme="dark-purple"] .profile-sidebar .user-name,
+[data-theme="forest-green"] .profile-sidebar .user-name {
     color: rgba(255,255,255,0.95);
 }
 
-[data-theme="ocean-blue"] .user-email,
-[data-theme="dark-purple"] .user-email,
-[data-theme="forest-green"] .user-email {
+[data-theme="ocean-blue"] .profile-sidebar .user-email,
+[data-theme="dark-purple"] .profile-sidebar .user-email,
+[data-theme="forest-green"] .profile-sidebar .user-email {
     color: rgba(255,255,255,0.6);
 }
 

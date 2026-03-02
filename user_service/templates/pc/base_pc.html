@@ -11,10 +11,10 @@
     {% if current_cursor_skin %}
     <!-- 预加载鼠标皮肤样式，确保页面加载前就已应用 -->
     <style id="preload-cursor-style">
-        /* 基础覆盖 */
-        * { cursor: url("data:image/svg+xml;base64,{{ get_cursor_svg_base64(current_cursor_skin) }}") 16 16, none !important; }
-        *:active { cursor: url("data:image/svg+xml;base64,{{ get_cursor_svg_base64(current_cursor_skin) }}") 16 16, none !important; }
-        *:hover { cursor: url("data:image/svg+xml;base64,{{ get_cursor_svg_base64(current_cursor_skin) }}") 16 16, none !important; }
+        /* 基础覆盖 - 使用 auto 作为 fallback，防止鼠标消失 */
+        * { cursor: url("data:image/svg+xml;base64,{{ get_cursor_svg_base64(current_cursor_skin) }}") 16 16, auto !important; }
+        *:active { cursor: url("data:image/svg+xml;base64,{{ get_cursor_svg_base64(current_cursor_skin) }}") 16 16, auto !important; }
+        *:hover { cursor: url("data:image/svg+xml;base64,{{ get_cursor_svg_base64(current_cursor_skin) }}") 16 16, auto !important; }
         /* 链接和按钮 */
         a, a:hover, a:active, a:focus, a:visited, a:link,
         button, button:hover, button:active, button:focus,
@@ -24,7 +24,7 @@
         [role="button"], [role="button"]:hover,
         [role="link"], [role="link"]:hover,
         input[type="submit"], input[type="button"], input[type="reset"] {
-            cursor: url("data:image/svg+xml;base64,{{ get_cursor_svg_base64(current_cursor_skin) }}") 16 16, none !important;
+            cursor: url("data:image/svg+xml;base64,{{ get_cursor_svg_base64(current_cursor_skin) }}") 16 16, pointer !important;
         }
         /* 覆盖 pc_style.css 中的 cursor: pointer */
         .btn,
@@ -43,7 +43,7 @@
         .card,
         .clickable,
         [onclick] {
-            cursor: url("data:image/svg+xml;base64,{{ get_cursor_svg_base64(current_cursor_skin) }}") 16 16, none !important;
+            cursor: url("data:image/svg+xml;base64,{{ get_cursor_svg_base64(current_cursor_skin) }}") 16 16, pointer !important;
         }
         /* 最高优先级覆盖 - 使用双重选择器 */
         html body .btn,
@@ -60,7 +60,7 @@
         html body .device-card,
         html body .stat-card,
         html body [onclick] {
-            cursor: url("data:image/svg+xml;base64,{{ get_cursor_svg_base64(current_cursor_skin) }}") 16 16, none !important;
+            cursor: url("data:image/svg+xml;base64,{{ get_cursor_svg_base64(current_cursor_skin) }}") 16 16, pointer !important;
         }
     </style>
     {% endif %}
@@ -1533,86 +1533,19 @@
             50% { opacity: 0.8; filter: brightness(1.3); }
         }
 
-        /* 隐藏默认光标时的样式 - 应用到所有元素 */
-        html.custom-cursor-active,
-        html.custom-cursor-active *,
-        body.custom-cursor-active,
-        body.custom-cursor-active * {
-            cursor: none !important;
-        }
-
-        /* 禁用点击时的默认光标 - 覆盖所有可能的状态 */
-        html.custom-cursor-active *:active,
-        html.custom-cursor-active *:focus,
-        html.custom-cursor-active *:hover,
-        html.custom-cursor-active *:visited,
-        html.custom-cursor-active *:link,
-        body.custom-cursor-active *:active,
-        body.custom-cursor-active *:focus,
-        body.custom-cursor-active *:hover,
-        body.custom-cursor-active *:visited,
-        body.custom-cursor-active *:link {
-            cursor: none !important;
-        }
-
-        /* 针对侧边栏和导航项的特殊处理 */
-        html.custom-cursor-active .sidebar,
-        html.custom-cursor-active .sidebar *,
-        html.custom-cursor-active .sidebar-nav,
-        html.custom-cursor-active .sidebar-nav *,
-        html.custom-cursor-active .nav-item,
-        html.custom-cursor-active .nav-item *,
-        html.custom-cursor-active a,
-        html.custom-cursor-active a *,
-        html.custom-cursor-active button,
-        html.custom-cursor-active button *,
-        body.custom-cursor-active .sidebar,
-        body.custom-cursor-active .sidebar *,
-        body.custom-cursor-active .sidebar-nav,
-        body.custom-cursor-active .sidebar-nav *,
-        body.custom-cursor-active .nav-item,
-        body.custom-cursor-active .nav-item *,
-        body.custom-cursor-active a,
-        body.custom-cursor-active a *,
-        body.custom-cursor-active button,
-        body.custom-cursor-active button * {
-            cursor: none !important;
-        }
-
-        /* 覆盖 pc_style.css 和 themes.css 中的 cursor: pointer */
-        html.custom-cursor-active .btn,
-        html.custom-cursor-active .btn:hover,
-        html.custom-cursor-active .btn:active,
-        html.custom-cursor-active .btn:focus,
-        html.custom-cursor-active .modal-close,
-        html.custom-cursor-active .modal-close:hover,
-        html.custom-cursor-active .theme-preview-card,
-        html.custom-cursor-active .theme-preview-card:hover,
-        html.custom-cursor-active .device-card,
-        html.custom-cursor-active .device-card:hover,
-        html.custom-cursor-active .stat-card,
-        html.custom-cursor-active .stat-card:hover,
-        html.custom-cursor-active [onclick],
-        body.custom-cursor-active .btn,
-        body.custom-cursor-active .btn:hover,
-        body.custom-cursor-active .btn:active,
-        body.custom-cursor-active .btn:focus,
-        body.custom-cursor-active .modal-close,
-        body.custom-cursor-active .modal-close:hover,
-        body.custom-cursor-active .theme-preview-card,
-        body.custom-cursor-active .theme-preview-card:hover,
-        body.custom-cursor-active .device-card,
-        body.custom-cursor-active .device-card:hover,
-        body.custom-cursor-active .stat-card,
-        body.custom-cursor-active .stat-card:hover,
-        body.custom-cursor-active [onclick] {
-            cursor: none !important;
-        }
-
-        /* 强制所有元素使用自定义光标 */
+        /* 自定义光标激活时的样式 - 使用CSS cursor URL，保留auto作为fallback */
         html.custom-cursor-active,
         body.custom-cursor-active {
-            cursor: url("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"), auto !important;
+            cursor: auto !important;
+        }
+
+        /* 确保交互元素有正确的光标样式 */
+        html.custom-cursor-active .btn,
+        html.custom-cursor-active a,
+        html.custom-cursor-active button,
+        html.custom-cursor-active .nav-item,
+        html.custom-cursor-active [onclick] {
+            cursor: pointer !important;
         }
 
         /* 针对Webkit浏览器的额外处理 */
@@ -1673,8 +1606,8 @@
         function createCursorUrl(emoji) {
             const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><text x="0" y="24" font-size="24">${emoji}</text></svg>`;
             const base64 = btoa(unescape(encodeURIComponent(svg)));
-            // 使用 none 而不是 auto 作为 fallback，防止显示默认光标
-            return `url("data:image/svg+xml;base64,${base64}") 16 16, none`;
+            // 使用 auto 作为 fallback，防止鼠标消失
+            return `url("data:image/svg+xml;base64,${base64}") 16 16, auto`;
         }
 
         // 初始化鼠标皮肤
@@ -1756,22 +1689,9 @@
             document.body.style.cursor = cursorUrl;
             document.documentElement.style.cursor = cursorUrl;
 
-            // 方法2: 同时创建跟随元素用于动画效果（可选）
-            if (config.animation) {
-                cursorElement = document.createElement('div');
-                cursorElement.className = 'cursor-skin-preview';
-                cursorElement.textContent = config.emoji;
-                cursorElement.style.animation = `${config.animation} ${getAnimationDuration(config.animation)}`;
-                document.body.appendChild(cursorElement);
-
-                // 绑定鼠标事件用于动画元素
-                document.addEventListener('mousemove', handleMouseMove, { passive: true });
-                document.addEventListener('mouseenter', handleMouseEnter, { passive: true });
-                document.addEventListener('mouseleave', handleMouseLeave, { passive: true });
-
-                // 开始动画循环
-                updateCursorPosition();
-            }
+            // 注意：不再创建DOM跟随元素，因为CSS cursor URL已经足够
+            // 创建跟随元素会导致显示两个光标（系统光标+DOM元素）
+            // 如果需要动画效果，可以考虑使用CSS动画在光标图片上
 
             // 添加 class 到 html 和 body
             document.body.classList.add('custom-cursor-active');
@@ -1791,8 +1711,8 @@
         // 强制将光标样式应用到所有元素
         function forceApplyCursorToAllElements(cursorUrl) {
             // 立即应用到 body 和 html
-            document.body.style.cursor = cursorUrl;
-            document.documentElement.style.cursor = cursorUrl;
+            document.body.style.setProperty('cursor', cursorUrl, 'important');
+            document.documentElement.style.setProperty('cursor', cursorUrl, 'important');
 
             // 应用到所有常见交互元素 - 包括 pc_style.css 和 themes.css 中的类
             const selectors = [
@@ -1811,7 +1731,7 @@
                 try {
                     const elements = document.querySelectorAll(selector);
                     elements.forEach(el => {
-                        el.style.cursor = cursorUrl;
+                        el.style.setProperty('cursor', cursorUrl, 'important');
                     });
                 } catch (e) {
                     // 忽略无效选择器
@@ -1820,19 +1740,19 @@
 
             // 使用 RAF 确保在下一帧也应用
             requestAnimationFrame(() => {
-                document.body.style.cursor = cursorUrl;
-                document.documentElement.style.cursor = cursorUrl;
+                document.body.style.setProperty('cursor', cursorUrl, 'important');
+                document.documentElement.style.setProperty('cursor', cursorUrl, 'important');
             });
 
             // 延迟再次应用，确保动态内容也被覆盖
             setTimeout(() => {
-                document.body.style.cursor = cursorUrl;
-                document.documentElement.style.cursor = cursorUrl;
+                document.body.style.setProperty('cursor', cursorUrl, 'important');
+                document.documentElement.style.setProperty('cursor', cursorUrl, 'important');
                 selectors.forEach(selector => {
                     try {
                         const elements = document.querySelectorAll(selector);
                         elements.forEach(el => {
-                            el.style.cursor = cursorUrl;
+                            el.style.setProperty('cursor', cursorUrl, 'important');
                         });
                     } catch (e) {}
                 });
@@ -1922,18 +1842,18 @@
 
                 // 立即强制应用光标样式到目标元素及其父元素
                 if (e.target) {
-                    e.target.style.cursor = cursorUrl;
+                    e.target.style.setProperty('cursor', cursorUrl, 'important');
                     // 应用到父元素链
                     let parent = e.target.parentElement;
                     while (parent) {
-                        parent.style.cursor = cursorUrl;
+                        parent.style.setProperty('cursor', cursorUrl, 'important');
                         parent = parent.parentElement;
                     }
                 }
 
                 // 确保 body 和 html 也应用
-                document.body.style.cursor = cursorUrl;
-                document.documentElement.style.cursor = cursorUrl;
+                document.body.style.setProperty('cursor', cursorUrl, 'important');
+                document.documentElement.style.setProperty('cursor', cursorUrl, 'important');
 
                 // 确保光标元素可见并更新位置
                 if (cursorElement) {
@@ -1981,12 +1901,13 @@
 
         // 强制重置光标样式
         function forceCursorReset() {
-            // 临时移除再添加class，强制浏览器重新应用样式
-            document.body.classList.remove('custom-cursor-active');
-            // 强制重绘
-            void document.body.offsetHeight;
-            document.body.classList.add('custom-cursor-active');
-            document.body.style.cursor = 'none';
+            // 如果有自定义光标，重新应用光标URL
+            if (currentCursorSkin && cursorSkinConfig[currentCursorSkin]) {
+                const config = cursorSkinConfig[currentCursorSkin];
+                const cursorUrl = createCursorUrl(config.emoji);
+                document.body.style.setProperty('cursor', cursorUrl, 'important');
+                document.documentElement.style.setProperty('cursor', cursorUrl, 'important');
+            }
         }
 
         // 更新光标位置

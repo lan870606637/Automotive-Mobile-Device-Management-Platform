@@ -88,6 +88,10 @@ def get_current_user():
             break
 
     if user:
+        # 获取用户当前积分
+        user_points = api_client._db.get_user_points(user_id)
+        points = user_points.points if user_points else 0
+        
         return {
             'user_id': user.id,
             'email': user.email,
@@ -95,6 +99,7 @@ def get_current_user():
             'avatar': user.avatar,
             'is_admin': user.is_admin,
             'current_theme': user.current_theme,
+            'points': points,
         }
     return {}
 
