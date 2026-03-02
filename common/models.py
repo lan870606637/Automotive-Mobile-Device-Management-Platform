@@ -1109,6 +1109,7 @@ class PointsTransactionType(Enum):
     RENEW = "续期"
     RESERVE = "预约设备"
     SHOP_BUY = "购买商品"
+    REDEEM_CODE = "兑换码兑换"
 
 
 @dataclass

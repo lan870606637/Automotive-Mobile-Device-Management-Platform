@@ -1841,29 +1841,24 @@
                 document.documentElement.classList.add('custom-cursor-active');
 
                 // 立即强制应用光标样式到目标元素及其父元素
-                if (e.target) {
+                if (e && e.target && e.target.style) {
                     e.target.style.setProperty('cursor', cursorUrl, 'important');
                     // 应用到父元素链
                     let parent = e.target.parentElement;
                     while (parent) {
-                        parent.style.setProperty('cursor', cursorUrl, 'important');
+                        if (parent.style) {
+                            parent.style.setProperty('cursor', cursorUrl, 'important');
+                        }
                         parent = parent.parentElement;
                     }
                 }
 
                 // 确保 body 和 html 也应用
-                document.body.style.setProperty('cursor', cursorUrl, 'important');
-                document.documentElement.style.setProperty('cursor', cursorUrl, 'important');
-
-                // 确保光标元素可见并更新位置
-                if (cursorElement) {
-                    cursorElement.classList.remove('hidden');
-                    if (e.clientX && e.clientY) {
-                        mouseX = e.clientX;
-                        mouseY = e.clientY;
-                        cursorElement.style.left = mouseX + 'px';
-                        cursorElement.style.top = mouseY + 'px';
-                    }
+                if (document.body && document.body.style) {
+                    document.body.style.setProperty('cursor', cursorUrl, 'important');
+                }
+                if (document.documentElement && document.documentElement.style) {
+                    document.documentElement.style.setProperty('cursor', cursorUrl, 'important');
                 }
             }
         }

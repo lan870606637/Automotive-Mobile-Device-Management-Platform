@@ -4861,6 +4861,45 @@ def pc_profile():
                          **stats)
 
 
+@app.route('/api/redeem-code', methods=['POST'])
+@login_required
+def api_redeem_code():
+    """兑换码兑换积分API"""
+    user = get_current_user()
+    data = request.get_json()
+    
+    if not data or 'code' not in data or 'points' not in data:
+        return jsonify({'success': False, 'message': '参数错误'})
+    
+    code = data['code']
+    points = data['points']
+    
+    # 验证积分是否为正数
+    if not isinstance(points, int) or points <= 0:
+        return jsonify({'success': False, 'message': '无效的积分值'})
+    
+    try:
+        # 添加积分到用户账户
+        result = points_service.add_points(
+            user_id=user['user_id'],
+            points=points,
+            transaction_type=PointsTransactionType.REDEEM_CODE,
+            description=f'兑换码兑换: {code}'
+        )
+
+        # 获取更新后的总积分
+        total_points = result.get('points', 0)
+        
+        return jsonify({
+            'success': True,
+            'message': f'成功兑换 {points} 积分',
+            'total_points': total_points
+        })
+    except Exception as e:
+        print(f"[ERROR] 兑换码兑换失败: {e}")
+        return jsonify({'success': False, 'message': '兑换失败，请重试'})
+
+
 @app.route('/api/upload-avatar', methods=['POST'])
 @login_required
 def api_upload_avatar():
