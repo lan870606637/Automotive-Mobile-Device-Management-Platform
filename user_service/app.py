@@ -138,6 +138,17 @@ def get_user_equipment(user_id):
                 'name': title_item.name,
                 'color': title_item.color or '#1890ff'
             }
+        else:
+            # 可能是隐藏称号，从背包中查找
+            user_inventory = api_client._db.get_user_inventory(user_id)
+            for inv_item in user_inventory:
+                if inv_item.item_id == user.current_title and inv_item.item_type.value == '称号':
+                    result['title'] = {
+                        'id': inv_item.item_id,
+                        'name': inv_item.item_name,
+                        'color': inv_item.item_color or '#1890ff'
+                    }
+                    break
 
     # 获取当前头像边框
     if user.current_avatar_frame:
@@ -6032,6 +6043,48 @@ def api_batch_download_attachments():
 def uploaded_file(filename):
     """提供上传的文件访问"""
     return send_from_directory(UPLOAD_FOLDER, filename)
+
+
+# ========== 每日转盘 API ==========
+
+@app.route('/api/wheel/status', methods=['GET'])
+@login_required
+def api_wheel_status():
+    """获取转盘状态"""
+    from common.wheel_service import wheel_service
+    user_id = session.get('user_id')
+    status = wheel_service.get_wheel_status(user_id)
+    return jsonify({'success': True, **status})
+
+
+@app.route('/api/wheel/spin', methods=['POST'])
+@login_required
+def api_wheel_spin():
+    """执行转盘抽奖"""
+    from common.wheel_service import wheel_service
+    user_id = session.get('user_id')
+    result = wheel_service.spin(user_id)
+    return jsonify(result)
+
+
+@app.route('/api/wheel/records', methods=['GET'])
+@login_required
+def api_wheel_records():
+    """获取用户抽奖记录"""
+    from common.wheel_service import wheel_service
+    user_id = session.get('user_id')
+    records = wheel_service.db.get_wheel_records_by_user(user_id, limit=50)
+    return jsonify({'success': True, 'records': records})
+
+
+@app.route('/api/wheel/hidden-titles', methods=['GET'])
+@login_required
+def api_wheel_hidden_titles():
+    """获取用户获得的隐藏称号"""
+    from common.wheel_service import wheel_service
+    user_id = session.get('user_id')
+    titles = wheel_service.get_user_hidden_titles(user_id)
+    return jsonify({'success': True, 'titles': titles})
 
 
 if __name__ == '__main__':

@@ -193,6 +193,8 @@ def init_database():
         _migrate_mysql_add_user_equip_fields()
         # 添加用户鼠标皮肤字段
         _migrate_mysql_add_user_cursor_field()
+        # 创建每日转盘相关表
+        _migrate_mysql_create_wheel_tables()
         return
 
     # SQLite初始化逻辑...
@@ -288,6 +290,9 @@ def init_database():
         
         # 添加用户鼠标皮肤字段
         _migrate_sqlite_add_user_cursor_field(cursor)
+        
+        # 创建每日转盘相关表
+        _migrate_sqlite_create_wheel_tables(cursor)
 
         # 创建其他表...
         # (省略其他表的创建代码，保持原有逻辑)
@@ -2031,6 +2036,122 @@ class DatabaseStore:
             )
             return cursor.fetchone() is not None
 
+    # ========== 每日转盘相关操作 ==========
+
+    def add_wheel_record(self, user_id: str, prize_id: str, prize_name: str, prize_points: int, cost: int) -> bool:
+        """添加转盘抽奖记录"""
+        with get_db_transaction() as conn:
+            cursor = conn.cursor()
+            sql = """INSERT INTO wheel_records (
+                id, user_id, prize_id, prize_name, prize_points, cost, create_time
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """ if IS_MYSQL else """INSERT INTO wheel_records (
+                id, user_id, prize_id, prize_name, prize_points, cost, create_time
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """
+            params = (
+                str(uuid.uuid4()),
+                user_id,
+                prize_id,
+                prize_name,
+                prize_points,
+                cost,
+                format_datetime(datetime.now())
+            )
+            cursor.execute(sql, params)
+            return True
+
+    def get_wheel_records_by_date(self, user_id: str, date_str: str) -> List[Dict[str, Any]]:
+        """获取用户指定日期的抽奖记录"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            # date_str 格式: YYYY-MM-DD
+            if IS_MYSQL:
+                cursor.execute(
+                    """SELECT * FROM wheel_records 
+                       WHERE user_id = %s AND DATE(create_time) = %s 
+                       ORDER BY create_time ASC""",
+                    (user_id, date_str)
+                )
+            else:
+                cursor.execute(
+                    """SELECT * FROM wheel_records 
+                       WHERE user_id = ? AND date(create_time) = ? 
+                       ORDER BY create_time ASC""",
+                    (user_id, date_str)
+                )
+            rows = cursor.fetchall()
+            return [row_to_dict(row) for row in rows]
+
+    def get_wheel_records_by_user(self, user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """获取用户的抽奖记录"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """SELECT * FROM wheel_records 
+                   WHERE user_id = %s 
+                   ORDER BY create_time DESC 
+                   LIMIT %s""" if IS_MYSQL else
+                """SELECT * FROM wheel_records 
+                   WHERE user_id = ? 
+                   ORDER BY create_time DESC 
+                   LIMIT ?""",
+                (user_id, limit)
+            )
+            rows = cursor.fetchall()
+            return [row_to_dict(row) for row in rows]
+
+    def add_hidden_title(self, user_id: str, title_id: str, title_name: str, title_color: str) -> bool:
+        """添加用户隐藏称号"""
+        with get_db_transaction() as conn:
+            cursor = conn.cursor()
+            sql = """INSERT INTO user_hidden_titles (
+                id, user_id, title_id, title_name, title_color, acquire_time
+            ) VALUES (%s, %s, %s, %s, %s, %s)
+            """ if IS_MYSQL else """INSERT INTO user_hidden_titles (
+                id, user_id, title_id, title_name, title_color, acquire_time
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """
+            params = (
+                str(uuid.uuid4()),
+                user_id,
+                title_id,
+                title_name,
+                title_color,
+                format_datetime(datetime.now())
+            )
+            cursor.execute(sql, params)
+            return True
+
+    def has_hidden_title(self, user_id: str, title_id: str) -> bool:
+        """检查用户是否已有某隐藏称号"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """SELECT id FROM user_hidden_titles 
+                   WHERE user_id = %s AND title_id = %s LIMIT 1""" if IS_MYSQL else
+                """SELECT id FROM user_hidden_titles 
+                   WHERE user_id = ? AND title_id = ? LIMIT 1""",
+                (user_id, title_id)
+            )
+            return cursor.fetchone() is not None
+
+    def get_user_hidden_titles(self, user_id: str) -> List[Dict[str, Any]]:
+        """获取用户所有隐藏称号"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """SELECT * FROM user_hidden_titles 
+                   WHERE user_id = %s 
+                   ORDER BY acquire_time DESC""" if IS_MYSQL else
+                """SELECT * FROM user_hidden_titles 
+                   WHERE user_id = ? 
+                   ORDER BY acquire_time DESC""",
+                (user_id,)
+            )
+            rows = cursor.fetchall()
+            return [row_to_dict(row) for row in rows]
+
 
 # ========== 数据库迁移函数 ==========
 
@@ -2408,3 +2529,83 @@ def _migrate_mysql_create_bounties_table():
                 print("✓ MySQL: 已添加 is_active 列到 bounties 表")
     except Exception as e:
         print(f"⚠ MySQL 悬赏表迁移警告: {e}")
+
+
+def _migrate_sqlite_create_wheel_tables(cursor):
+    """SQLite: 创建每日转盘相关表"""
+    # 创建转盘抽奖记录表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS wheel_records (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            prize_id TEXT NOT NULL,
+            prize_name TEXT NOT NULL,
+            prize_points INTEGER DEFAULT 0,
+            cost INTEGER DEFAULT 0,
+            create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    ''')
+    
+    # 创建用户隐藏称号表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_hidden_titles (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            title_id TEXT NOT NULL,
+            title_name TEXT NOT NULL,
+            title_color TEXT DEFAULT '#1890ff',
+            acquire_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    ''')
+    
+    # 创建索引
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_wheel_records_user ON wheel_records(user_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_wheel_records_time ON wheel_records(create_time)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_hidden_titles_user ON user_hidden_titles(user_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_hidden_titles_title ON user_hidden_titles(title_id)')
+    print("✓ SQLite: 已创建每日转盘相关表")
+
+
+def _migrate_mysql_create_wheel_tables():
+    """MySQL: 创建每日转盘相关表"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            # 创建转盘抽奖记录表
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS wheel_records (
+                    id VARCHAR(64) PRIMARY KEY,
+                    user_id VARCHAR(64) NOT NULL,
+                    prize_id VARCHAR(64) NOT NULL,
+                    prize_name VARCHAR(255) NOT NULL,
+                    prize_points INT DEFAULT 0,
+                    cost INT DEFAULT 0,
+                    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id),
+                    INDEX idx_user_id (user_id),
+                    INDEX idx_create_time (create_time)
+                )
+            ''')
+            
+            # 创建用户隐藏称号表
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS user_hidden_titles (
+                    id VARCHAR(64) PRIMARY KEY,
+                    user_id VARCHAR(64) NOT NULL,
+                    title_id VARCHAR(64) NOT NULL,
+                    title_name VARCHAR(255) NOT NULL,
+                    title_color VARCHAR(50) DEFAULT '#1890ff',
+                    acquire_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id),
+                    INDEX idx_user_id (user_id),
+                    INDEX idx_title_id (title_id)
+                )
+            ''')
+            
+            conn.commit()
+            print("✓ MySQL: 已创建每日转盘相关表")
+    except Exception as e:
+        print(f"⚠ MySQL 每日转盘表迁移警告: {e}")

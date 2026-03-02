@@ -8,6 +8,945 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/themes.css') }}">
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     {% block extra_css %}{% endblock %}
+    
+    <!-- 系统使用说明样式 -->
+    <style>
+        /* 使用说明入口按钮 */
+        .guide-entry-btn {
+            position: fixed;
+            right: 20px;
+            bottom: 90px;
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            transition: all 0.3s ease;
+            z-index: 998;
+            animation: guidePulse 2s infinite;
+        }
+
+        @keyframes guidePulse {
+            0%, 100% { transform: scale(1); box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4); }
+            50% { transform: scale(1.05); box-shadow: 0 6px 25px rgba(102, 126, 234, 0.6); }
+        }
+
+        .guide-entry-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 8px 30px rgba(102, 126, 234, 0.5);
+        }
+
+        .guide-entry-icon {
+            font-size: 24px;
+            line-height: 1;
+        }
+
+        .guide-entry-text {
+            font-size: 10px;
+            color: white;
+            font-weight: bold;
+            margin-top: 2px;
+        }
+
+        /* 使用说明弹窗 */
+        .guide-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 10000;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(5px);
+        }
+
+        .guide-modal-content {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border-radius: 20px;
+            max-width: 800px;
+            width: 90%;
+            max-height: 85vh;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .guide-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 24px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            background: rgba(255,255,255,0.05);
+        }
+
+        .guide-modal-header h3 {
+            margin: 0;
+            color: #fff;
+            font-size: 20px;
+            text-shadow: 0 0 10px rgba(255,255,255,0.3);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .guide-modal-close {
+            background: none;
+            border: none;
+            color: #fff;
+            font-size: 28px;
+            cursor: pointer;
+            opacity: 0.7;
+            transition: opacity 0.3s;
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+        }
+
+        .guide-modal-close:hover {
+            opacity: 1;
+            background: rgba(255,255,255,0.1);
+        }
+
+        .guide-modal-body {
+            padding: 0;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        /* 使用说明步骤样式 */
+        .guide-steps {
+            padding: 24px;
+        }
+
+        .guide-step {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 24px;
+            padding: 20px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: all 0.3s ease;
+        }
+
+        .guide-step:hover {
+            background: rgba(255,255,255,0.08);
+            transform: translateX(5px);
+        }
+
+        .guide-step:last-child {
+            margin-bottom: 0;
+        }
+
+        .guide-step-number {
+            width: 48px;
+            height: 48px;
+            min-width: 48px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: bold;
+            color: white;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .guide-step-content {
+            flex: 1;
+        }
+
+        .guide-step-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .guide-step-desc {
+            font-size: 14px;
+            color: rgba(255,255,255,0.7);
+            line-height: 1.6;
+            margin-bottom: 12px;
+        }
+
+        .guide-step-image {
+            width: 100%;
+            height: 160px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 48px;
+            margin-top: 12px;
+            border: 2px dashed rgba(255,255,255,0.2);
+        }
+
+        .guide-step-tips {
+            margin-top: 12px;
+            padding: 12px 16px;
+            background: rgba(255,215,0,0.1);
+            border-radius: 8px;
+            border-left: 3px solid #ffd700;
+        }
+
+        .guide-step-tips-title {
+            font-size: 12px;
+            color: #ffd700;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .guide-step-tips-content {
+            font-size: 12px;
+            color: rgba(255,255,255,0.8);
+            line-height: 1.5;
+        }
+
+        /* 功能亮点区域 */
+        .guide-features {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            padding: 0 24px 24px;
+        }
+
+        .guide-feature {
+            text-align: center;
+            padding: 20px 16px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: all 0.3s ease;
+        }
+
+        .guide-feature:hover {
+            background: rgba(255,255,255,0.1);
+            transform: translateY(-3px);
+        }
+
+        .guide-feature-icon {
+            font-size: 32px;
+            margin-bottom: 8px;
+        }
+
+        .guide-feature-title {
+            font-size: 14px;
+            color: #fff;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .guide-feature-desc {
+            font-size: 12px;
+            color: rgba(255,255,255,0.6);
+        }
+
+        /* 欢迎区域 */
+        .guide-welcome {
+            padding: 24px;
+            text-align: center;
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(118, 75, 162, 0.2) 100%);
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .guide-welcome-icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+        }
+
+        .guide-welcome-title {
+            font-size: 20px;
+            color: #fff;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .guide-welcome-desc {
+            font-size: 14px;
+            color: rgba(255,255,255,0.7);
+        }
+
+        /* 底部按钮 */
+        .guide-modal-footer {
+            padding: 16px 24px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            background: rgba(255,255,255,0.05);
+        }
+
+        .guide-btn {
+            padding: 10px 24px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: none;
+        }
+
+        .guide-btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .guide-btn-primary:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+        }
+
+        .guide-btn-secondary {
+            background: rgba(255,255,255,0.1);
+            color: rgba(255,255,255,0.8);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        .guide-btn-secondary:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        /* 响应式调整 */
+        @media (max-width: 768px) {
+            .guide-modal-content {
+                width: 95%;
+                max-height: 90vh;
+            }
+
+            .guide-step {
+                flex-direction: column;
+                gap: 12px;
+            }
+
+            .guide-step-number {
+                width: 40px;
+                height: 40px;
+                font-size: 16px;
+            }
+
+            .guide-features {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .guide-entry-btn {
+                width: 50px;
+                height: 50px;
+                right: 10px;
+                bottom: 80px;
+            }
+
+            .guide-entry-icon {
+                font-size: 20px;
+            }
+
+            .guide-entry-text {
+                font-size: 9px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .guide-features {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+
+    <!-- 每日转盘样式 -->
+    <style>
+        /* 转盘入口按钮 */
+        .wheel-entry-btn {
+            position: fixed;
+            right: 20px;
+            bottom: 20px;
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #ff6b6b 0%, #feca57 100%);
+            border-radius: 50%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+            transition: all 0.3s ease;
+            z-index: 999;
+            animation: wheelPulse 2s infinite;
+        }
+        
+        @keyframes wheelPulse {
+            0%, 100% { transform: scale(1); box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4); }
+            50% { transform: scale(1.05); box-shadow: 0 6px 25px rgba(255, 107, 107, 0.6); }
+        }
+        
+        .wheel-entry-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 8px 30px rgba(255, 107, 107, 0.5);
+        }
+        
+        .wheel-entry-icon {
+            font-size: 24px;
+            line-height: 1;
+        }
+        
+        .wheel-entry-text {
+            font-size: 10px;
+            color: white;
+            font-weight: bold;
+            margin-top: 2px;
+        }
+        
+        .wheel-entry-badge {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background: #52c41a;
+            color: white;
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        
+        /* 转盘弹窗 */
+        .wheel-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 10000;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(5px);
+        }
+        
+        .wheel-modal-content {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border-radius: 20px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .wheel-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .wheel-modal-header h3 {
+            margin: 0;
+            color: #fff;
+            font-size: 20px;
+            text-shadow: 0 0 10px rgba(255,255,255,0.3);
+        }
+        
+        .wheel-modal-close {
+            background: none;
+            border: none;
+            color: #fff;
+            font-size: 28px;
+            cursor: pointer;
+            opacity: 0.7;
+            transition: opacity 0.3s;
+        }
+        
+        .wheel-modal-close:hover {
+            opacity: 1;
+        }
+        
+        .wheel-modal-body {
+            padding: 20px;
+        }
+        
+        /* 转盘区域 */
+        .wheel-container {
+            position: relative;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        
+        .wheel-wrapper {
+            position: relative;
+            width: 320px;
+            height: 320px;
+        }
+        
+        #wheelCanvas {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            box-shadow: 0 0 30px rgba(255,215,0,0.3);
+        }
+        
+        .wheel-pointer {
+            position: absolute;
+            top: -15px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 30px;
+            color: #ffd700;
+            text-shadow: 0 0 10px rgba(255,215,0,0.8);
+            z-index: 10;
+        }
+        
+        .wheel-center-btn {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #ff6b6b 0%, #feca57 100%);
+            border-radius: 50%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            transition: all 0.3s;
+            z-index: 5;
+            border: 3px solid #fff;
+        }
+        
+        .wheel-center-btn:hover {
+            transform: translate(-50%, -50%) scale(1.05);
+            box-shadow: 0 6px 20px rgba(255,107,107,0.5);
+        }
+        
+        .wheel-center-btn.disabled {
+            background: #8c8c8c;
+            cursor: not-allowed;
+        }
+        
+        .wheel-center-btn .spin-text {
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        
+        .wheel-center-btn .spin-price {
+            color: rgba(255,255,255,0.9);
+            font-size: 11px;
+        }
+        
+        /* 积分信息 */
+        .wheel-points-info {
+            display: flex;
+            justify-content: space-around;
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .points-item {
+            text-align: center;
+        }
+        
+        .points-label {
+            display: block;
+            color: rgba(255,255,255,0.6);
+            font-size: 12px;
+            margin-bottom: 5px;
+        }
+        
+        .points-value {
+            display: block;
+            color: #ffd700;
+            font-size: 20px;
+            font-weight: bold;
+        }
+        
+        /* 奖品说明 */
+        .wheel-prizes-info {
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .prizes-title {
+            color: #fff;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        
+        .prizes-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+        }
+        
+        .prize-item {
+            background: rgba(255,255,255,0.1);
+            border-radius: 8px;
+            padding: 8px;
+            text-align: center;
+            transition: all 0.3s;
+        }
+        
+        .prize-item:hover {
+            background: rgba(255,255,255,0.15);
+            transform: translateY(-2px);
+        }
+        
+        .prize-item.title-prize {
+            background: linear-gradient(135deg, rgba(235,47,150,0.3) 0%, rgba(114,46,209,0.3) 100%);
+            border: 1px solid rgba(235,47,150,0.5);
+        }
+        
+        .prize-icon {
+            display: block;
+            font-size: 20px;
+            margin-bottom: 2px;
+        }
+        
+        .prize-name {
+            display: block;
+            color: #fff;
+            font-size: 10px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .prize-prob {
+            display: block;
+            color: rgba(255,255,255,0.5);
+            font-size: 9px;
+        }
+        
+        /* 抽奖记录 */
+        .wheel-records {
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 15px;
+        }
+        
+        .records-title {
+            color: #fff;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        
+        .records-list {
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        
+        .record-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            color: rgba(255,255,255,0.8);
+            font-size: 13px;
+        }
+        
+        .record-item:last-child {
+            border-bottom: none;
+        }
+        
+        .records-empty {
+            text-align: center;
+            color: rgba(255,255,255,0.4);
+            padding: 20px;
+            font-size: 13px;
+        }
+        
+        /* 结果弹窗 */
+        .wheel-result-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            z-index: 10001;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(10px);
+        }
+        
+        .wheel-result-content {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border-radius: 20px;
+            padding: 40px;
+            text-align: center;
+            max-width: 350px;
+            width: 90%;
+            border: 2px solid rgba(255,215,0,0.3);
+            box-shadow: 0 0 50px rgba(255,215,0,0.2);
+            animation: resultPop 0.5s ease;
+        }
+        
+        @keyframes resultPop {
+            0% { transform: scale(0.5); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        
+        .result-animation {
+            position: relative;
+            width: 100px;
+            height: 100px;
+            margin: 0 auto 20px;
+        }
+        
+        .result-icon {
+            font-size: 60px;
+            line-height: 100px;
+            position: relative;
+            z-index: 2;
+        }
+        
+        .result-glow {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80px;
+            height: 80px;
+            background: radial-gradient(circle, rgba(255,215,0,0.5) 0%, transparent 70%);
+            border-radius: 50%;
+            z-index: 1;
+            animation: glowPulse 1s infinite;
+        }
+        
+        @keyframes glowPulse {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.5; }
+            50% { transform: translate(-50%, -50%) scale(1.5); opacity: 0.8; }
+        }
+        
+        .result-animation.celebrating .result-icon {
+            animation: iconBounce 0.5s ease;
+        }
+        
+        @keyframes iconBounce {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.3); }
+        }
+        
+        .result-title {
+            color: rgba(255,255,255,0.8);
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+        
+        .result-prize {
+            font-size: 28px;
+            font-weight: bold;
+            color: #ffd700;
+            margin-bottom: 10px;
+            text-shadow: 0 0 20px rgba(255,215,0,0.5);
+        }
+        
+        .result-message {
+            color: rgba(255,255,255,0.6);
+            font-size: 14px;
+            margin-bottom: 25px;
+        }
+        
+        .result-btn {
+            background: linear-gradient(135deg, #ff6b6b 0%, #feca57 100%);
+            border: none;
+            color: white;
+            padding: 12px 40px;
+            border-radius: 25px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(255,107,107,0.4);
+        }
+        
+        .result-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 20px rgba(255,107,107,0.5);
+        }
+        
+        /* 抽奖确认弹窗 */
+        .wheel-confirm-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 10002;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(5px);
+            animation: fadeIn 0.3s ease;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        .wheel-confirm-content {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border-radius: 20px;
+            padding: 40px;
+            text-align: center;
+            max-width: 320px;
+            width: 90%;
+            border: 2px solid rgba(255,215,0,0.3);
+            box-shadow: 0 0 50px rgba(255,215,0,0.2);
+            animation: slideUp 0.3s ease;
+        }
+        
+        @keyframes slideUp {
+            from { transform: translateY(30px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        
+        .wheel-confirm-icon {
+            font-size: 50px;
+            margin-bottom: 15px;
+            animation: diamondPulse 1.5s infinite;
+        }
+        
+        @keyframes diamondPulse {
+            0%, 100% { transform: scale(1); filter: drop-shadow(0 0 10px rgba(255,215,0,0.5)); }
+            50% { transform: scale(1.1); filter: drop-shadow(0 0 20px rgba(255,215,0,0.8)); }
+        }
+        
+        .wheel-confirm-title {
+            color: #fff;
+            font-size: 22px;
+            margin-bottom: 20px;
+            text-shadow: 0 0 10px rgba(255,255,255,0.3);
+        }
+        
+        .wheel-confirm-text {
+            color: rgba(255,255,255,0.8);
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+        
+        .price-highlight {
+            color: #ffd700;
+            font-weight: bold;
+            font-size: 20px;
+            text-shadow: 0 0 10px rgba(255,215,0,0.5);
+        }
+        
+        .wheel-confirm-hint {
+            color: rgba(255,255,255,0.5);
+            font-size: 14px;
+            margin-bottom: 25px;
+        }
+        
+        .wheel-confirm-btns {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+        }
+        
+        .wheel-confirm-btn {
+            padding: 12px 25px;
+            border-radius: 25px;
+            font-size: 15px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            border: none;
+        }
+        
+        .wheel-confirm-btn.cancel {
+            background: rgba(255,255,255,0.1);
+            color: rgba(255,255,255,0.8);
+        }
+        
+        .wheel-confirm-btn.cancel:hover {
+            background: rgba(255,255,255,0.2);
+            transform: scale(1.05);
+        }
+        
+        .wheel-confirm-btn.confirm {
+            background: linear-gradient(135deg, #ff6b6b 0%, #feca57 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(255,107,107,0.4);
+        }
+        
+        .wheel-confirm-btn.confirm:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 20px rgba(255,107,107,0.5);
+        }
+        
+        /* 响应式调整 */
+        @media (max-width: 480px) {
+            .wheel-wrapper {
+                width: 280px;
+                height: 280px;
+            }
+            
+            .wheel-center-btn {
+                width: 70px;
+                height: 70px;
+            }
+            
+            .prizes-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+            
+            .wheel-entry-btn {
+                width: 50px;
+                height: 50px;
+                right: 10px;
+                bottom: 10px;
+            }
+            
+            .wheel-entry-icon {
+                font-size: 20px;
+            }
+            
+            .wheel-entry-text {
+                font-size: 9px;
+            }
+        }
+    </style>
     {% if current_cursor_skin %}
     <!-- 预加载鼠标皮肤样式，确保页面加载前就已应用 -->
     <style id="preload-cursor-style">
@@ -159,26 +1098,24 @@
                     <span class="nav-text">个人中心</span>
                 </a>
             </nav>
-            <div class="sidebar-footer">
-                <a href="{{ url_for('pc_profile') }}" style="text-decoration: none; display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;">
-                    <div class="user-info-mini" style="flex: 1; min-width: 0;">
-                        <span class="user-avatar-mini {% if user_avatar_frame %}has-frame{% endif %}" {% if user_avatar_frame %}style="border: 3px solid {{ user_avatar_frame.color }}; box-shadow: 0 0 8px {{ user_avatar_frame.color }};"{% endif %}>
-                            {% if user.avatar %}
-                            <img src="{{ user.avatar }}" alt="头像" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">
+            <div class="sidebar-footer" style="padding: 12px 16px 20px 16px;">
+                <a href="{{ url_for('pc_profile') }}" style="text-decoration: none; display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0;">
+                    <span class="user-avatar-mini {% if user_avatar_frame %}has-frame{% endif %}" {% if user_avatar_frame %}style="border: 3px solid {{ user_avatar_frame.color }}; box-shadow: 0 0 8px {{ user_avatar_frame.color }}; flex-shrink: 0;"{% else %}style="flex-shrink: 0;"{% endif %}>
+                        {% if user.avatar %}
+                        <img src="{{ user.avatar }}" alt="头像" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">
+                        {% else %}
+                        {{ user.borrower_name[0] if user.borrower_name else '?' }}
+                        {% endif %}
+                    </span>
+                    <div style="display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; overflow: hidden; line-height: 1.4;">
+                        <span class="user-name" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px;">{{ user.borrower_name or '未设置' }}</span>
+                        <span class="user-title" style="font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.5;">
+                            {% if user_equipped_title %}
+                                <span style="background: {{ user_equipped_title.color }}; color: #fff; font-weight: 600; padding: 2px 8px; border-radius: 4px; display: inline-block; text-shadow: 0 1px 2px rgba(0,0,0,0.3);">{{ user_equipped_title.name }}</span>
                             {% else %}
-                            {{ user.borrower_name[0] if user.borrower_name else '?' }}
+                                <span style="color: #8c8c8c; background: #f5f5f5; padding: 2px 8px; border-radius: 4px; display: inline-block;">无称号</span>
                             {% endif %}
                         </span>
-                        <div style="display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; overflow: hidden;">
-                            <span class="user-name" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ user.borrower_name or '未设置' }}</span>
-                            <span class="user-title" style="font-size: 11px; color: #8c8c8c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                                {% if user_equipped_title %}
-                                    <span style="color: {{ user_equipped_title.color }}; font-weight: 600;">{{ user_equipped_title.name }}</span>
-                                {% else %}
-                                    无称号
-                                {% endif %}
-                            </span>
-                        </div>
                     </div>
                 </a>
             </div>
@@ -321,8 +1258,625 @@
         </div>
     </div>
 
+    <!-- 系统使用说明入口按钮 -->
+    <div class="guide-entry-btn" onclick="openGuideModal()" title="使用说明">
+        <span class="guide-entry-icon">📖</span>
+        <span class="guide-entry-text">帮助</span>
+    </div>
+
+    <!-- 系统使用说明弹窗 -->
+    <div id="guideModal" class="guide-modal">
+        <div class="guide-modal-content">
+            <div class="guide-modal-header">
+                <h3>📖 系统使用说明</h3>
+                <button class="guide-modal-close" onclick="closeGuideModal()">&times;</button>
+            </div>
+            <div class="guide-modal-body">
+                <!-- 欢迎区域 -->
+                <div class="guide-welcome">
+                    <div class="guide-welcome-icon">🏰</div>
+                    <div class="guide-welcome-title">欢迎使用 Carbit 藏宝阁</div>
+                    <div class="guide-welcome-desc">简单几步，轻松管理您的设备借用</div>
+                </div>
+
+                <!-- 功能亮点 -->
+                <div class="guide-features">
+                    <div class="guide-feature">
+                        <div class="guide-feature-icon">📱</div>
+                        <div class="guide-feature-title">设备借用</div>
+                        <div class="guide-feature-desc">快速借用各类测试设备</div>
+                    </div>
+                    <div class="guide-feature">
+                        <div class="guide-feature-icon">📅</div>
+                        <div class="guide-feature-title">预约管理</div>
+                        <div class="guide-feature-desc">提前预约，合理安排</div>
+                    </div>
+                    <div class="guide-feature">
+                        <div class="guide-feature-icon">💎</div>
+                        <div class="guide-feature-title">积分奖励</div>
+                        <div class="guide-feature-desc">使用系统赚取积分</div>
+                    </div>
+                </div>
+
+                <!-- 使用步骤 -->
+                <div class="guide-steps">
+                    <div class="guide-step">
+                        <div class="guide-step-number">1</div>
+                        <div class="guide-step-content">
+                            <div class="guide-step-title">🔍 查找设备</div>
+                            <div class="guide-step-desc">在顶部搜索框输入设备名称或型号，快速找到需要的设备。支持模糊搜索，无需输入完整名称。</div>
+                            <div class="guide-step-image">🔍 📱 🚗</div>
+                            <div class="guide-step-tips">
+                                <div class="guide-step-tips-title">💡 小贴士</div>
+                                <div class="guide-step-tips-content">搜索设备可以获得积分奖励哦！</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="guide-step">
+                        <div class="guide-step-number">2</div>
+                        <div class="guide-step-content">
+                            <div class="guide-step-title">📋 查看设备详情</div>
+                            <div class="guide-step-desc">点击设备进入详情页，查看设备状态、规格参数、借用记录等信息。绿色表示"在库"可借用，橙色表示"借出"中。</div>
+                            <div class="guide-step-image">📋 ✅ 📊</div>
+                            <div class="guide-step-tips">
+                                <div class="guide-step-tips-title">💡 小贴士</div>
+                                <div class="guide-step-tips-content">详情页可以看到设备的实时状态和预计归还时间</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="guide-step">
+                        <div class="guide-step-number">3</div>
+                        <div class="guide-step-content">
+                            <div class="guide-step-title">📤 借用设备</div>
+                            <div class="guide-step-desc">设备在库时，点击"借用"按钮，填写借用原因（测试/开发/演示/出差），确认后即可成功借用。借用成功后，您可以在设备详情页查看<span style="color: #ffd700; font-weight: 600;">设备柜号</span>或<span style="color: #ffd700; font-weight: 600;">保管人姓名</span>，方便您领取设备。</div>
+                            <div class="guide-step-image">📤 ✨ 🎉</div>
+                            <div class="guide-step-tips">
+                                <div class="guide-step-tips-title">💡 小贴士</div>
+                                <div class="guide-step-tips-content">借用设备会获得积分奖励！成功借用后记得查看柜号/保管人信息去领取设备哦</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="guide-step">
+                        <div class="guide-step-number">4</div>
+                        <div class="guide-step-content">
+                            <div class="guide-step-title">📅 预约设备</div>
+                            <div class="guide-step-desc">设备被借出时，可以点击"预约"按钮，选择预约时间段。系统会在设备归还后通知您。</div>
+                            <div class="guide-step-image">📅 ⏰ 🔔</div>
+                            <div class="guide-step-tips">
+                                <div class="guide-step-tips-title">💡 小贴士</div>
+                                <div class="guide-step-tips-content">预约需要保管人和借用人双方确认</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="guide-step">
+                        <div class="guide-step-number">5</div>
+                        <div class="guide-step-content">
+                            <div class="guide-step-title">🔄 归还/转借/续借</div>
+                            <div class="guide-step-desc">在"我的设备详情"页面，可以对借用中的设备进行归还、转借给他人或续借延期操作。</div>
+                            <div class="guide-step-image">🔄 📤 📅</div>
+                            <div class="guide-step-tips">
+                                <div class="guide-step-tips-title">💡 小贴士</div>
+                                <div class="guide-step-tips-content">逾期归还会影响积分和排行榜排名哦</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="guide-step">
+                        <div class="guide-step-number">6</div>
+                        <div class="guide-step-content">
+                            <div class="guide-step-title">🏆 积分与排行榜</div>
+                            <div class="guide-step-desc">使用系统功能可获得积分，积分可用于积分商城兑换称号、鼠标皮肤等。排行榜展示借用/归还/积分排名。</div>
+                            <div class="guide-step-image">🏆 💎 🎁</div>
+                            <div class="guide-step-tips">
+                                <div class="guide-step-tips-title">💡 小贴士</div>
+                                <div class="guide-step-tips-content">每日登录、搜索设备、借用归还都能获得积分！</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="guide-step">
+                        <div class="guide-step-number">7</div>
+                        <div class="guide-step-content">
+                            <div class="guide-step-title">🎯 悬赏功能</div>
+                            <div class="guide-step-desc">找不到设备？发布悬赏让同事帮忙寻找！也可以认领悬赏帮助他人找到设备，获得积分奖励。</div>
+                            <div class="guide-step-image">🎯 💰 🔍</div>
+                            <div class="guide-step-tips">
+                                <div class="guide-step-tips-title">💡 小贴士</div>
+                                <div class="guide-step-tips-content">悬赏积分由发布者提供，成功找到后发放</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="guide-modal-footer">
+                <button class="guide-btn guide-btn-secondary" onclick="closeGuideModal()">关闭</button>
+                <button class="guide-btn guide-btn-primary" onclick="closeGuideModalAndDontShow()">我知道了，不再提示</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 每日转盘入口按钮 -->
+    <div class="wheel-entry-btn" onclick="openWheelModal()" title="每日转盘">
+        <span class="wheel-entry-icon">🎰</span>
+        <span class="wheel-entry-text">抽奖</span>
+        <span class="wheel-entry-badge" id="wheelFreeBadge">免费</span>
+    </div>
+
+    <!-- 每日转盘弹窗 -->
+    <div id="wheelModal" class="wheel-modal">
+        <div class="wheel-modal-content">
+            <div class="wheel-modal-header">
+                <h3>🎰 每日幸运转盘</h3>
+                <button class="wheel-modal-close" onclick="closeWheelModal()">&times;</button>
+            </div>
+            <div class="wheel-modal-body">
+                <!-- 转盘区域 -->
+                <div class="wheel-container">
+                    <div class="wheel-wrapper">
+                        <canvas id="wheelCanvas" width="400" height="400"></canvas>
+                        <div class="wheel-pointer">▼</div>
+                    </div>
+                    <div class="wheel-center-btn" id="wheelSpinBtn" onclick="spinWheel()">
+                        <span class="spin-text">开始</span>
+                        <span class="spin-price" id="spinPriceText">免费</span>
+                    </div>
+                </div>
+
+                <!-- 提示文字 -->
+                <div class="wheel-notice" style="text-align: center; color: #999; font-size: 12px; margin: -10px 0 15px 0;">
+                    💡 动画效果与实际奖品无关，请以最终显示结果为准
+                </div>
+
+                <!-- 积分信息 -->
+                <div class="wheel-points-info">
+                    <div class="points-item">
+                        <span class="points-label">当前积分</span>
+                        <span class="points-value" id="wheelCurrentPoints">0</span>
+                    </div>
+                    <div class="points-item">
+                        <span class="points-label">今日已抽</span>
+                        <span class="points-value" id="wheelTodayCount">0次</span>
+                    </div>
+                </div>
+
+                <!-- 奖品说明 -->
+                <div class="wheel-prizes-info">
+                    <div class="prizes-title">🎁 奖品列表</div>
+                    <div class="prizes-grid" id="wheelPrizesGrid">
+                        <!-- 动态生成 -->
+                    </div>
+                </div>
+
+                <!-- 抽奖记录 -->
+                <div class="wheel-records">
+                    <div class="records-title">📜 我的抽奖记录</div>
+                    <div class="records-list" id="wheelRecordsList">
+                        <div class="records-empty">暂无记录</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 转盘结果弹窗 -->
+    <div id="wheelResultModal" class="wheel-result-modal">
+        <div class="wheel-result-content">
+            <div class="result-animation" id="resultAnimation">
+                <div class="result-icon" id="resultIcon">🎉</div>
+                <div class="result-glow"></div>
+            </div>
+            <h3 class="result-title">恭喜获得</h3>
+            <div class="result-prize" id="resultPrizeName">100积分</div>
+            <div class="result-message" id="resultMessage">积分已添加到您的账户</div>
+            <button class="result-btn" onclick="closeWheelResult()">太棒了</button>
+        </div>
+    </div>
+
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     <script>
+        // ==================== 系统使用说明功能 ====================
+        const GUIDE_STORAGE_KEY = 'carbit_guide_shown';
+
+        // 打开使用说明弹窗
+        function openGuideModal() {
+            const modal = document.getElementById('guideModal');
+            if (modal) {
+                modal.style.display = 'flex';
+                document.body.style.overflow = 'hidden';
+            }
+        }
+
+        // 关闭使用说明弹窗
+        function closeGuideModal() {
+            const modal = document.getElementById('guideModal');
+            if (modal) {
+                modal.style.display = 'none';
+                document.body.style.overflow = '';
+            }
+        }
+
+        // 关闭弹窗并标记不再提示
+        function closeGuideModalAndDontShow() {
+            localStorage.setItem(GUIDE_STORAGE_KEY, 'true');
+            closeGuideModal();
+            showToast('已关闭首次提示，您可以随时点击右下角"帮助"按钮查看使用说明');
+        }
+
+        // 检查是否需要显示使用说明（首次访问）
+        function checkAndShowGuide() {
+            const hasShown = localStorage.getItem(GUIDE_STORAGE_KEY);
+            if (!hasShown) {
+                // 延迟1秒显示，让用户先看到页面内容
+                setTimeout(() => {
+                    openGuideModal();
+                }, 1000);
+            }
+        }
+
+        // 点击弹窗外部关闭
+        document.addEventListener('click', function(e) {
+            const modal = document.getElementById('guideModal');
+            if (modal && e.target === modal) {
+                closeGuideModal();
+            }
+        });
+
+        // ==================== 每日转盘功能 ====================
+        let wheelData = null;
+        let isSpinning = false;
+        let wheelCanvas = null;
+        let wheelCtx = null;
+        let currentRotation = 0;
+
+        // 初始化转盘
+        function initWheel() {
+            wheelCanvas = document.getElementById('wheelCanvas');
+            if (wheelCanvas) {
+                wheelCtx = wheelCanvas.getContext('2d');
+            }
+            loadWheelStatus();
+        }
+
+        // 加载转盘状态
+        async function loadWheelStatus() {
+            try {
+                const response = await fetch('/api/wheel/status');
+                const data = await response.json();
+                if (data.success) {
+                    wheelData = data;
+                    // 调试：打印奖品顺序
+                    console.log('奖品顺序:', wheelData.prizes.map((p, i) => `${i}:${p.name}`).join(', '));
+                    updateWheelUI();
+                    drawWheel();
+                }
+            } catch (e) {
+                console.error('加载转盘状态失败:', e);
+            }
+        }
+
+        // 更新转盘UI
+        function updateWheelUI() {
+            if (!wheelData) return;
+            
+            // 更新积分显示
+            document.getElementById('wheelCurrentPoints').textContent = wheelData.current_points;
+            document.getElementById('wheelTodayCount').textContent = wheelData.today_spin_count + '次';
+            
+            // 更新按钮价格
+            const spinBtn = document.getElementById('wheelSpinBtn');
+            const priceText = document.getElementById('spinPriceText');
+            const freeBadge = document.getElementById('wheelFreeBadge');
+            
+            if (wheelData.next_spin_price === 0) {
+                priceText.textContent = '免费';
+                freeBadge.style.display = 'flex';
+                spinBtn.classList.add('free');
+            } else {
+                priceText.textContent = wheelData.next_spin_price + '积分';
+                freeBadge.style.display = 'none';
+                spinBtn.classList.remove('free');
+            }
+            
+            // 更新奖品列表
+            const prizesGrid = document.getElementById('wheelPrizesGrid');
+            if (prizesGrid && wheelData.prizes) {
+                prizesGrid.innerHTML = wheelData.prizes.map(p => `
+                    <div class="prize-item ${p.is_title ? 'title-prize' : ''}">
+                        <span class="prize-icon">${p.icon}</span>
+                        <span class="prize-name">${p.name}</span>
+                        <span class="prize-prob">${p.probability}%</span>
+                    </div>
+                `).join('');
+            }
+        }
+
+        // 绘制转盘
+        function drawWheel() {
+            if (!wheelCtx || !wheelData || !wheelData.prizes) return;
+            
+            const canvas = wheelCanvas;
+            const ctx = wheelCtx;
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+            const radius = 180;
+            
+            const prizes = wheelData.prizes;
+            const numPrizes = prizes.length;
+            const sliceAngle = (2 * Math.PI) / numPrizes;
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 指针固定在12点钟方向（-PI/2）
+            // 转盘顺时针旋转currentRotation角度
+            // 每个扇区的实际角度 = 初始角度 + currentRotation
+            
+            // 绘制每个扇区（考虑旋转）
+            // 注意：让索引0从12点钟方向开始，而不是3点钟
+            const offsetRotation = currentRotation - Math.PI / 2; // 偏移-90度，让索引0从12点钟开始
+            
+            prizes.forEach((prize, index) => {
+                // 计算旋转后的角度
+                const baseStartAngle = index * sliceAngle;
+                const baseEndAngle = (index + 1) * sliceAngle;
+                const startAngle = baseStartAngle + offsetRotation;
+                const endAngle = baseEndAngle + offsetRotation;
+                
+                ctx.beginPath();
+                ctx.moveTo(centerX, centerY);
+                ctx.arc(centerX, centerY, radius, startAngle, endAngle);
+                ctx.closePath();
+                ctx.fillStyle = prize.color;
+                ctx.fill();
+                ctx.stroke();
+                
+                // 绘制文字（在旋转后的位置）
+                ctx.save();
+                ctx.translate(centerX, centerY);
+                ctx.rotate(startAngle + sliceAngle / 2);
+                ctx.textAlign = 'right';
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 14px Arial';
+                ctx.fillText(prize.name, radius - 20, 5);
+                ctx.restore();
+            });
+            
+            // 绘制中心圆
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 50, 0, 2 * Math.PI);
+            ctx.fillStyle = '#fff';
+            ctx.fill();
+            ctx.strokeStyle = '#1890ff';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+        }
+
+        // 开始抽奖
+        async function spinWheel() {
+            if (isSpinning) return;
+            
+            const btn = document.getElementById('wheelSpinBtn');
+            if (btn.classList.contains('disabled')) {
+                showToast('积分不足，无法抽奖');
+                return;
+            }
+            
+            // 检查是否需要确认（第二次及以后需要确认）
+            const currentSpinCount = wheelData ? wheelData.today_spin_count : 0;
+            const nextPrice = wheelData ? wheelData.next_spin_price : 0;
+            
+            if (currentSpinCount >= 1 && nextPrice > 0) {
+                // 需要确认
+                const confirmed = await showWheelConfirmModal(nextPrice);
+                if (!confirmed) {
+                    return; // 用户取消
+                }
+            }
+            
+            isSpinning = true;
+            btn.classList.add('disabled');
+            
+            try {
+                const response = await fetch('/api/wheel/spin', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const result = await response.json();
+                
+                if (result.success) {
+                    // 计算旋转角度（使用弧度）
+                    const prizes = wheelData.prizes;
+                    const prizeIndex = prizes.findIndex(p => p.id === result.prize.id);
+                    const numPrizes = prizes.length;
+                    
+                    // 转盘绘制方式：
+                    // - 奖品索引0从12点钟方向开始（偏移-PI/2）
+                    // - 指针固定在12点钟方向
+                    // - 扇区起始角度 = index * sliceAngle + currentRotation - PI/2
+                    //
+                    // 要让prizeIndex停在12点钟（被指针指向）：
+                    // 我们希望 prizeIndex 扇区的中间角度 + currentRotation - PI/2 = -PI/2 (12点钟)
+                    // 即：prizeCenter + currentRotation = 0
+                    // currentRotation = -prizeCenter
+                    
+                    const sectorAngle = (2 * Math.PI) / numPrizes;
+                    const prizeCenter = prizeIndex * sectorAngle + sectorAngle / 2;
+                    
+                    // 计算需要的旋转角度
+                    // 让 prizeIndex 停在12点钟
+                    // rotation = -prizeCenter 表示需要逆时针旋转 prizeCenter 角度
+                    let targetRotation = -prizeCenter;
+                    
+                    // 最终目标角度（增加多圈旋转以产生动画效果）
+                    const spins = 5;
+                    const finalRotation = currentRotation + spins * 2 * Math.PI + targetRotation;
+                    
+                    // 动画旋转
+                    animateWheel(finalRotation, () => {
+                        showWheelResult(result);
+                        wheelData.current_points = result.points_after;
+                        wheelData.today_spin_count = result.spin_count;
+                        wheelData.next_spin_price = result.next_price;
+                        updateWheelUI();
+                        loadWheelRecords();
+                        isSpinning = false;
+                        btn.classList.remove('disabled');
+                    });
+                } else {
+                    showToast(result.message || '抽奖失败');
+                    isSpinning = false;
+                    btn.classList.remove('disabled');
+                }
+            } catch (e) {
+                showToast('抽奖失败，请重试');
+                isSpinning = false;
+                btn.classList.remove('disabled');
+            }
+        }
+        
+        // 显示抽奖确认弹窗
+        function showWheelConfirmModal(price) {
+            return new Promise((resolve) => {
+                // 创建确认弹窗
+                const modal = document.createElement('div');
+                modal.className = 'wheel-confirm-modal';
+                modal.innerHTML = `
+                    <div class="wheel-confirm-content">
+                        <div class="wheel-confirm-icon">💎</div>
+                        <h3 class="wheel-confirm-title">确认抽奖</h3>
+                        <p class="wheel-confirm-text">本次抽奖将消耗 <span class="price-highlight">${price}积分</span></p>
+                        <p class="wheel-confirm-hint">是否继续？</p>
+                        <div class="wheel-confirm-btns">
+                            <button class="wheel-confirm-btn cancel" onclick="this.closest('.wheel-confirm-modal').remove(); window._wheelConfirmResult(false);">取消</button>
+                            <button class="wheel-confirm-btn confirm" onclick="this.closest('.wheel-confirm-modal').remove(); window._wheelConfirmResult(true);">确认抽奖</button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+                
+                // 设置回调
+                window._wheelConfirmResult = (result) => {
+                    delete window._wheelConfirmResult;
+                    resolve(result);
+                };
+                
+                // 点击背景关闭
+                modal.addEventListener('click', (e) => {
+                    if (e.target === modal) {
+                        modal.remove();
+                        window._wheelConfirmResult(false);
+                    }
+                });
+            });
+        }
+
+        // 转盘动画
+        function animateWheel(targetRotation, callback) {
+            const duration = 4000; // 4秒
+            const startRotation = currentRotation;
+            const startTime = Date.now();
+            
+            function animate() {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                
+                // 缓动函数
+                const easeOut = 1 - Math.pow(1 - progress, 3);
+                currentRotation = startRotation + (targetRotation - startRotation) * easeOut;
+                
+                drawWheel();
+                
+                if (progress < 1) {
+                    requestAnimationFrame(animate);
+                } else {
+                    if (callback) callback();
+                }
+            }
+            
+            animate();
+        }
+
+        // 显示抽奖结果
+        function showWheelResult(result) {
+            const modal = document.getElementById('wheelResultModal');
+            const icon = document.getElementById('resultIcon');
+            const prizeName = document.getElementById('resultPrizeName');
+            const message = document.getElementById('resultMessage');
+            
+            icon.textContent = result.prize.icon;
+            prizeName.textContent = result.prize.name;
+            prizeName.style.color = result.prize.color;
+            
+            if (result.prize.is_title) {
+                if (result.is_new_title) {
+                    message.textContent = '获得新称号！可在个人中心装备';
+                } else if (result.prize.title_data && result.prize.title_data.id === 'compensation') {
+                    message.textContent = '称号获取失败，已获得50积分补偿';
+                } else {
+                    message.textContent = '已获得该称号，转换为50积分补偿';
+                }
+            } else {
+                message.textContent = '积分已添加到您的账户';
+            }
+            
+            modal.style.display = 'flex';
+            
+            // 播放庆祝动画
+            const animation = document.getElementById('resultAnimation');
+            animation.classList.add('celebrating');
+            setTimeout(() => animation.classList.remove('celebrating'), 1000);
+        }
+
+        // 关闭结果弹窗
+        function closeWheelResult() {
+            document.getElementById('wheelResultModal').style.display = 'none';
+        }
+
+        // 打开转盘弹窗
+        function openWheelModal() {
+            document.getElementById('wheelModal').style.display = 'flex';
+            loadWheelStatus();
+            loadWheelRecords();
+        }
+
+        // 关闭转盘弹窗
+        function closeWheelModal() {
+            document.getElementById('wheelModal').style.display = 'none';
+        }
+
+        // 加载抽奖记录
+        async function loadWheelRecords() {
+            try {
+                const response = await fetch('/api/wheel/records');
+                const data = await response.json();
+                if (data.success && data.records) {
+                    const list = document.getElementById('wheelRecordsList');
+                    if (data.records.length === 0) {
+                        list.innerHTML = '<div class="records-empty">暂无记录</div>';
+                    } else {
+                        list.innerHTML = data.records.slice(0, 10).map(r => `
+                            <div class="record-item">
+                                <span class="record-prize">${r.prize_name}</span>
+                                <span class="record-time">${new Date(r.create_time).toLocaleString('zh-CN', {month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'})}</span>
+                            </div>
+                        `).join('');
+                    }
+                }
+            } catch (e) {
+                console.error('加载抽奖记录失败:', e);
+            }
+        }
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            initWheel();
+            // 检查是否需要显示使用说明（首次访问）
+            checkAndShowGuide();
+        });
+
         // ==================== 公告相关功能（重新设计） ====================
 
         // 存储所有公告数据
@@ -545,6 +2099,18 @@
             return div.innerHTML;
         }
 
+        // JavaScript字符串转义函数（用于onclick属性）
+        function escapeJsString(text) {
+            if (!text) return '';
+            return text
+                .replace(/\\/g, '\\\\')
+                .replace(/'/g, "\\'")
+                .replace(/"/g, '\\"')
+                .replace(/\n/g, '\\n')
+                .replace(/\r/g, '\\r')
+                .replace(/\t/g, '\\t');
+        }
+
         // ==================== 全局设备搜索功能 ====================
         let allDevices = [];
         let searchDebounceTimer = null;
@@ -610,7 +2176,7 @@
                         const statusColor = statusColors[device.status] || '#8c8c8c';
                         const displayStatus = device.status || '未知';
                         return `
-                        <div class="global-search-suggestion-item" onclick="goToDeviceWithPoints('${device.id}', '${device.device_type}', '${escapeHtml(device.name)}')">
+                        <div class="global-search-suggestion-item" onclick="goToDeviceWithPoints('${device.id}', '${device.device_type}', '${escapeJsString(device.name)}')">
                             <span class="suggestion-name">${escapeHtml(device.name)}</span>
                             <span class="suggestion-type">${device.device_type}</span>
                             <span class="suggestion-status" style="font-size: 11px; padding: 2px 8px; border-radius: 4px; background-color: ${statusColor}20; color: ${statusColor}; border: 1px solid ${statusColor}40; margin-left: auto; flex-shrink: 0;">${displayStatus}</span>
