@@ -134,6 +134,15 @@ def get_device_type_str(device):
     return "未知"
 
 
+def get_device_type_value(device):
+    """安全获取设备类型的值（字符串）"""
+    if hasattr(device, 'device_type') and device.device_type:
+        if isinstance(device.device_type, DeviceType):
+            return device.device_type.value
+        return str(device.device_type)
+    return "未知"
+
+
 @app.route('/admin/mobile/dashboard')
 @admin_required
 def admin_mobile_dashboard():
@@ -172,12 +181,12 @@ def admin_mobile_dashboard():
                 pass
 
     # 设备类型分布
-    phone_count = len([d for d in all_devices if d.device_type.value == '手机'])
-    car_device_count = len([d for d in all_devices if d.device_type.value == '车机'])
-    instrument_count = len([d for d in all_devices if d.device_type.value == '仪表'])
-    simcard_count = len([d for d in all_devices if d.device_type.value == '手机卡'])
-    other_device_count = len([d for d in all_devices if d.device_type.value == '其它设备'])
-    
+    phone_count = len([d for d in all_devices if get_device_type_value(d) == '手机'])
+    car_device_count = len([d for d in all_devices if get_device_type_value(d) == '车机'])
+    instrument_count = len([d for d in all_devices if get_device_type_value(d) == '仪表'])
+    simcard_count = len([d for d in all_devices if get_device_type_value(d) == '手机卡'])
+    other_device_count = len([d for d in all_devices if get_device_type_value(d) == '其它设备'])
+
     # 状态分布百分比
     if total_devices > 0:
         available_percent = round(available_devices / total_devices * 100)
@@ -187,7 +196,7 @@ def admin_mobile_dashboard():
         available_percent = 0
         borrowed_percent = 0
         other_percent = 0
-    
+
     # 获取最近记录
     all_records = api_client.get_records()
     recent_records = []
@@ -294,14 +303,15 @@ def admin_pc_dashboard():
                 pass
 
     # 设备类型分布
-    phone_count = len([d for d in all_devices if d.device_type.value == '手机'])
-    car_device_count = len([d for d in all_devices if d.device_type.value == '车机'])
-    instrument_count = len([d for d in all_devices if d.device_type.value == '仪表'])
-    simcard_count = len([d for d in all_devices if d.device_type.value == '手机卡'])
-    other_device_count = len([d for d in all_devices if d.device_type.value == '其它设备'])
-    
+    phone_count = len([d for d in all_devices if get_device_type_value(d) == '手机'])
+    car_device_count = len([d for d in all_devices if get_device_type_value(d) == '车机'])
+    instrument_count = len([d for d in all_devices if get_device_type_value(d) == '仪表'])
+    simcard_count = len([d for d in all_devices if get_device_type_value(d) == '手机卡'])
+    other_device_count = len([d for d in all_devices if get_device_type_value(d) == '其它设备'])
+
     # 详细状态统计
     in_stock_count = len([d for d in all_devices if d.status == DeviceStatus.IN_STOCK])  # 在库
+    in_custody_count = len([d for d in all_devices if d.status == DeviceStatus.IN_CUSTODY])  # 保管中
     no_cabinet_count = len([d for d in all_devices if d.status == DeviceStatus.NO_CABINET])  # 无柜号
     circulating_count = len([d for d in all_devices if d.status == DeviceStatus.CIRCULATING])  # 流通
     scrapped_count = len([d for d in all_devices if d.status == DeviceStatus.SCRAPPED])  # 报废
@@ -330,6 +340,18 @@ def admin_pc_dashboard():
             'time': record.operation_time.strftime('%Y-%m-%d %H:%M')
         })
     
+    # 计算今日借出和今日归还
+    today = datetime.now().strftime('%Y-%m-%d')
+    today_borrow_count = 0
+    today_return_count = 0
+    for record in all_records:
+        record_date = record.operation_time.strftime('%Y-%m-%d')
+        if record_date == today:
+            if record.operation_type in [OperationType.BORROW, OperationType.FORCE_BORROW]:
+                today_borrow_count += 1
+            elif record.operation_type in [OperationType.RETURN, OperationType.FORCE_RETURN]:
+                today_return_count += 1
+    
     return render_template('admin/pc/dashboard.html',
                          admin_name=session.get('admin_name', '管理员'),
                          total_devices=total_devices,
@@ -344,6 +366,7 @@ def admin_pc_dashboard():
                          simcard_count=simcard_count,
                          other_device_count=other_device_count,
                          in_stock_count=in_stock_count,
+                         in_custody_count=in_custody_count,
                          no_cabinet_count=no_cabinet_count,
                          circulating_count=circulating_count,
                          scrapped_count=scrapped_count,
@@ -354,7 +377,9 @@ def admin_pc_dashboard():
                          other_percent=other_percent,
                          overdue_devices_list=overdue_devices_list,
                          recent_records=recent_records,
-                         overdue_count=get_overdue_count())
+                         overdue_count=get_overdue_count(),
+                         today_borrow_count=today_borrow_count,
+                         today_return_count=today_return_count)
 
 
 @app.route('/admin/pc/devices')
@@ -413,11 +438,11 @@ def admin_pc_devices():
     
     # 获取各类型设备数量统计
     all_devices_for_stats = api_client.get_all_devices()
-    phone_count = len([d for d in all_devices_for_stats if d.device_type.value == '手机'])
-    car_count = len([d for d in all_devices_for_stats if d.device_type.value == '车机'])
-    instrument_count = len([d for d in all_devices_for_stats if d.device_type.value == '仪表'])
-    simcard_count = len([d for d in all_devices_for_stats if d.device_type.value == '手机卡'])
-    other_count = len([d for d in all_devices_for_stats if d.device_type.value == '其它设备'])
+    phone_count = len([d for d in all_devices_for_stats if get_device_type_value(d) == '手机'])
+    car_count = len([d for d in all_devices_for_stats if get_device_type_value(d) == '车机'])
+    instrument_count = len([d for d in all_devices_for_stats if get_device_type_value(d) == '仪表'])
+    simcard_count = len([d for d in all_devices_for_stats if get_device_type_value(d) == '手机卡'])
+    other_count = len([d for d in all_devices_for_stats if get_device_type_value(d) == '其它设备'])
 
     # 获取所有可用用户（用于借出和转借）
     all_users = api_client.get_all_users()

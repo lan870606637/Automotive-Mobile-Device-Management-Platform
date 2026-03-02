@@ -99,6 +99,20 @@
                         <span class="stat-label">已借出</span>
                     </div>
                 </div>
+                <div class="stat-card-large today-borrow">
+                    <div class="stat-icon-bg">📥</div>
+                    <div class="stat-info">
+                        <span class="stat-value">{{ today_borrow_count }}</span>
+                        <span class="stat-label">今日借出</span>
+                    </div>
+                </div>
+                <div class="stat-card-large today-return">
+                    <div class="stat-icon-bg">📥</div>
+                    <div class="stat-info">
+                        <span class="stat-value">{{ today_return_count }}</span>
+                        <span class="stat-label">今日归还</span>
+                    </div>
+                </div>
                 <div class="stat-card-large overdue">
                     <div class="stat-icon-bg">⚠️</div>
                     <div class="stat-info">
@@ -159,6 +173,13 @@
                                 <div class="status-progress" style="width: {{ (in_stock_count / total_devices * 100) if total_devices > 0 else 0 }}%; background: #4CAF50;"></div>
                             </div>
                             <span class="status-count">{{ in_stock_count }}</span>
+                        </div>
+                        <div class="status-bar-item">
+                            <span class="status-name">保管中</span>
+                            <div class="status-bar">
+                                <div class="status-progress" style="width: {{ (in_custody_count / total_devices * 100) if total_devices > 0 else 0 }}%; background: #8BC34A;"></div>
+                            </div>
+                            <span class="status-count">{{ in_custody_count }}</span>
                         </div>
                         <div class="status-bar-item">
                             <span class="status-name">无柜号</span>

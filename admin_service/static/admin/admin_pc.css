@@ -367,8 +367,8 @@ body {
 /* 统计行 */
 .stats-row {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 20px;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 16px;
     margin-bottom: 24px;
 }
 
@@ -384,6 +384,8 @@ body {
 .stat-card-large.total { border-left: 4px solid #1890ff; }
 .stat-card-large.available { border-left: 4px solid #52c41a; }
 .stat-card-large.borrowed { border-left: 4px solid #faad14; }
+.stat-card-large.today-borrow { border-left: 4px solid #722ed1; }
+.stat-card-large.today-return { border-left: 4px solid #13c2c2; }
 .stat-card-large.overdue { border-left: 4px solid #ff4d4f; }
 
 .stat-icon-bg {
@@ -400,6 +402,8 @@ body {
 .stat-card-large.total .stat-icon-bg { background: #e6f7ff; }
 .stat-card-large.available .stat-icon-bg { background: #f6ffed; }
 .stat-card-large.borrowed .stat-icon-bg { background: #fffbe6; }
+.stat-card-large.today-borrow .stat-icon-bg { background: #f9f0ff; }
+.stat-card-large.today-return .stat-icon-bg { background: #e6fffb; }
 .stat-card-large.overdue .stat-icon-bg { background: #fff1f0; }
 
 .stat-info {
