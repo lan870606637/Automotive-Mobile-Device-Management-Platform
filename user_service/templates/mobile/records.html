@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+
+{% block title %}我的记录 - Carbit藏宝阁{% endblock %}
+
+{% set active_nav = 'records' %}
+
+{% block content %}
+<div class="mobile-records">
+    <!-- 页面头部 -->
+    <div class="page-header">
+        <a href="{{ url_for('home') }}" class="back-btn">‹</a>
+        <h1>📋 我的记录</h1>
+    </div>
+
+    <!-- 筛选标签 -->
+    <div class="filter-tabs">
+        <a href="{{ url_for('my_records', filter_type='borrowed') }}" class="tab {% if filter_type == 'borrowed' %}active{% endif %}">借用中</a>
+        <a href="{{ url_for('my_records', filter_type='returned') }}" class="tab {% if filter_type == 'returned' %}active{% endif %}">已归还</a>
+        <a href="{{ url_for('my_records', filter_type='all') }}" class="tab {% if filter_type == 'all' %}active{% endif %}">全部</a>
+    </div>
+
+    <!-- 记录列表 -->
+    <div class="record-list">
+        {% if records %}
+            {% for record in records %}
+            <div class="record-card">
+                <div class="record-header">
+                    <span class="device-icon">
+                        {% if record.device_type == '车机' %}🚗
+                        {% elif record.device_type == '手机' %}📱
+                        {% else %}📦
+                        {% endif %}
+                    </span>
+                    <div class="record-title">
+                        <h4>{{ record.device_name }}</h4>
+                        <span class="record-type">{{ record.action }}</span>
+                    </div>
+                </div>
+                <div class="record-body">
+                    <div class="record-info">
+                        <span class="info-label">操作时间</span>
+                        <span class="info-value">{{ record.timestamp.strftime('%Y-%m-%d %H:%M') }}</span>
+                    </div>
+                    {% if record.return_time %}
+                    <div class="record-info">
+                        <span class="info-label">归还时间</span>
+                        <span class="info-value">{{ record.return_time.strftime('%Y-%m-%d %H:%M') }}</span>
+                    </div>
+                    {% endif %}
+                    {% if record.borrower %}
+                    <div class="record-info">
+                        <span class="info-label">借用人</span>
+                        <span class="info-value">{{ record.borrower }}</span>
+                    </div>
+                    {% endif %}
+                    {% if record.reason %}
+                    <div class="record-info">
+                        <span class="info-label">原因</span>
+                        <span class="info-value">{{ record.reason }}</span>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">📋</div>
+            <p>暂无记录</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+.mobile-records {
+    padding: 16px;
+    padding-bottom: 80px;
+}
+
+.page-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.back-btn {
+    font-size: 28px;
+    color: #333;
+    text-decoration: none;
+    margin-right: 12px;
+    line-height: 1;
+}
+
+.page-header h1 {
+    font-size: 20px;
+    margin: 0;
+    color: #333;
+}
+
+/* 筛选标签 */
+.filter-tabs {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.tab {
+    padding: 8px 16px;
+    border-radius: 16px;
+    font-size: 14px;
+    text-decoration: none;
+    color: #666;
+    background: #f5f5f5;
+    transition: all 0.3s;
+}
+
+.tab.active {
+    background: #1890ff;
+    color: white;
+}
+
+/* 记录列表 */
+.record-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.record-card {
+    background: white;
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.record-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.device-icon {
+    font-size: 32px;
+    margin-right: 12px;
+}
+
+.record-title h4 {
+    font-size: 16px;
+    margin: 0 0 4px 0;
+    color: #333;
+}
+
+.record-type {
+    font-size: 12px;
+    color: #1890ff;
+    background: #e6f7ff;
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+.record-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.record-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.info-label {
+    font-size: 13px;
+    color: #999;
+}
+
+.info-value {
+    font-size: 13px;
+    color: #333;
+}
+
+/* 空状态 */
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+}
+
+.empty-icon {
+    font-size: 64px;
+    margin-bottom: 16px;
+}
+
+.empty-state p {
+    color: #999;
+    font-size: 14px;
+}
+</style>
+{% endblock %}

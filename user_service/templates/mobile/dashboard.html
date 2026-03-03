@@ -1,0 +1,503 @@
+{% extends "base.html" %}
+
+{% block title %}我的设备 - Carbit藏宝阁{% endblock %}
+
+{% set active_nav = 'home' %}
+
+{% block content %}
+<div class="mobile-dashboard">
+    <!-- 页面头部 -->
+    <div class="dashboard-header">
+        <h1>📱 我的设备</h1>
+        <p class="user-greeting">你好，{{ user.borrower_name }}</p>
+    </div>
+
+    <!-- 快捷操作卡片 -->
+    <div class="quick-actions">
+        <a href="{{ url_for('device_list', type='car') }}" class="action-card">
+            <span class="action-icon">🚗</span>
+            <span class="action-text">借车机</span>
+        </a>
+        <a href="{{ url_for('device_list', type='phone') }}" class="action-card">
+            <span class="action-icon">📱</span>
+            <span class="action-text">借手机</span>
+        </a>
+        <a href="{{ url_for('my_records') }}" class="action-card">
+            <span class="action-icon">📋</span>
+            <span class="action-text">我的记录</span>
+        </a>
+    </div>
+
+    <!-- 统计概览 -->
+    <div class="stats-section">
+        <div class="stats-grid">
+            <div class="stat-item">
+                <span class="stat-number">{{ my_borrowed_count }}</span>
+                <span class="stat-label">当前借用</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-number">{{ my_reservation_count }}</span>
+                <span class="stat-label">我的预约</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-number">{{ my_custodian_count }}</span>
+                <span class="stat-label">保管设备</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 当前借用设备 -->
+    {% if my_borrowed_devices %}
+    <div class="section">
+        <div class="section-header">
+            <h2>📦 当前借用</h2>
+            <a href="{{ url_for('my_records') }}" class="view-all">查看全部 ›</a>
+        </div>
+        <div class="device-list">
+            {% for device in my_borrowed_devices %}
+            <div class="device-item">
+                <div class="device-info">
+                    <span class="device-icon">{% if device.device_type.value == '车机' %}🚗{% else %}📱{% endif %}</span>
+                    <div class="device-details">
+                        <h4>{{ device.name }}</h4>
+                        <p class="device-status">
+                            {% if device.is_overdue %}
+                            <span class="status-overdue">已逾期 {{ device.overdue_days }} 天</span>
+                            {% else %}
+                            <span class="status-normal">剩余 {{ device.remaining_time_display }}</span>
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+                <div class="device-actions">
+                    {% if device.can_renew %}
+                    <button class="btn-renew" onclick="renewDevice('{{ device.id }}')">续借</button>
+                    {% endif %}
+                    <button class="btn-return" onclick="returnDevice('{{ device.id }}')">归还</button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- 我的预约 -->
+    {% if my_reservations %}
+    <div class="section">
+        <div class="section-header">
+            <h2>📅 我的预约</h2>
+            <a href="{{ url_for('my_reservations') }}" class="view-all">查看全部 ›</a>
+        </div>
+        <div class="reservation-list">
+            {% for r in my_reservations %}
+            <div class="reservation-item">
+                <div class="reservation-info">
+                    <span class="device-icon">{% if r.device_type == '车机' %}🚗{% else %}📱{% endif %}</span>
+                    <div class="reservation-details">
+                        <h4>{{ r.device_name }}</h4>
+                        <p class="reservation-time">{{ r.start_time.strftime('%m-%d') }} 至 {{ r.end_time.strftime('%m-%d') }}</p>
+                    </div>
+                </div>
+                <span class="reservation-status status-{{ r.status }}">{{ r.status }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- 需要确认的预约 -->
+    {% if pending_confirm_reservations %}
+    <div class="section">
+        <div class="section-header">
+            <h2>⏰ 待确认预约</h2>
+        </div>
+        <div class="reservation-list">
+            {% for r in pending_confirm_reservations %}
+            <div class="reservation-item pending">
+                <div class="reservation-info">
+                    <span class="device-icon">{% if r.device_type == '车机' %}🚗{% else %}📱{% endif %}</span>
+                    <div class="reservation-details">
+                        <h4>{{ r.device_name }}</h4>
+                        <p class="reservation-time">预约人: {{ r.reserver_name }}</p>
+                        <p class="reservation-role">{{ r.role_display }}</p>
+                    </div>
+                </div>
+                <button class="btn-confirm" onclick="confirmReservation('{{ r.id }}', '{{ r.confirm_role }}')">确认</button>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- 空状态 -->
+    {% if not my_borrowed_devices and not my_reservations and not pending_confirm_reservations %}
+    <div class="empty-state">
+        <div class="empty-icon">📦</div>
+        <p>暂无借用设备和预约</p>
+        <a href="{{ url_for('device_list', type='car') }}" class="btn-primary">去借用设备</a>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+// 续借设备
+function renewDevice(deviceId) {
+    if (!confirm('确定要续借该设备吗？')) return;
+
+    fetch('/api/renew', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({device_id: deviceId})
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast('续借成功');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '续借失败');
+        }
+    })
+    .catch(err => {
+        showToast('续借失败，请重试');
+    });
+}
+
+// 归还设备
+function returnDevice(deviceId) {
+    if (!confirm('确定要归还该设备吗？')) return;
+
+    const returnReason = prompt('请输入归还原因（可选）:', '正常归还') || '正常归还';
+
+    fetch('/api/return', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({device_id: deviceId, return_reason: returnReason})
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast('归还成功');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '归还失败');
+        }
+    })
+    .catch(err => {
+        showToast('归还失败，请重试');
+    });
+}
+
+// 确认预约
+function confirmReservation(reservationId, role) {
+    if (!confirm('确定要确认该预约吗？')) return;
+
+    fetch('/api/reservations/' + reservationId + '/confirm', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({role: role})
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast('确认成功');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '确认失败');
+        }
+    })
+    .catch(err => {
+        showToast('确认失败，请重试');
+    });
+}
+</script>
+
+<style>
+.mobile-dashboard {
+    padding: 16px;
+    padding-bottom: 80px;
+}
+
+.dashboard-header {
+    margin-bottom: 20px;
+}
+
+.dashboard-header h1 {
+    font-size: 24px;
+    margin: 0 0 8px 0;
+    color: #333;
+}
+
+.user-greeting {
+    color: #666;
+    font-size: 14px;
+    margin: 0;
+}
+
+/* 快捷操作 */
+.quick-actions {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.action-card {
+    flex: 1;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+    text-decoration: none;
+    color: white;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.action-card:nth-child(2) {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    box-shadow: 0 4px 12px rgba(240, 147, 251, 0.3);
+}
+
+.action-card:nth-child(3) {
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    box-shadow: 0 4px 12px rgba(79, 172, 254, 0.3);
+}
+
+.action-icon {
+    font-size: 28px;
+    display: block;
+    margin-bottom: 8px;
+}
+
+.action-text {
+    font-size: 14px;
+    font-weight: 500;
+}
+
+/* 统计概览 */
+.stats-section {
+    background: white;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.stats-grid {
+    display: flex;
+    justify-content: space-around;
+}
+
+.stat-item {
+    text-align: center;
+}
+
+.stat-number {
+    display: block;
+    font-size: 28px;
+    font-weight: 600;
+    color: #1890ff;
+    line-height: 1;
+}
+
+.stat-label {
+    display: block;
+    font-size: 12px;
+    color: #999;
+    margin-top: 4px;
+}
+
+/* 内容区块 */
+.section {
+    background: white;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.section-header h2 {
+    font-size: 16px;
+    margin: 0;
+    color: #333;
+}
+
+.view-all {
+    font-size: 13px;
+    color: #1890ff;
+    text-decoration: none;
+}
+
+/* 设备列表 */
+.device-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.device-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+
+.device-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+}
+
+.device-icon {
+    font-size: 24px;
+}
+
+.device-details h4 {
+    margin: 0 0 4px 0;
+    font-size: 15px;
+    color: #333;
+}
+
+.device-status {
+    margin: 0;
+    font-size: 12px;
+}
+
+.status-overdue {
+    color: #f5222d;
+}
+
+.status-normal {
+    color: #52c41a;
+}
+
+.device-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-renew, .btn-return, .btn-confirm {
+    padding: 6px 12px;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.btn-renew {
+    background: #1890ff;
+    color: white;
+}
+
+.btn-return {
+    background: #ff4d4f;
+    color: white;
+}
+
+.btn-confirm {
+    background: #52c41a;
+    color: white;
+}
+
+/* 预约列表 */
+.reservation-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.reservation-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+
+.reservation-item.pending {
+    background: #fff7e6;
+    border: 1px solid #ffd591;
+}
+
+.reservation-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+}
+
+.reservation-details h4 {
+    margin: 0 0 4px 0;
+    font-size: 15px;
+    color: #333;
+}
+
+.reservation-time, .reservation-role {
+    margin: 0;
+    font-size: 12px;
+    color: #666;
+}
+
+.reservation-role {
+    color: #fa8c16;
+    font-weight: 500;
+}
+
+.reservation-status {
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+.status-已同意 {
+    background: #f6ffed;
+    color: #52c41a;
+}
+
+.status-待保管人确认, .status-待借用人确认, .status-待2人确认 {
+    background: #fff7e6;
+    color: #fa8c16;
+}
+
+.status-已拒绝 {
+    background: #fff1f0;
+    color: #f5222d;
+}
+
+/* 空状态 */
+.empty-state {
+    text-align: center;
+    padding: 40px 20px;
+}
+
+.empty-icon {
+    font-size: 64px;
+    margin-bottom: 16px;
+}
+
+.empty-state p {
+    color: #999;
+    margin-bottom: 20px;
+}
+
+.btn-primary {
+    display: inline-block;
+    background: #1890ff;
+    color: white;
+    padding: 12px 32px;
+    border-radius: 24px;
+    text-decoration: none;
+    font-size: 15px;
+}
+</style>
+{% endblock %}

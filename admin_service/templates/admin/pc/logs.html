@@ -1,5 +1,6 @@
 <!-- 
-  电脑端后台管理 - 操作日志页面
+  电脑端后台管理 - 操作日志页面（新版）
+  使用新的后台管理操作日志系统
 -->
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -8,6 +9,151 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>操作日志 - Carbit测试设备管理系统</title>
     <link rel="stylesheet" href="/static/admin/admin_pc.css">
+    <style>
+        /* 日志页面特有样式 */
+        .filter-bar {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .filter-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .filter-item label {
+            font-size: 14px;
+            color: #666;
+            white-space: nowrap;
+        }
+
+        .filter-item select,
+        .filter-item input {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            min-width: 120px;
+        }
+
+        .filter-item select:focus,
+        .filter-item input:focus {
+            outline: none;
+            border-color: #4a90e2;
+        }
+
+        .action-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .action-LOGIN { background: #e3f2fd; color: #1976d2; }
+        .action-LOGOUT { background: #f3e5f5; color: #7b1fa2; }
+        .action-DEVICE_CREATE { background: #e8f5e9; color: #388e3c; }
+        .action-DEVICE_UPDATE { background: #fff3e0; color: #f57c00; }
+        .action-DEVICE_DELETE { background: #ffebee; color: #d32f2f; }
+        .action-DEVICE_BORROW { background: #e0f7fa; color: #00838f; }
+        .action-DEVICE_RETURN { background: #f1f8e9; color: #689f38; }
+        .action-DEVICE_TRANSFER { background: #fff8e1; color: #ffa000; }
+        .action-USER_CREATE { background: #e8eaf6; color: #3f51b5; }
+        .action-USER_UPDATE { background: #e0f2f1; color: #00796b; }
+        .action-USER_DELETE { background: #fce4ec; color: #c2185b; }
+        .action-USER_FREEZE { background: #efebe9; color: #5d4037; }
+        .action-USER_UNFREEZE { background: #e8f5e9; color: #43a047; }
+        .action-ANNOUNCEMENT_CREATE { background: #ede7f6; color: #512da8; }
+        .action-ANNOUNCEMENT_UPDATE { background: #e3f2fd; color: #1976d2; }
+        .action-ANNOUNCEMENT_DELETE { background: #ffebee; color: #c62828; }
+        .action-BOUNTY_MANAGE { background: #fff3e0; color: #ef6c00; }
+        .action-REMARK_MANAGE { background: #f3e5f5; color: #6a1b9a; }
+        .action-SYSTEM_SETTING { background: #eceff1; color: #455a64; }
+        .action-DATA_IMPORT { background: #e0f7fa; color: #006064; }
+        .action-DATA_EXPORT { background: #e8f5e9; color: #2e7d32; }
+        .action-OVERDUE_REMIND { background: #fff8e1; color: #ff8f00; }
+        .action-OTHER { background: #f5f5f5; color: #616161; }
+
+        .result-success { color: #4caf50; }
+        .result-failed { color: #f44336; }
+
+        .log-detail {
+            max-width: 300px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .log-detail:hover {
+            white-space: normal;
+            overflow: visible;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-top: 20px;
+            padding: 15px;
+        }
+
+        .pagination button {
+            padding: 8px 16px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .pagination button:hover:not(:disabled) {
+            background: #f5f5f5;
+            border-color: #4a90e2;
+        }
+
+        .pagination button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .pagination .page-info {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .stats-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        .stat-card .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #4a90e2;
+        }
+
+        .stat-card .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+    </style>
 </head>
 <body class="pc-admin-body">
     <div class="pc-admin-wrapper">
@@ -73,9 +219,56 @@
                 </div>
             </header>
 
-            <!-- 说明 -->
-            <div class="content-card" style="margin-bottom: 20px;">
-                <p style="color: #666; font-size: 14px;">📋 显示最近100条管理员操作记录，包括设备操作、用户管理、系统设置等。</p>
+            <!-- 统计卡片 -->
+            <div class="stats-cards">
+                <div class="stat-card">
+                    <div class="stat-value" id="totalLogs">-</div>
+                    <div class="stat-label">总记录数</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="todayLogs">-</div>
+                    <div class="stat-label">今日操作</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="successRate">-</div>
+                    <div class="stat-label">成功率</div>
+                </div>
+            </div>
+
+            <!-- 筛选栏 -->
+            <div class="content-card">
+                <div class="filter-bar">
+                    <div class="filter-item">
+                        <label>操作类型:</label>
+                        <select id="filterActionType" onchange="loadLogs()">
+                            <option value="">全部</option>
+                        </select>
+                    </div>
+                    <div class="filter-item">
+                        <label>操作对象:</label>
+                        <select id="filterTargetType" onchange="loadLogs()">
+                            <option value="">全部</option>
+                            <option value="DEVICE">设备</option>
+                            <option value="USER">用户</option>
+                            <option value="ANNOUNCEMENT">公告</option>
+                            <option value="BOUNTY">悬赏</option>
+                            <option value="REMARK">备注</option>
+                            <option value="SYSTEM">系统</option>
+                        </select>
+                    </div>
+                    <div class="filter-item">
+                        <label>操作结果:</label>
+                        <select id="filterResult" onchange="loadLogs()">
+                            <option value="">全部</option>
+                            <option value="SUCCESS">成功</option>
+                            <option value="FAILED">失败</option>
+                        </select>
+                    </div>
+                    <div class="filter-item">
+                        <label>管理员:</label>
+                        <input type="text" id="filterAdmin" placeholder="输入管理员名称" onkeyup="if(event.key==='Enter')loadLogs()">
+                    </div>
+                </div>
             </div>
 
             <!-- 日志列表 -->
@@ -83,25 +276,30 @@
                 <table>
                     <thead>
                         <tr>
-                            <th>时间</th>
-                            <th>管理员</th>
-                            <th>操作类型</th>
+                            <th style="width: 150px;">时间</th>
+                            <th style="width: 100px;">管理员</th>
+                            <th style="width: 120px;">操作类型</th>
+                            <th style="width: 100px;">操作对象</th>
                             <th>操作详情</th>
-                            <th>IP地址</th>
+                            <th style="width: 80px;">结果</th>
+                            <th style="width: 120px;">IP地址</th>
                         </tr>
                     </thead>
                     <tbody id="logsTableBody">
-                        {% for log in logs %}
                         <tr>
-                            <td>{{ log.time }}</td>
-                            <td>{{ log.admin_name }}</td>
-                            <td><span class="action-badge action-{{ log.action_type }}">{{ log.action_type }}</span></td>
-                            <td>{{ log.details }}</td>
-                            <td style="font-family: monospace; color: #999;">{{ log.ip or '-' }}</td>
+                            <td colspan="7" class="empty-cell">加载中...</td>
                         </tr>
-                        {% endfor %}
                     </tbody>
                 </table>
+            </div>
+
+            <!-- 分页 -->
+            <div class="pagination" id="pagination">
+                <button onclick="goToPage(1)" id="btnFirst">首页</button>
+                <button onclick="goToPage(currentPage - 1)" id="btnPrev">上一页</button>
+                <span class="page-info">第 <span id="currentPage">1</span> 页 / 共 <span id="totalPages">1</span> 页</span>
+                <button onclick="goToPage(currentPage + 1)" id="btnNext">下一页</button>
+                <button onclick="goToPage(totalPages)" id="btnLast">末页</button>
             </div>
         </main>
     </div>
@@ -110,35 +308,133 @@
     <div id="toast" class="toast"></div>
 
     <script>
+        // 当前页码
+        let currentPage = 1;
+        let totalPages = 1;
+        let perPage = 20;
+        let allLogs = [];
+        let actionTypeNames = {};
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            loadActionTypes();
+            loadLogs();
+        });
+
+        // 加载操作类型
+        async function loadActionTypes() {
+            try {
+                const response = await fetch('/api/admin-logs/action-types');
+                actionTypeNames = await response.json();
+
+                // 填充筛选下拉框
+                const select = document.getElementById('filterActionType');
+                for (const [key, name] of Object.entries(actionTypeNames)) {
+                    const option = document.createElement('option');
+                    option.value = key;
+                    option.textContent = name;
+                    select.appendChild(option);
+                }
+            } catch (error) {
+                console.error('加载操作类型失败:', error);
+            }
+        }
+
         // 加载日志
         async function loadLogs() {
             try {
-                const response = await fetch('/api/logs?limit=100');
-                const logs = await response.json();
-                renderLogs(logs);
+                showToast('加载中...', 'info');
+
+                const response = await fetch(`/api/admin-logs?page=${currentPage}&per_page=${perPage}`);
+                const data = await response.json();
+
+                if (data.logs) {
+                    allLogs = data.logs;
+                    currentPage = data.page;
+                    totalPages = data.total_pages;
+
+                    renderLogs(data.logs);
+                    updatePagination();
+                    updateStats(data.total);
+                }
             } catch (error) {
                 showToast('加载日志失败', 'error');
+                console.error('加载日志失败:', error);
             }
         }
 
         // 渲染日志
         function renderLogs(logs) {
             const tbody = document.getElementById('logsTableBody');
-            
+
             if (logs.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" class="empty-cell">暂无日志</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" class="empty-cell">暂无日志</td></tr>';
                 return;
             }
 
-            tbody.innerHTML = logs.map(log => `
+            // 应用筛选
+            const filterActionType = document.getElementById('filterActionType').value;
+            const filterTargetType = document.getElementById('filterTargetType').value;
+            const filterResult = document.getElementById('filterResult').value;
+            const filterAdmin = document.getElementById('filterAdmin').value.toLowerCase();
+
+            const filteredLogs = logs.filter(log => {
+                if (filterActionType && log.action_type !== filterActionType) return false;
+                if (filterTargetType && log.target_type !== filterTargetType) return false;
+                if (filterResult && log.result !== filterResult) return false;
+                if (filterAdmin && !log.admin_name.toLowerCase().includes(filterAdmin)) return false;
+                return true;
+            });
+
+            if (filteredLogs.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="empty-cell">没有符合条件的日志</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = filteredLogs.map(log => `
                 <tr>
                     <td>${log.time}</td>
                     <td>${log.admin_name}</td>
-                    <td><span class="action-badge action-${log.action_type}">${log.action_type}</span></td>
-                    <td>${log.details}</td>
-                    <td style="font-family: monospace; color: #999;">${log.ip || '-'}</td>
+                    <td><span class="action-badge action-${log.action_type}">${actionTypeNames[log.action_type] || log.action_type}</span></td>
+                    <td>${log.target_type || '-'}</td>
+                    <td class="log-detail" title="${log.description || ''}">${log.description || '-'}</td>
+                    <td class="result-${log.result.toLowerCase()}">${log.result === 'SUCCESS' ? '✓ 成功' : '✗ 失败'}</td>
+                    <td style="font-family: monospace; color: #999; font-size: 12px;">${log.ip || '-'}</td>
                 </tr>
             `).join('');
+        }
+
+        // 更新分页
+        function updatePagination() {
+            document.getElementById('currentPage').textContent = currentPage;
+            document.getElementById('totalPages').textContent = totalPages;
+
+            document.getElementById('btnFirst').disabled = currentPage <= 1;
+            document.getElementById('btnPrev').disabled = currentPage <= 1;
+            document.getElementById('btnNext').disabled = currentPage >= totalPages;
+            document.getElementById('btnLast').disabled = currentPage >= totalPages;
+        }
+
+        // 跳转到指定页
+        function goToPage(page) {
+            if (page < 1 || page > totalPages || page === currentPage) return;
+            currentPage = page;
+            loadLogs();
+        }
+
+        // 更新统计
+        function updateStats(total) {
+            document.getElementById('totalLogs').textContent = total || 0;
+
+            // 计算今日操作数
+            const today = new Date().toISOString().split('T')[0];
+            const todayCount = allLogs.filter(log => log.time && log.time.startsWith(today)).length;
+            document.getElementById('todayLogs').textContent = todayCount;
+
+            // 计算成功率
+            const successCount = allLogs.filter(log => log.result === 'SUCCESS').length;
+            const rate = allLogs.length > 0 ? Math.round((successCount / allLogs.length) * 100) : 100;
+            document.getElementById('successRate').textContent = rate + '%';
         }
 
         // 刷新日志
@@ -156,12 +452,6 @@
                 toast.classList.remove('show');
             }, 3000);
         }
-
-        // 初始化
-        document.addEventListener('DOMContentLoaded', loadLogs);
-        
-        // 每30秒自动刷新
-        setInterval(loadLogs, 30000);
     </script>
 </body>
 </html>

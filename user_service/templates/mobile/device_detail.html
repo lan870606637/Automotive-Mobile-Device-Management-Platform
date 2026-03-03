@@ -1,0 +1,390 @@
+{% extends "base.html" %}
+
+{% block title %}{{ device.name }} - Carbit藏宝阁{% endblock %}
+
+{% set active_nav = 'devices' %}
+
+{% block content %}
+<div class="mobile-device-detail">
+    <!-- 页面头部 -->
+    <div class="page-header">
+        <a href="{{ url_for('device_list', type=device_type) }}" class="back-btn">‹</a>
+        <h1>设备详情</h1>
+    </div>
+
+    <!-- 设备基本信息 -->
+    <div class="device-info-card">
+        <div class="device-header">
+            <span class="device-icon-large">
+                {% if device.device_type.value == '车机' %}🚗
+                {% elif device.device_type.value == '手机' %}📱
+                {% elif device.device_type.value == '仪表' %}📊
+                {% else %}📦
+                {% endif %}
+            </span>
+            <div class="device-title">
+                <h2>{{ device.name }}</h2>
+                <span class="status-badge-large status-{{ device.status.value }}">{{ device.status.value }}</span>
+            </div>
+        </div>
+
+        <div class="info-list">
+            <div class="info-item">
+                <span class="info-label">设备类型</span>
+                <span class="info-value">{{ device.device_type.value }}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">型号</span>
+                <span class="info-value">{{ device.model or '暂无' }}</span>
+            </div>
+            {% if device.cabinet_number %}
+            <div class="info-item">
+                <span class="info-label">保管人</span>
+                <span class="info-value">{{ device.cabinet_number }}</span>
+            </div>
+            {% endif %}
+            {% if device.borrower %}
+            <div class="info-item">
+                <span class="info-label">当前借用人</span>
+                <span class="info-value">{{ device.borrower }}</span>
+            </div>
+            {% endif %}
+            {% if device.expected_return_date %}
+            <div class="info-item">
+                <span class="info-label">预计归还</span>
+                <span class="info-value">{{ device.expected_return_date.strftime('%Y-%m-%d') }}</span>
+            </div>
+            {% endif %}
+            {% if device.remark %}
+            <div class="info-item">
+                <span class="info-label">备注</span>
+                <span class="info-value">{{ device.remark }}</span>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- 操作按钮 -->
+    <div class="action-section">
+        {% if device.status.value == '在库' or device.status.value == '保管中' %}
+            {% if device.status.value == '在库' or (device.status.value == '保管中' and device.cabinet_number == user.borrower_name) %}
+            <button class="btn-primary btn-borrow" onclick="borrowDevice('{{ device.id }}')">借用设备</button>
+            {% endif %}
+        {% elif device.status.value == '借出' %}
+            {% if device.borrower == user.borrower_name %}
+            <button class="btn-primary btn-return" onclick="returnDevice('{{ device.id }}')">归还设备</button>
+            {% else %}
+            <button class="btn-primary btn-transfer" onclick="transferDevice('{{ device.id }}')">申请转借</button>
+            {% endif %}
+        {% endif %}
+    </div>
+
+    <!-- 预约功能 -->
+    {% if device.status.value == '借出' and device.borrower != user.borrower_name %}
+    <div class="reservation-section">
+        <h3>📅 预约借用</h3>
+        <div class="reservation-form">
+            <div class="form-row">
+                <label>开始时间</label>
+                <input type="datetime-local" id="startTime" class="form-input">
+            </div>
+            <div class="form-row">
+                <label>结束时间</label>
+                <input type="datetime-local" id="endTime" class="form-input">
+            </div>
+            <div class="form-row">
+                <label>预约原因</label>
+                <textarea id="reason" class="form-textarea" placeholder="请输入预约原因..."></textarea>
+            </div>
+            <button class="btn-primary" onclick="makeReservation('{{ device.id }}')">提交预约</button>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+// 借用设备
+function borrowDevice(deviceId) {
+    if (!confirm('确定要借用该设备吗？')) return;
+
+    fetch('/api/borrow', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({device_id: deviceId})
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast('借用成功');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '借用失败');
+        }
+    })
+    .catch(err => {
+        showToast('借用失败，请重试');
+    });
+}
+
+// 归还设备
+function returnDevice(deviceId) {
+    if (!confirm('确定要归还该设备吗？')) return;
+
+    const reason = prompt('请输入归还原因（可选）:', '正常归还') || '正常归还';
+
+    fetch('/api/return', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({device_id: deviceId, return_reason: reason})
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast('归还成功');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '归还失败');
+        }
+    })
+    .catch(err => {
+        showToast('归还失败，请重试');
+    });
+}
+
+// 转借设备
+function transferDevice(deviceId) {
+    const borrower = prompt('请输入转借人姓名:');
+    if (!borrower) return;
+
+    fetch('/api/transfer', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({device_id: deviceId, borrower: borrower})
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast('转借成功');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '转借失败');
+        }
+    })
+    .catch(err => {
+        showToast('转借失败，请重试');
+    });
+}
+
+// 预约设备
+function makeReservation(deviceId) {
+    const startTime = document.getElementById('startTime').value;
+    const endTime = document.getElementById('endTime').value;
+    const reason = document.getElementById('reason').value;
+
+    if (!startTime || !endTime) {
+        showToast('请选择开始和结束时间');
+        return;
+    }
+
+    fetch('/api/reservations', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            device_id: deviceId,
+            start_time: startTime,
+            end_time: endTime,
+            reason: reason
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast('预约成功');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || '预约失败');
+        }
+    })
+    .catch(err => {
+        showToast('预约失败，请重试');
+    });
+}
+</script>
+
+<style>
+.mobile-device-detail {
+    padding: 16px;
+    padding-bottom: 80px;
+}
+
+.page-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.back-btn {
+    font-size: 28px;
+    color: #333;
+    text-decoration: none;
+    margin-right: 12px;
+    line-height: 1;
+}
+
+.page-header h1 {
+    font-size: 20px;
+    margin: 0;
+    color: #333;
+}
+
+/* 设备信息卡片 */
+.device-info-card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.device-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.device-icon-large {
+    font-size: 48px;
+    margin-right: 16px;
+}
+
+.device-title h2 {
+    font-size: 18px;
+    margin: 0 0 8px 0;
+    color: #333;
+}
+
+.status-badge-large {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.status-在库 {
+    background: #f6ffed;
+    color: #52c41a;
+}
+
+.status-借出 {
+    background: #fff1f0;
+    color: #f5222d;
+}
+
+.status-保管中 {
+    background: #e6f7ff;
+    color: #1890ff;
+}
+
+.info-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.info-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.info-label {
+    font-size: 14px;
+    color: #999;
+}
+
+.info-value {
+    font-size: 14px;
+    color: #333;
+    font-weight: 500;
+}
+
+/* 操作按钮 */
+.action-section {
+    margin-bottom: 16px;
+}
+
+.btn-primary {
+    width: 100%;
+    padding: 14px;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+    color: white;
+}
+
+.btn-borrow {
+    background: #52c41a;
+}
+
+.btn-return {
+    background: #ff4d4f;
+}
+
+.btn-transfer {
+    background: #fa8c16;
+}
+
+/* 预约区域 */
+.reservation-section {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.reservation-section h3 {
+    font-size: 16px;
+    margin: 0 0 16px 0;
+    color: #333;
+}
+
+.reservation-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.form-row {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.form-row label {
+    font-size: 14px;
+    color: #666;
+}
+
+.form-input, .form-textarea {
+    padding: 12px;
+    border: 1px solid #d9d9d9;
+    border-radius: 8px;
+    font-size: 14px;
+    outline: none;
+}
+
+.form-input:focus, .form-textarea:focus {
+    border-color: #1890ff;
+}
+
+.form-textarea {
+    min-height: 80px;
+    resize: vertical;
+}
+</style>
+{% endblock %}

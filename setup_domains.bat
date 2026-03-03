@@ -5,8 +5,9 @@ echo   设备管理系统 - 本地域名配置工具
 echo ============================================
 echo.
 echo 此工具将配置本地域名映射：
-echo   - device.carbit.com.cn      ^(用户端^)
+echo   - device.carbit.com.cn       ^(用户端^)
 echo   - admin.device.carbit.com.cn ^(管理后台^)
+echo   - mobile.device.carbit.com.cn ^(手机端^)
 echo.
 echo ============================================
 echo.
@@ -54,6 +55,7 @@ echo. >> "%HOSTS_FILE%"
 echo # 设备管理系统本地域名配置 >> "%HOSTS_FILE%"
 echo 127.0.0.1       device.carbit.com.cn >> "%HOSTS_FILE%"
 echo 127.0.0.1       admin.device.carbit.com.cn >> "%HOSTS_FILE%"
+echo 127.0.0.1       mobile.device.carbit.com.cn >> "%HOSTS_FILE%"
 echo       域名映射已添加
 echo.
 
@@ -70,6 +72,7 @@ echo 现在您可以通过以下地址访问系统：
 echo.
 echo   用户端：   http://device.carbit.com.cn:5000
 echo   管理后台： http://admin.device.carbit.com.cn:5001
+echo   手机端：   http://mobile.device.carbit.com.cn:5002
 echo.
 echo 注意：请确保服务已启动（运行 start_services.py）
 echo.

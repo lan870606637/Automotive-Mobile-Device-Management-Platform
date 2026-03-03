@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 
-from .models import Device, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, OperationLog, ViewRecord, Notification, Announcement, UserLike, Reservation
+from .models import Device, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, OperationLog, ViewRecord, Notification, Announcement, UserLike, Reservation, AdminOperationLog
 from .models import DeviceStatus, DeviceType, OperationType, EntrySource, Admin, ReservationStatus
 from .db_store import DatabaseStore, get_db_transaction
 from .email_sender import email_sender
@@ -304,6 +304,10 @@ class APIClient:
     
     def is_user_admin(self, borrower_name: str) -> bool:
         """检查指定用户是否为管理员"""
+        # 特殊管理员用户名（后台登录的管理员）
+        if borrower_name in ['管理员', 'admin']:
+            return True
+        # 检查用户是否为管理员
         for user in self._db.get_all_users():
             if user.borrower_name == borrower_name and user.is_admin:
                 return True
@@ -420,12 +424,17 @@ class APIClient:
         self.add_operation_log(f"新增设备", device.name)
         return True
     
-    def update_device(self, device: Device) -> bool:
-        """更新设备信息"""
+    def update_device(self, device: Device, source: str = "admin") -> bool:
+        """更新设备信息
+
+        Args:
+            device: 设备对象
+            source: 操作来源，admin-管理员操作，user-用户端操作
+        """
         existing = self._db.get_device_by_id(device.id)
         if existing:
             self._db.save_device(device)
-            self.add_operation_log(f"更新设备信息", device.name)
+            self.add_operation_log(f"更新设备信息", device.name, source=source)
             return True
         return False
     
@@ -783,7 +792,9 @@ class APIClient:
         return sorted(records, key=lambda x: x.operation_time, reverse=True)[:limit]
     
     def create_device(self, device_type, device_name: str, model: str = '', 
-                     cabinet: str = '', status: str = '在库', remarks: str = '') -> Device:
+                     cabinet: str = '', status: str = '在库', remarks: str = '',
+                     asset_number: str = '', purchase_amount: float = 0.0,
+                     **kwargs) -> Device:
         """创建新设备"""
         device_id = str(uuid.uuid4())
         device_status = DeviceStatus(status) if status else DeviceStatus.IN_STOCK
@@ -797,6 +808,12 @@ class APIClient:
                 cabinet_number=cabinet,
                 status=device_status,
                 remark=remarks,
+                asset_number=asset_number,
+                purchase_amount=purchase_amount,
+                sn=kwargs.get('sn', ''),
+                imei=kwargs.get('imei', ''),
+                system_version=kwargs.get('system_version', ''),
+                carrier=kwargs.get('carrier', ''),
                 create_time=create_time
             )
         elif device_type == DeviceType.INSTRUMENT or str(device_type) == 'DeviceType.INSTRUMENT':
@@ -807,6 +824,8 @@ class APIClient:
                 cabinet_number=cabinet,
                 status=device_status,
                 remark=remarks,
+                asset_number=asset_number,
+                purchase_amount=purchase_amount,
                 create_time=create_time
             )
         elif device_type == DeviceType.SIM_CARD or str(device_type) == 'DeviceType.SIM_CARD':
@@ -817,6 +836,9 @@ class APIClient:
                 cabinet_number=cabinet,
                 status=device_status,
                 remark=remarks,
+                asset_number=asset_number,
+                purchase_amount=purchase_amount,
+                carrier=kwargs.get('carrier', ''),
                 create_time=create_time
             )
         elif device_type == DeviceType.OTHER_DEVICE or str(device_type) == 'DeviceType.OTHER_DEVICE':
@@ -827,6 +849,8 @@ class APIClient:
                 cabinet_number=cabinet,
                 status=device_status,
                 remark=remarks,
+                asset_number=asset_number,
+                purchase_amount=purchase_amount,
                 create_time=create_time
             )
         else:
@@ -837,10 +861,18 @@ class APIClient:
                 cabinet_number=cabinet,
                 status=device_status,
                 remark=remarks,
+                asset_number=asset_number,
+                purchase_amount=purchase_amount,
                 create_time=create_time
             )
         
-        self._db.save_device(device)
+        try:
+            self._db.save_device(device)
+        except Exception as e:
+            print(f"[DEBUG] create_device - save_device error: {e}")
+            import traceback
+            print(f"[DEBUG] create_device - traceback: {traceback.format_exc()}")
+            raise
         self.add_operation_log("创建设备", device_name)
         return device
     
@@ -951,6 +983,10 @@ class APIClient:
             device.system_version = data['system_version']
         if 'carrier' in data:
             device.carrier = data['carrier']
+        if 'asset_number' in data:
+            device.asset_number = data['asset_number']
+        if 'purchase_amount' in data:
+            device.purchase_amount = float(data['purchase_amount']) if data['purchase_amount'] else 0.0
 
         # 车机特有字段
         if 'software_version' in data:
@@ -1499,22 +1535,37 @@ class APIClient:
         logs = self._db.get_all_operation_logs()
         return sorted(logs, key=lambda x: x.operation_time, reverse=True)[:limit]
     
-    def add_operation_log(self, operation_content: str, device_info: str):
-        """添加操作日志"""
+    def add_operation_log(self, operation_content: str, device_info: str, operator: str = None, source: str = "admin"):
+        """添加操作日志
+
+        Args:
+            operation_content: 操作内容
+            device_info: 设备信息
+            operator: 操作人，如果不传则使用当前管理员
+            source: 操作来源，admin-管理员操作，user-用户端操作
+        """
         log = OperationLog(
             id=str(uuid.uuid4()),
             operation_time=datetime.now(),
-            operator=self._current_admin,
+            operator=operator if operator else self._current_admin,
             operation_content=operation_content,
-            device_info=device_info
+            device_info=device_info,
+            source=source
         )
         self._db.save_operation_log(log)
     
     def get_admin_logs(self, limit: int = 100) -> List[dict]:
         """获取管理员操作日志（用于后台管理）"""
-        logs = self.get_operation_logs(limit)
+        logs = self.get_operation_logs(limit * 2)
         result = []
         for log in logs:
+            # 只显示管理员操作（source="admin"）
+            # 注意：对于旧数据（source为NULL），需要检查操作人是否为管理员
+            if log.source == "user":
+                continue
+            # 对于 source="admin" 或旧数据（source=None），检查操作人是否为管理员
+            if not self.is_user_admin(log.operator):
+                continue
             result.append({
                 'id': log.id,
                 'time': log.operation_time.strftime('%Y-%m-%d %H:%M:%S'),
@@ -1523,6 +1574,8 @@ class APIClient:
                 'details': f"{log.operation_content}: {log.device_info}",
                 'ip': ''
             })
+            if len(result) >= limit:
+                break
         return result
     
     def _categorize_action(self, content: str) -> str:
@@ -1545,7 +1598,101 @@ class APIClient:
             return '权限管理'
         else:
             return '其他'
-    
+
+    # ==================== 后台管理操作日志 ====================
+
+    def add_admin_operation_log(self, admin_id: str, admin_name: str, action_type: str,
+                                 action_name: str, target_type: str, target_id: str = "",
+                                 target_name: str = "", description: str = "",
+                                 ip_address: str = "", user_agent: str = "",
+                                 request_method: str = "", request_path: str = "",
+                                 request_params: str = "", result: str = "SUCCESS",
+                                 error_message: str = "") -> bool:
+        """添加后台管理操作日志
+
+        Args:
+            admin_id: 管理员ID
+            admin_name: 管理员名称
+            action_type: 操作类型
+            action_name: 操作名称
+            target_type: 操作对象类型
+            target_id: 操作对象ID
+            target_name: 操作对象名称
+            description: 操作描述
+            ip_address: IP地址
+            user_agent: 浏览器UA
+            request_method: HTTP方法
+            request_path: 请求路径
+            request_params: 请求参数
+            result: 操作结果
+            error_message: 错误信息
+        """
+        log = AdminOperationLog(
+            id=str(uuid.uuid4()),
+            operation_time=datetime.now(),
+            admin_id=admin_id,
+            admin_name=admin_name,
+            action_type=action_type,
+            action_name=action_name,
+            target_type=target_type,
+            target_id=target_id,
+            target_name=target_name,
+            description=description,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            request_method=request_method,
+            request_path=request_path,
+            request_params=request_params,
+            result=result,
+            error_message=error_message
+        )
+        return self._db.save_admin_operation_log(log)
+
+    def get_admin_operation_logs(self, limit: int = 100, offset: int = 0,
+                                  admin_id: str = None, action_type: str = None,
+                                  target_type: str = None, result: str = None,
+                                  start_time: datetime = None, end_time: datetime = None) -> List[AdminOperationLog]:
+        """获取后台管理操作日志列表"""
+        return self._db.get_admin_operation_logs(
+            limit=limit, offset=offset,
+            admin_id=admin_id, action_type=action_type,
+            target_type=target_type, result=result,
+            start_time=start_time, end_time=end_time
+        )
+
+    def get_admin_operation_logs_count(self, admin_id: str = None, action_type: str = None,
+                                        target_type: str = None, result: str = None,
+                                        start_time: datetime = None, end_time: datetime = None) -> int:
+        """获取后台管理操作日志总数"""
+        return self._db.get_admin_operation_logs_count(
+            admin_id=admin_id, action_type=action_type,
+            target_type=target_type, result=result,
+            start_time=start_time, end_time=end_time
+        )
+
+    def get_admin_operation_logs_for_display(self, limit: int = 100, offset: int = 0) -> List[dict]:
+        """获取后台管理操作日志（用于前端展示）"""
+        logs = self._db.get_admin_operation_logs(limit=limit, offset=offset)
+        result = []
+        for log in logs:
+            result.append({
+                'id': log.id,
+                'time': log.operation_time.strftime('%Y-%m-%d %H:%M:%S'),
+                'admin_name': log.admin_name,
+                'action_type': log.action_type,
+                'action_name': log.action_name,
+                'target_type': log.target_type,
+                'target_name': log.target_name,
+                'description': log.description,
+                'ip': log.ip_address,
+                'result': log.result,
+            })
+        return result
+
+    def clear_old_admin_operation_logs(self, days: int = 90) -> int:
+        """清理指定天数之前的后台管理操作日志"""
+        return self._db.clear_admin_operation_logs(days=days)
+
     # ==================== 通知功能 ====================
 
     def get_notifications(self, user_id: str = None, user_name: str = None, unread_only: bool = False) -> List[Notification]:

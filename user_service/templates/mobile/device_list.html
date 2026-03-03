@@ -1,0 +1,322 @@
+{% extends "base.html" %}
+
+{% block title %}{% if device_type == 'car' %}车机设备{% elif device_type == 'phone' %}手机设备{% else %}全部设备{% endif %} - Carbit藏宝阁{% endblock %}
+
+{% set active_nav = 'devices' %}
+
+{% block content %}
+<div class="mobile-device-list">
+    <!-- 页面头部 -->
+    <div class="page-header">
+        <a href="{{ url_for('home') }}" class="back-btn">‹</a>
+        <h1>
+            {% if device_type == 'car' %}🚗 车机设备
+            {% elif device_type == 'phone' %}📱 手机设备
+            {% else %}📦 全部设备
+            {% endif %}
+        </h1>
+    </div>
+
+    <!-- 搜索栏 -->
+    <div class="search-bar">
+        <div class="search-input-wrap">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="searchInput" class="search-input" placeholder="搜索设备名称..." onkeyup="handleSearch(event)">
+            <button class="clear-btn" onclick="clearSearch()" style="display:none;">✕</button>
+        </div>
+    </div>
+
+    <!-- 筛选标签 -->
+    <div class="filter-tabs">
+        <a href="{{ url_for('device_list', type='car') }}" class="tab {% if device_type == 'car' %}active{% endif %}">车机</a>
+        <a href="{{ url_for('device_list', type='phone') }}" class="tab {% if device_type == 'phone' %}active{% endif %}">手机</a>
+        <a href="{{ url_for('device_list', type='all') }}" class="tab {% if device_type == 'all' %}active{% endif %}">全部</a>
+    </div>
+
+    <!-- 设备列表 -->
+    <div class="device-list" id="deviceList">
+        {% if devices %}
+            {% for device in devices %}
+            <div class="device-card" data-name="{{ device.name }}" data-model="{{ device.model or '' }}">
+                <div class="card-header">
+                    <span class="device-icon">
+                        {% if device.device_type.value == '车机' %}🚗
+                        {% elif device.device_type.value == '手机' %}📱
+                        {% elif device.device_type.value == '仪表' %}📊
+                        {% else %}📦
+                        {% endif %}
+                    </span>
+                    <span class="status-badge
+                        {% if device.status.value == '在库' %}status-available
+                        {% elif device.status.value == '借出' %}status-borrowed
+                        {% elif device.status.value == '保管中' %}status-custody
+                        {% elif device.status.value == '已损坏' %}status-damaged
+                        {% elif device.status.value == '丢失' %}status-lost
+                        {% endif %}">
+                        {{ device.status.value }}
+                    </span>
+                </div>
+                <div class="card-body">
+                    <h4 class="device-name">{{ device.name }}</h4>
+                    <p class="device-model">{{ device.model or '暂无型号' }}</p>
+                    {% if device.borrower %}
+                    <p class="device-borrower">借用人: {{ device.borrower }}</p>
+                    {% endif %}
+                </div>
+                <div class="card-footer">
+                    <span class="device-type">{{ device.device_type.value }}</span>
+                    <a href="{{ url_for('device_detail', device_id=device.id) }}" class="btn-view">查看 ›</a>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">🔍</div>
+            <p>暂无设备</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+let searchTimeout;
+
+function handleSearch(event) {
+    const input = document.getElementById('searchInput');
+    const clearBtn = document.querySelector('.clear-btn');
+
+    clearBtn.style.display = input.value ? 'block' : 'none';
+
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        const keyword = input.value.toLowerCase();
+        const cards = document.querySelectorAll('.device-card');
+
+        cards.forEach(card => {
+            const name = card.getAttribute('data-name').toLowerCase();
+            const model = card.getAttribute('data-model').toLowerCase();
+            if (name.includes(keyword) || model.includes(keyword)) {
+                card.style.display = 'block';
+            } else {
+                card.style.display = 'none';
+            }
+        });
+    }, 300);
+}
+
+function clearSearch() {
+    const input = document.getElementById('searchInput');
+    input.value = '';
+    document.querySelector('.clear-btn').style.display = 'none';
+
+    const cards = document.querySelectorAll('.device-card');
+    cards.forEach(card => {
+        card.style.display = 'block';
+    });
+}
+</script>
+
+<style>
+.mobile-device-list {
+    padding: 16px;
+    padding-bottom: 80px;
+}
+
+.page-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.back-btn {
+    font-size: 28px;
+    color: #333;
+    text-decoration: none;
+    margin-right: 12px;
+    line-height: 1;
+}
+
+.page-header h1 {
+    font-size: 20px;
+    margin: 0;
+    color: #333;
+}
+
+/* 搜索栏 */
+.search-bar {
+    margin-bottom: 16px;
+}
+
+.search-input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    background: #f5f5f5;
+    border-radius: 8px;
+    padding: 0 12px;
+}
+
+.search-icon {
+    font-size: 16px;
+    margin-right: 8px;
+}
+
+.search-input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    padding: 12px 0;
+    font-size: 14px;
+    outline: none;
+}
+
+.clear-btn {
+    background: none;
+    border: none;
+    color: #999;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+/* 筛选标签 */
+.filter-tabs {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.tab {
+    padding: 8px 16px;
+    border-radius: 16px;
+    font-size: 14px;
+    text-decoration: none;
+    color: #666;
+    background: #f5f5f5;
+    transition: all 0.3s;
+}
+
+.tab.active {
+    background: #1890ff;
+    color: white;
+}
+
+/* 设备列表 */
+.device-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.device-card {
+    background: white;
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.device-icon {
+    font-size: 32px;
+}
+
+.status-badge {
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.status-available {
+    background: #f6ffed;
+    color: #52c41a;
+}
+
+.status-borrowed {
+    background: #fff1f0;
+    color: #f5222d;
+}
+
+.status-custody {
+    background: #e6f7ff;
+    color: #1890ff;
+}
+
+.status-damaged {
+    background: #fff7e6;
+    color: #fa8c16;
+}
+
+.status-lost {
+    background: #f5f5f5;
+    color: #999;
+}
+
+.card-body {
+    margin-bottom: 12px;
+}
+
+.device-name {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 4px 0;
+    color: #333;
+}
+
+.device-model {
+    font-size: 13px;
+    color: #999;
+    margin: 0 0 8px 0;
+}
+
+.device-borrower {
+    font-size: 12px;
+    color: #666;
+    margin: 0;
+}
+
+.card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 12px;
+    border-top: 1px solid #f0f0f0;
+}
+
+.device-type {
+    font-size: 12px;
+    color: #999;
+    background: #f5f5f5;
+    padding: 4px 10px;
+    border-radius: 4px;
+}
+
+.btn-view {
+    color: #1890ff;
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+/* 空状态 */
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+}
+
+.empty-icon {
+    font-size: 64px;
+    margin-bottom: 16px;
+}
+
+.empty-state p {
+    color: #999;
+    font-size: 14px;
+}
+</style>
+{% endblock %}

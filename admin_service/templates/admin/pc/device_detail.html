@@ -177,6 +177,16 @@
                                 </select>
                             </div>
                         </div>
+                        <div class="form-row">
+                            <div class="form-field">
+                                <label>固定资产编号</label>
+                                <input type="text" id="phoneAssetNumber" value="{{ device.asset_number if device else '' }}" placeholder="固定资产编号">
+                            </div>
+                            <div class="form-field">
+                                <label>购买金额(元)</label>
+                                <input type="number" id="phonePurchaseAmount" value="{{ device.purchase_amount if device else '' }}" placeholder="购买金额" step="0.01">
+                            </div>
+                        </div>
                     </div>
 
                     <!-- 动态字段（车机/仪表特有） -->
@@ -577,6 +587,9 @@
                 deviceData.imei = document.getElementById('phoneIMEI').value.trim();
                 deviceData.system_version = document.getElementById('phoneSystemVersion').value.trim();
                 deviceData.carrier = document.getElementById('phoneCarrier').value;
+                deviceData.asset_number = document.getElementById('phoneAssetNumber').value.trim();
+                const purchaseAmount = document.getElementById('phonePurchaseAmount').value.trim();
+                deviceData.purchase_amount = purchaseAmount ? parseFloat(purchaseAmount) : 0;
             }
 
             // 车机/仪表特有字段

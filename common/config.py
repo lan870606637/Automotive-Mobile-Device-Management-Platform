@@ -23,6 +23,7 @@ DATA_DIR = os.path.join(BASE_DIR, 'excel_templates')
 # 端口配置
 USER_SERVICE_PORT = 5000
 ADMIN_SERVICE_PORT = 5001
+MOBILE_SERVICE_PORT = 5002
 
 # 数据库配置
 DB_TYPE = os.getenv('DB_TYPE', 'sqlite')  # sqlite 或 mysql

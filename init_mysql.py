@@ -82,6 +82,7 @@ def create_tables():
                 damage_reason TEXT,
                 damage_time TIMESTAMP NULL,
                 previous_borrower VARCHAR(255),
+                previous_status VARCHAR(32),
                 sn VARCHAR(100),
                 system_version VARCHAR(100),
                 imei VARCHAR(100),
@@ -146,6 +147,7 @@ def create_tables():
                 email VARCHAR(255) UNIQUE,
                 password VARCHAR(255) NOT NULL DEFAULT '123456',
                 borrower_name VARCHAR(100),
+                phone VARCHAR(20) DEFAULT '',
                 avatar VARCHAR(500) DEFAULT '',
                 signature VARCHAR(255) DEFAULT '',
                 borrow_count INT DEFAULT 0,
@@ -169,7 +171,9 @@ def create_tables():
                 operator VARCHAR(100),
                 operation_content TEXT,
                 device_info TEXT,
-                INDEX idx_operation_time (operation_time)
+                source VARCHAR(20) DEFAULT 'admin',
+                INDEX idx_operation_time (operation_time),
+                INDEX idx_source (source)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ''')
         print("✓ operation_logs 表创建成功")

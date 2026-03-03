@@ -42,19 +42,25 @@ if %errorLevel% neq 0 (
 echo       Domain configured
 echo.
 
-echo [3/5] Starting User Service (port 5000)...
+echo [3/6] Starting User Service (port 5000)...
 start "User Service" cmd /c "cd /d "%PROJECT_PATH%" && python user_service\app.py"
 timeout /t 3 /nobreak >nul
 echo       User Service started
 echo.
 
-echo [4/5] Starting Admin Service (port 5001)...
+echo [4/6] Starting Admin Service (port 5001)...
 start "Admin Service" cmd /c "cd /d "%PROJECT_PATH%" && python admin_service\app.py"
 timeout /t 3 /nobreak >nul
 echo       Admin Service started
 echo.
 
-echo [5/5] Starting Nginx (port 80)...
+echo [5/6] Starting Mobile Service (port 5002)...
+start "Mobile Service" cmd /c "cd /d "%PROJECT_PATH%" && python mobile_service\app.py"
+timeout /t 3 /nobreak >nul
+echo       Mobile Service started
+echo.
+
+echo [6/6] Starting Nginx (port 80)...
 cd /d "%NGINX_PATH%"
 start "Nginx" nginx.exe
 timeout /t 2 /nobreak >nul
@@ -77,10 +83,12 @@ echo.
 echo Access URLs (no port needed):
 echo   User:     http://device.carbit.com.cn
 echo   Admin:    http://admin.device.carbit.com.cn
+echo   Mobile:   http://mobile.device.carbit.com.cn
 echo.
 echo Local URLs (with port):
 echo   User:     http://127.0.0.1:5000
 echo   Admin:    http://127.0.0.1:5001
+echo   Mobile:   http://127.0.0.1:5002
 echo.
 echo --------------------------------------------
 echo To stop services:

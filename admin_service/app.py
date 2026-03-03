@@ -26,6 +26,10 @@ from common.db_store import DatabaseStore, init_database
 from common.utils import mask_phone, is_mobile_device
 from common.config import SECRET_KEY, SERVER_URL, ADMIN_SERVICE_PORT
 from common.points_service import points_service
+from admin_service.admin_log import (
+    log_admin_operation, log_admin_operation_manual,
+    AdminActionType, TargetType, ACTION_TYPE_NAMES
+)
 
 load_dotenv()
 
@@ -34,6 +38,23 @@ app.secret_key = SECRET_KEY
 
 # 初始化数据库（创建必要的表）
 init_database()
+
+# 辅助函数：处理Excel中的nan值
+def safe_str_from_excel(value):
+    """从Excel读取的值转换为字符串，处理nan值"""
+    import math
+    if value is None:
+        return ''
+    if isinstance(value, float) and math.isnan(value):
+        return ''
+    return str(value).strip()
+
+# 测试后台管理操作日志表是否存在
+try:
+    test_logs = api_client.get_admin_operation_logs(limit=1)
+    print(f"✓ 后台管理操作日志系统初始化成功，当前日志数量: {len(test_logs)}")
+except Exception as e:
+    print(f"⚠ 后台管理操作日志系统检查失败: {e}")
 
 
 def admin_required(f):
@@ -250,16 +271,35 @@ def admin_pc_login():
         data = request.get_json()
         username = data.get('username', '').strip()
         password = data.get('password', '').strip()
-        
+
         # 验证管理员身份
         admin = api_client.verify_admin_login(username, password)
         if admin:
-            session['admin_id'] = admin.get('id', username)
-            session['admin_name'] = admin.get('name', username)
+            admin_id = admin.get('id', username)
+            admin_name = admin.get('name', username)
+            session['admin_id'] = admin_id
+            session['admin_name'] = admin_name
+
+            # 记录登录日志
+            log_admin_operation_manual(
+                action_type=AdminActionType.LOGIN,
+                target_type=TargetType.SYSTEM,
+                description=f"管理员 {admin_name} 登录PC端后台",
+                result='SUCCESS'
+            )
+
             return jsonify({'success': True})
         else:
+            # 记录登录失败日志
+            log_admin_operation_manual(
+                action_type=AdminActionType.LOGIN,
+                target_type=TargetType.SYSTEM,
+                description=f"用户 {username} 尝试登录PC端后台失败",
+                result='FAILED',
+                error_message='用户名或密码错误'
+            )
             return jsonify({'success': False, 'message': '用户名或密码错误'})
-    
+
     return render_template('admin/pc/login.html')
 
 
@@ -814,7 +854,17 @@ def api_device_remind(device_id):
             )
     
     api_client.add_operation_log(f"发送归还提醒给: {device.borrower}", device.name)
-    
+
+    # 记录逾期提醒日志
+    log_admin_operation_manual(
+        action_type=AdminActionType.OVERDUE_REMIND,
+        target_type=TargetType.DEVICE,
+        target_id=device_id,
+        target_name=device.name,
+        description=f"发送逾期归还提醒给: {device.borrower}",
+        result='SUCCESS'
+    )
+
     return jsonify({'success': True, 'message': '提醒已发送'})
 
 
@@ -865,6 +915,15 @@ def api_overdue_remind_all():
             except Exception:
                 pass
     
+    # 记录批量提醒日志
+    if remind_count > 0:
+        log_admin_operation_manual(
+            action_type=AdminActionType.OVERDUE_REMIND,
+            target_type=TargetType.SYSTEM,
+            description=f"批量发送逾期提醒，共 {remind_count} 条",
+            result='SUCCESS'
+        )
+
     return jsonify({'success': True, 'count': remind_count, 'message': f'已发送 {remind_count} 条提醒'})
 
 
@@ -1111,6 +1170,15 @@ def api_move_announcement(announcement_id):
 @app.route('/admin/logout')
 def admin_logout():
     """管理员退出登录"""
+    # 记录退出日志
+    admin_name = session.get('admin_name', '未知')
+    log_admin_operation_manual(
+        action_type=AdminActionType.LOGOUT,
+        target_type=TargetType.SYSTEM,
+        description=f"管理员 {admin_name} 退出登录",
+        result='SUCCESS'
+    )
+
     session.pop('admin_id', None)
     session.pop('admin_name', None)
     return redirect(url_for('admin_select'))
@@ -1583,17 +1651,65 @@ def api_devices():
             cabinet = data.get('cabinet', '')
             status = data.get('status', '在库')
             remarks = data.get('remarks', '')
-            
+            asset_number = data.get('asset_number', '')
+            purchase_amount = float(data.get('purchase_amount', 0)) if data.get('purchase_amount') else 0.0
+
+            # 根据设备类型字符串获取对应的DeviceType
+            device_type_map = {
+                '手机': DeviceType.PHONE,
+                '车机': DeviceType.CAR_MACHINE,
+                '仪表': DeviceType.INSTRUMENT,
+                '手机卡': DeviceType.SIM_CARD,
+                '其它设备': DeviceType.OTHER_DEVICE
+            }
+            device_type_enum = device_type_map.get(device_type, DeviceType.CAR_MACHINE)
+
+            # 准备额外字段
+            kwargs = {}
+            if device_type == '手机':
+                kwargs['sn'] = data.get('sn', '')
+                kwargs['imei'] = data.get('imei', '')
+                kwargs['system_version'] = data.get('system_version', '')
+                kwargs['carrier'] = data.get('carrier', '')
+            elif device_type == '手机卡':
+                kwargs['carrier'] = data.get('carrier', '')
+
             device = api_client.create_device(
-                device_type=DeviceType.PHONE if device_type == '手机' else DeviceType.CAR_MACHINE,
+                device_type=device_type_enum,
                 device_name=device_name,
                 model=model,
                 cabinet=cabinet,
                 status=status,
-                remarks=remarks
+                remarks=remarks,
+                asset_number=asset_number,
+                purchase_amount=purchase_amount,
+                **kwargs
             )
+
+            # 记录创建设备日志
+            log_admin_operation_manual(
+                action_type=AdminActionType.DEVICE_CREATE,
+                target_type=TargetType.DEVICE,
+                target_id=device.id,
+                target_name=device_name,
+                description=f"创建{device_type}设备: {device_name}",
+                result='SUCCESS'
+            )
+
             return jsonify({'success': True, 'device_id': device.id})
         except Exception as e:
+            import traceback
+            print(f"[DEBUG] api_devices - create device error: {e}")
+            print(f"[DEBUG] api_devices - traceback: {traceback.format_exc()}")
+            # 记录失败日志
+            log_admin_operation_manual(
+                action_type=AdminActionType.DEVICE_CREATE,
+                target_type=TargetType.DEVICE,
+                target_name=device_name,
+                description=f"创建设备失败: {device_name}",
+                result='FAILED',
+                error_message=str(e)
+            )
             return jsonify({'success': False, 'message': str(e)})
 
 
@@ -1624,17 +1740,65 @@ def api_device_detail(device_id):
     elif request.method == 'PUT':
         data = request.get_json()
         try:
+            # 获取设备信息用于日志
+            device = api_client.get_device(device_id)
+            device_name = device.name if device else device_id
+
             operator = session.get('admin_name', '管理员')
             api_client.update_device_by_id(device_id, data, operator)
+
+            # 记录更新设备日志
+            log_admin_operation_manual(
+                action_type=AdminActionType.DEVICE_UPDATE,
+                target_type=TargetType.DEVICE,
+                target_id=device_id,
+                target_name=device_name,
+                description=f"更新设备信息: {device_name}",
+                result='SUCCESS'
+            )
+
             return jsonify({'success': True})
         except Exception as e:
+            # 记录失败日志
+            log_admin_operation_manual(
+                action_type=AdminActionType.DEVICE_UPDATE,
+                target_type=TargetType.DEVICE,
+                target_id=device_id,
+                description=f"更新设备失败",
+                result='FAILED',
+                error_message=str(e)
+            )
             return jsonify({'success': False, 'message': str(e)})
-    
+
     else:  # DELETE
         try:
+            # 获取设备信息用于日志
+            device = api_client.get_device(device_id)
+            device_name = device.name if device else device_id
+
             api_client.delete_device(device_id)
+
+            # 记录删除设备日志
+            log_admin_operation_manual(
+                action_type=AdminActionType.DEVICE_DELETE,
+                target_type=TargetType.DEVICE,
+                target_id=device_id,
+                target_name=device_name,
+                description=f"删除设备: {device_name}",
+                result='SUCCESS'
+            )
+
             return jsonify({'success': True})
         except Exception as e:
+            # 记录失败日志
+            log_admin_operation_manual(
+                action_type=AdminActionType.DEVICE_DELETE,
+                target_type=TargetType.DEVICE,
+                target_id=device_id,
+                description=f"删除设备失败",
+                result='FAILED',
+                error_message=str(e)
+            )
             return jsonify({'success': False, 'message': str(e)})
 
 
@@ -1772,11 +1936,40 @@ def api_admin_borrow(device_id):
                             notification_type="info"
                         )
     except ValueError as e:
+        # 记录借出失败日志
+        log_admin_operation_manual(
+            action_type=AdminActionType.DEVICE_BORROW,
+            target_type=TargetType.DEVICE,
+            target_id=device_id,
+            target_name=device.name if device else '',
+            description=f"借出设备失败: {actual_borrower}",
+            result='FAILED',
+            error_message=str(e)
+        )
         return jsonify({'success': False, 'message': str(e)})
 
     if success:
+        # 记录借出成功日志
+        log_admin_operation_manual(
+            action_type=AdminActionType.DEVICE_BORROW,
+            target_type=TargetType.DEVICE,
+            target_id=device_id,
+            target_name=device.name if device else '',
+            description=f"借出设备给: {actual_borrower}",
+            result='SUCCESS'
+        )
         return jsonify({'success': True, 'message': '录入成功'})
     else:
+        # 记录借出失败日志
+        log_admin_operation_manual(
+            action_type=AdminActionType.DEVICE_BORROW,
+            target_type=TargetType.DEVICE,
+            target_id=device_id,
+            target_name=device.name if device else '',
+            description=f"借出设备失败: {actual_borrower}",
+            result='FAILED',
+            error_message='录入失败'
+        )
         return jsonify({'success': False, 'message': '录入失败'})
 
 
@@ -1859,6 +2052,16 @@ def api_admin_return(device_id):
                 notification_type="info"
             )
 
+    # 记录归还日志
+    log_admin_operation_manual(
+        action_type=AdminActionType.DEVICE_RETURN,
+        target_type=TargetType.DEVICE,
+        target_id=device_id,
+        target_name=device.name,
+        description=f"强制归还设备，原借用人: {original_borrower}",
+        result='SUCCESS'
+    )
+
     return jsonify({'success': True, 'message': '归还成功'})
 
 
@@ -1935,6 +2138,16 @@ def api_admin_transfer(device_id):
                 notification_type="info"
             )
 
+    # 记录转借日志
+    log_admin_operation_manual(
+        action_type=AdminActionType.DEVICE_TRANSFER,
+        target_type=TargetType.DEVICE,
+        target_id=device_id,
+        target_name=device.name,
+        description=f"转借设备: {original_borrower} → {actual_new_borrower}",
+        result='SUCCESS'
+    )
+
     return jsonify({'success': True, 'message': '转借成功'})
 
 
@@ -1976,8 +2189,27 @@ def api_force_borrow(device_id):
     )
     
     if success:
+        # 记录强制借出日志
+        log_admin_operation_manual(
+            action_type=AdminActionType.DEVICE_BORROW,
+            target_type=TargetType.DEVICE,
+            target_id=device_id,
+            target_name=device.name,
+            description=f"强制借出(录入登记)给: {borrower}",
+            result='SUCCESS'
+        )
         return jsonify({'success': True, 'message': '录入登记成功'})
     else:
+        # 记录失败日志
+        log_admin_operation_manual(
+            action_type=AdminActionType.DEVICE_BORROW,
+            target_type=TargetType.DEVICE,
+            target_id=device_id,
+            target_name=device.name,
+            description=f"强制借出(录入登记)失败: {borrower}",
+            result='FAILED',
+            error_message='录入登记失败'
+        )
         return jsonify({'success': False, 'message': '录入登记失败'})
 
 
@@ -2063,10 +2295,81 @@ def api_records_export():
 @app.route('/api/logs', methods=['GET'])
 @admin_required
 def api_logs():
-    """操作日志API"""
+    """操作日志API - 使用新的后台管理操作日志系统"""
     limit = request.args.get('limit', 100, type=int)
-    logs = api_client.get_admin_logs(limit=limit)
+    offset = request.args.get('offset', 0, type=int)
+    action_type = request.args.get('action_type', None)
+    target_type = request.args.get('target_type', None)
+    result = request.args.get('result', None)
+
+    logs = api_client.get_admin_operation_logs_for_display(
+        limit=limit,
+        offset=offset
+    )
     return jsonify(logs)
+
+
+@app.route('/api/admin-logs', methods=['GET'])
+@admin_required
+def api_admin_logs():
+    """后台管理操作日志API - 支持分页和筛选"""
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    action_type = request.args.get('action_type', None)
+    target_type = request.args.get('target_type', None)
+    result = request.args.get('result', None)
+
+    offset = (page - 1) * per_page
+
+    # 获取日志列表
+    logs = api_client.get_admin_operation_logs_for_display(
+        limit=per_page,
+        offset=offset
+    )
+
+    # 获取总数
+    total = api_client.get_admin_operation_logs_count(
+        action_type=action_type,
+        target_type=target_type,
+        result=result
+    )
+
+    return jsonify({
+        'logs': logs,
+        'page': page,
+        'per_page': per_page,
+        'total': total,
+        'total_pages': (total + per_page - 1) // per_page
+    })
+
+
+@app.route('/api/admin-logs/action-types', methods=['GET'])
+@admin_required
+def api_admin_logs_action_types():
+    """获取所有操作类型"""
+    return jsonify(ACTION_TYPE_NAMES)
+
+
+@app.route('/api/admin-logs/test', methods=['POST'])
+@admin_required
+def api_admin_logs_test():
+    """测试日志记录功能"""
+    try:
+        # 手动记录一条测试日志
+        result = log_admin_operation_manual(
+            action_type=AdminActionType.SYSTEM_SETTING,
+            target_type=TargetType.SYSTEM,
+            description="测试日志记录功能",
+            result='SUCCESS'
+        )
+
+        if result:
+            return jsonify({'success': True, 'message': '测试日志记录成功'})
+        else:
+            return jsonify({'success': False, 'message': '测试日志记录失败'})
+    except Exception as e:
+        import traceback
+        return jsonify({'success': False, 'message': str(e), 'traceback': traceback.format_exc()})
 
 
 # ==================== 备注管理API ====================
@@ -2309,9 +2612,9 @@ def api_import_devices():
 
                 elif device_type == 'phone':
                     # 手机导入
-                    cabinet = str(row.get('保管人', '')).strip()
+                    cabinet = safe_str_from_excel(row.get('保管人', ''))
                     # 读取状态列，如果没有则根据保管人判断
-                    status_str = str(row.get('状态', '')).strip()
+                    status_str = safe_str_from_excel(row.get('状态', ''))
                     if status_str:
                         try:
                             device_status = DeviceStatus(status_str)
@@ -2322,7 +2625,7 @@ def api_import_devices():
                         # 手机设备：有保管人就是保管中，无保管人就是无保管人
                         device_status = DeviceStatus.IN_CUSTODY if cabinet else DeviceStatus.NO_CABINET
                     # 读取购买金额
-                    purchase_amount_str = str(row.get('购买金额(元)', '')).strip()
+                    purchase_amount_str = safe_str_from_excel(row.get('购买金额(元)', ''))
                     purchase_amount = 0.0
                     if purchase_amount_str:
                         try:
@@ -2331,16 +2634,16 @@ def api_import_devices():
                             purchase_amount = 0.0
                     device = Phone(
                         id=str(uuid.uuid4()),
-                        name=str(row.get('设备名称', '')).strip(),
-                        model=str(row.get('型号', '')).strip(),
+                        name=safe_str_from_excel(row.get('设备名称', '')),
+                        model=safe_str_from_excel(row.get('型号', '')),
                         cabinet_number=cabinet,
                         status=device_status,
-                        jira_address=str(row.get('jira地址', '')).strip(),
-                        system_version=str(row.get('系统版本', '')).strip(),
-                        imei=str(row.get('IMEI', '')).strip(),
-                        sn=str(row.get('SN码', '')).strip(),
-                        carrier=str(row.get('运营商', '')).strip(),
-                        asset_number=str(row.get('固定资产编号', '')).strip(),
+                        jira_address=safe_str_from_excel(row.get('jira地址', '')),
+                        system_version=safe_str_from_excel(row.get('系统版本', '')),
+                        imei=safe_str_from_excel(row.get('IMEI', '')),
+                        sn=safe_str_from_excel(row.get('SN码', '')),
+                        carrier=safe_str_from_excel(row.get('运营商', '')),
+                        asset_number=safe_str_from_excel(row.get('固定资产编号', '')),
                         purchase_amount=purchase_amount,
                         entry_source='批量导入'
                     )
@@ -2444,6 +2747,96 @@ def api_reload_data():
         return jsonify({'success': False, 'message': f'重新加载数据失败: {str(e)}'}), 500
 
 
+@app.route('/api/stats/borrow-return', methods=['GET'])
+@admin_required
+def api_borrow_return_stats():
+    """获取借出归还统计数据API - 用于折线图展示"""
+    try:
+        range_type = request.args.get('range', 'week')  # week, month, year
+        
+        # 获取所有记录
+        all_records = api_client.get_records()
+        
+        # 根据时间范围确定日期格式和天数
+        if range_type == 'week':
+            days = 7
+            date_format = '%m-%d'
+            label_format = lambda d: d.strftime('%m-%d')
+        elif range_type == 'month':
+            days = 30
+            date_format = '%m-%d'
+            label_format = lambda d: d.strftime('%m-%d')
+        elif range_type == 'year':
+            days = 365
+            date_format = '%Y-%m'
+            label_format = lambda d: d.strftime('%Y-%m')
+        else:
+            days = 7
+            date_format = '%m-%d'
+            label_format = lambda d: d.strftime('%m-%d')
+        
+        # 生成日期标签
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+        
+        # 初始化统计数据
+        labels = []
+        borrow_data = []
+        return_data = []
+        
+        if range_type == 'year':
+            # 按月份统计
+            for i in range(12):
+                month_date = end_date - timedelta(days=(11-i)*30)
+                month_start = month_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                month_end = (month_start + timedelta(days=32)).replace(day=1) - timedelta(seconds=1)
+                
+                labels.append(month_date.strftime('%Y-%m'))
+                
+                # 统计该月的借出和归还
+                month_borrow = 0
+                month_return = 0
+                for record in all_records:
+                    if month_start <= record.operation_time <= month_end:
+                        if record.operation_type in [OperationType.BORROW, OperationType.FORCE_BORROW]:
+                            month_borrow += 1
+                        elif record.operation_type in [OperationType.RETURN, OperationType.FORCE_RETURN]:
+                            month_return += 1
+                
+                borrow_data.append(month_borrow)
+                return_data.append(month_return)
+        else:
+            # 按天统计
+            for i in range(days):
+                date = start_date + timedelta(days=i+1)
+                date_str = date.strftime('%Y-%m-%d')
+                labels.append(label_format(date))
+                
+                # 统计该日的借出和归还
+                day_borrow = 0
+                day_return = 0
+                for record in all_records:
+                    record_date = record.operation_time.strftime('%Y-%m-%d')
+                    if record_date == date_str:
+                        if record.operation_type in [OperationType.BORROW, OperationType.FORCE_BORROW]:
+                            day_borrow += 1
+                        elif record.operation_type in [OperationType.RETURN, OperationType.FORCE_RETURN]:
+                            day_return += 1
+                
+                borrow_data.append(day_borrow)
+                return_data.append(day_return)
+        
+        return jsonify({
+            'success': True,
+            'labels': labels,
+            'borrow': borrow_data,
+            'return': return_data
+        })
+    except Exception as e:
+        print(f'获取借出归还统计数据失败: {e}')
+        return jsonify({'success': False, 'message': f'获取统计数据失败: {str(e)}'}), 500
+
+
 # ==================== 错误处理 ====================
 
 @app.errorhandler(404)
@@ -2458,4 +2851,4 @@ def internal_error(error):
 
 if __name__ == '__main__':
     print(f"管理服务启动在端口 {ADMIN_SERVICE_PORT}")
-    app.run(debug=True, host='0.0.0.0', port=ADMIN_SERVICE_PORT)
+    app.run(debug=False, host='0.0.0.0', port=ADMIN_SERVICE_PORT)

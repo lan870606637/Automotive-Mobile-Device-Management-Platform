@@ -239,6 +239,23 @@
                         </div>
                     </div>
                 </div>
+                <div class="stat-card-half">
+                    <div class="chart-header">
+                        <h3>借出/归还趋势</h3>
+                        <div class="time-range-tabs">
+                            <button class="tab-btn active" data-range="week">一周</button>
+                            <button class="tab-btn" data-range="month">一月</button>
+                            <button class="tab-btn" data-range="year">一年</button>
+                        </div>
+                    </div>
+                    <div class="chart-legend">
+                        <span class="legend-item"><span class="legend-dot borrow"></span>借出</span>
+                        <span class="legend-item"><span class="legend-dot return"></span>归还</span>
+                    </div>
+                    <div class="line-chart-container">
+                        <canvas id="borrowReturnChart"></canvas>
+                    </div>
+                </div>
             </div>
 
             <!-- 最近活动和逾期设备 -->
@@ -311,7 +328,157 @@
     <!-- Toast提示 -->
     <div id="toast" class="toast"></div>
 
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
+        // 借出归还折线图实例
+        let borrowReturnChart = null;
+        console.log('Chart.js loaded, borrowReturnChart initialized');
+        
+        // 页面加载时初始化图表
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOMContentLoaded fired');
+            loadBorrowReturnData('week');
+            
+            // 绑定时间范围切换按钮事件
+            document.querySelectorAll('.time-range-tabs .tab-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const range = this.dataset.range;
+                    console.log('Button clicked, range:', range);
+                    switchTimeRange(range);
+                });
+            });
+        });
+        
+        // 切换时间范围
+        function switchTimeRange(range) {
+            // 更新按钮状态
+            document.querySelectorAll('.time-range-tabs .tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.dataset.range === range) {
+                    btn.classList.add('active');
+                }
+            });
+            
+            // 加载对应范围的数据
+            loadBorrowReturnData(range);
+        }
+        
+        // 加载借出归还数据
+        async function loadBorrowReturnData(range) {
+            try {
+                console.log('正在加载数据，范围:', range);
+                const response = await fetch(`/api/stats/borrow-return?range=${range}`);
+                const result = await response.json();
+                console.log('API返回结果:', result);
+                
+                if (result.success) {
+                    renderChart(result.labels, result.borrow, result.return);
+                } else {
+                    console.error('获取统计数据失败:', result.message);
+                    showToast('获取统计数据失败: ' + result.message, 'error');
+                }
+            } catch (error) {
+                console.error('加载图表数据失败:', error);
+                showToast('加载图表数据失败，请检查网络连接', 'error');
+            }
+        }
+        
+        // 渲染折线图
+        function renderChart(labels, borrowData, returnData) {
+            const ctx = document.getElementById('borrowReturnChart').getContext('2d');
+            
+            // 如果图表已存在，先销毁
+            if (borrowReturnChart) {
+                borrowReturnChart.destroy();
+            }
+            
+            borrowReturnChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: '借出',
+                            data: borrowData,
+                            borderColor: '#1890ff',
+                            backgroundColor: 'rgba(24, 144, 255, 0.1)',
+                            borderWidth: 2,
+                            pointRadius: 3,
+                            pointBackgroundColor: '#1890ff',
+                            tension: 0.3,
+                            fill: true
+                        },
+                        {
+                            label: '归还',
+                            data: returnData,
+                            borderColor: '#52c41a',
+                            backgroundColor: 'rgba(82, 196, 26, 0.1)',
+                            borderWidth: 2,
+                            pointRadius: 3,
+                            pointBackgroundColor: '#52c41a',
+                            tension: 0.3,
+                            fill: true
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                            titleColor: '#fff',
+                            bodyColor: '#fff',
+                            borderColor: '#ddd',
+                            borderWidth: 1,
+                            padding: 10,
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + context.parsed.y + ' 次';
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: {
+                                display: false
+                            },
+                            ticks: {
+                                font: {
+                                    size: 11
+                                },
+                                maxRotation: 45,
+                                minRotation: 0
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            grid: {
+                                color: '#f0f0f0'
+                            },
+                            ticks: {
+                                font: {
+                                    size: 11
+                                },
+                                stepSize: 1
+                            }
+                        }
+                    },
+                    interaction: {
+                        mode: 'nearest',
+                        axis: 'x',
+                        intersect: false
+                    }
+                }
+            });
+        }
+        
         function showToast(message, type) {
             const toast = document.getElementById('toast');
             toast.textContent = message;

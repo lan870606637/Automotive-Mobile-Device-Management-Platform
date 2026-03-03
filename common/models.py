@@ -458,6 +458,7 @@ class User:
     email: str                # 邮箱（用于登录，唯一）
     password: str = "123456"  # 默认密码
     borrower_name: str = ""   # 借用人名称（必填，唯一）
+    phone: str = ""           # 手机号（用于移动端登录）
     avatar: str = ""          # 头像URL或路径
     signature: str = ""       # 个性签名
     borrow_count: int = 0     # 借用次数
@@ -497,6 +498,7 @@ class User:
             email=data.get('email', ''),
             password=data.get('password', '123456'),
             borrower_name=data.get('borrower_name', ''),
+            phone=data.get('phone', ''),
             avatar=data.get('avatar', ''),
             signature=data.get('signature', ''),
             borrow_count=int(data.get('borrow_count', 0)),
@@ -518,6 +520,7 @@ class User:
             "email": self.email,
             "password": self.password,
             "borrower_name": self.borrower_name,
+            "phone": self.phone,
             "avatar": self.avatar,
             "signature": self.signature,
             "borrow_count": self.borrow_count,
@@ -586,6 +589,7 @@ class OperationLog:
     operator: str
     operation_content: str
     device_info: str
+    source: str = "admin"  # 操作来源：admin-管理员操作，user-用户端操作
 
     @classmethod
     def from_dict(cls, data: dict) -> 'OperationLog':
@@ -610,7 +614,8 @@ class OperationLog:
             operation_time=parse_datetime(data.get('operation_time')),
             operator=data.get('operator', ''),
             operation_content=data.get('operation_content', ''),
-            device_info=data.get('device_info', '')
+            device_info=data.get('device_info', ''),
+            source=data.get('source', 'admin')
         )
 
     def to_dict(self) -> dict:
@@ -620,6 +625,96 @@ class OperationLog:
             "operator": self.operator,
             "operation_content": self.operation_content,
             "device_info": self.device_info,
+            "source": self.source,
+        }
+
+
+@dataclass
+class AdminOperationLog:
+    """后台管理操作日志 - 仅记录后台管理操作"""
+    id: str
+    operation_time: datetime
+    admin_id: str  # 管理员ID
+    admin_name: str  # 管理员名称
+    action_type: str  # 操作类型：LOGIN, LOGOUT, DEVICE_CREATE, DEVICE_UPDATE, DEVICE_DELETE, 
+                      # DEVICE_BORROW, DEVICE_RETURN, DEVICE_TRANSFER, USER_CREATE, USER_UPDATE,
+                      # USER_DELETE, USER_FREEZE, USER_UNFREEZE, ANNOUNCEMENT_CREATE, 
+                      # ANNOUNCEMENT_UPDATE, ANNOUNCEMENT_DELETE, BOUNTY_MANAGE, REMARK_MANAGE,
+                      # SYSTEM_SETTING, DATA_IMPORT, DATA_EXPORT, OTHER
+    action_name: str  # 操作名称（中文）
+    target_type: str  # 操作对象类型：DEVICE, USER, ANNOUNCEMENT, BOUNTY, REMARK, SYSTEM
+    target_id: str  # 操作对象ID
+    target_name: str  # 操作对象名称
+    description: str  # 操作描述详情
+    ip_address: str  # IP地址
+    user_agent: str  # 浏览器UA
+    request_method: str  # HTTP方法
+    request_path: str  # 请求路径
+    request_params: str  # 请求参数（JSON格式，敏感信息已脱敏）
+    result: str  # 操作结果：SUCCESS, FAILED
+    error_message: str  # 错误信息（如果失败）
+
+    def __post_init__(self):
+        if self.operation_time is None:
+            self.operation_time = datetime.now()
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'AdminOperationLog':
+        """从字典创建后台管理操作日志对象"""
+        from datetime import datetime
+
+        def parse_datetime(val):
+            if val is None or val == '':
+                return datetime.now()
+            if isinstance(val, datetime):
+                return val
+            if isinstance(val, str):
+                for fmt in ['%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d']:
+                    try:
+                        return datetime.strptime(val, fmt)
+                    except:
+                        continue
+            return datetime.now()
+
+        return cls(
+            id=data.get('id', ''),
+            operation_time=parse_datetime(data.get('operation_time')),
+            admin_id=data.get('admin_id', ''),
+            admin_name=data.get('admin_name', ''),
+            action_type=data.get('action_type', 'OTHER'),
+            action_name=data.get('action_name', ''),
+            target_type=data.get('target_type', ''),
+            target_id=data.get('target_id', ''),
+            target_name=data.get('target_name', ''),
+            description=data.get('description', ''),
+            ip_address=data.get('ip_address', ''),
+            user_agent=data.get('user_agent', ''),
+            request_method=data.get('request_method', ''),
+            request_path=data.get('request_path', ''),
+            request_params=data.get('request_params', ''),
+            result=data.get('result', 'SUCCESS'),
+            error_message=data.get('error_message', '')
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "operation_time": self.operation_time.strftime("%Y-%m-%d %H:%M:%S") if self.operation_time else "",
+            "admin_id": self.admin_id,
+            "admin_name": self.admin_name,
+            "action_type": self.action_type,
+            "action_name": self.action_name,
+            "target_type": self.target_type,
+            "target_id": self.target_id,
+            "target_name": self.target_name,
+            "description": self.description,
+            "ip_address": self.ip_address,
+            "user_agent": self.user_agent,
+            "request_method": self.request_method,
+            "request_path": self.request_path,
+            "request_params": self.request_params,
+            "result": self.result,
+            "error_message": self.error_message,
         }
 
 

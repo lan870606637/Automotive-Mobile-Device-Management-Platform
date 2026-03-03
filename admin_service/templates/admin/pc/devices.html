@@ -677,15 +677,11 @@
             const prefixSelect = document.getElementById('filterCabinetPrefix');
             const prefixGroup = document.getElementById('cabinetPrefixGroup');
             if (!prefixSelect || !prefixGroup) {
-                console.log('DEBUG: 柜号前缀DOM元素未找到');
                 return;
             }
 
-            console.log('DEBUG: 当前类型=', currentTypeFilter, '是否柜号类型=', isCabinetType());
-
             // 如果不是柜号类型（手机、手机卡、其它设备），隐藏前缀筛选
             if (!isCabinetType()) {
-                console.log('DEBUG: 非柜号类型，隐藏选择框');
                 prefixGroup.style.display = 'none';
                 return;
             }
@@ -699,9 +695,6 @@
                 relevantDevices = devices.filter(d => d.device_type === '车机' || d.device_type === '仪表');
             }
 
-            console.log('DEBUG: 相关设备数量=', relevantDevices.length);
-            console.log('DEBUG: 设备列表=', relevantDevices.map(d => ({name: d.device_name, type: d.device_type, cabinet: d.cabinet})));
-
             // 提取柜号前缀（匹配xx-xx或xx - xx格式，支持空格，支持字母或数字开头）
             const prefixSet = new Set();
             relevantDevices.forEach(d => {
@@ -712,8 +705,6 @@
                     }
                 }
             });
-
-            console.log('DEBUG: 提取的前缀=', Array.from(prefixSet));
 
             // 车机和仪表类型始终显示柜号前缀筛选（即使没有符合格式的柜号）
             prefixGroup.style.display = 'block';

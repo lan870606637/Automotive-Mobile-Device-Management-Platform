@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 from contextlib import contextmanager
 
-from .models import Device, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, OperationLog, Admin, Notification, Announcement, UserLike, Reservation, UserPoints, PointsRecord, Bounty, ShopItem, UserInventory
+from .models import Device, CarMachine, Instrument, Phone, SimCard, OtherDevice, Record, UserRemark, User, OperationLog, Admin, Notification, Announcement, UserLike, Reservation, UserPoints, PointsRecord, Bounty, ShopItem, UserInventory, AdminOperationLog
 from .models import DeviceStatus, DeviceType, OperationType, ReservationStatus, PointsTransactionType, BountyStatus, ShopItemType, ShopItemSource
 
 # 导入配置
@@ -57,7 +57,8 @@ if IS_MYSQL:
             database=MYSQL_DATABASE,
             charset='utf8mb4',
             cursorclass=DictCursor,
-            autocommit=False
+            autocommit=False,
+            use_unicode=True
         )
         _connection_cache[tid] = conn
         return conn
@@ -78,7 +79,8 @@ def get_db_connection():
                 database=MYSQL_DATABASE,
                 charset='utf8mb4',
                 cursorclass=DictCursor,
-                autocommit=False
+                autocommit=False,
+                use_unicode=True
             )
         else:
             conn = sqlite3.connect(SQLITE_DB_PATH, timeout=30.0, check_same_thread=False)
@@ -163,6 +165,16 @@ def format_datetime(val) -> Optional[str]:
     return None
 
 
+def escape_percent(val):
+    """转义字符串中的 % 字符，防止 pymysql 格式化错误"""
+    if val is None:
+        return None
+    if isinstance(val, str):
+        # 将 % 替换为 %% 以正确转义
+        return val.replace('%', '%%')
+    return val
+
+
 def init_database():
     """初始化数据库，创建必要的表（MySQL下不需要，表已预先创建）"""
     if IS_MYSQL:
@@ -173,6 +185,8 @@ def init_database():
         _migrate_mysql_add_avatar()
         # 检查并添加 signature 列（如果不存在）
         _migrate_mysql_add_signature()
+        # 检查并添加 phone 列（如果不存在）
+        _migrate_mysql_add_phone()
         # 检查并添加 asset_number 和 purchase_amount 列（如果不存在）
         _migrate_mysql_add_asset_fields()
         # 检查并添加 custodian_id 列（如果不存在）
@@ -195,6 +209,10 @@ def init_database():
         _migrate_mysql_add_user_cursor_field()
         # 创建每日转盘相关表
         _migrate_mysql_create_wheel_tables()
+        # 检查并添加 operation_logs 表的 source 列
+        _migrate_mysql_add_operation_log_source()
+        # 创建后台管理操作日志表
+        _migrate_mysql_create_admin_operation_logs_table()
         return
 
     # SQLite初始化逻辑...
@@ -234,6 +252,7 @@ def init_database():
                 damage_reason TEXT,
                 damage_time TIMESTAMP,
                 previous_borrower TEXT,
+                previous_status TEXT,
                 sn TEXT,
                 system_version TEXT,
                 imei TEXT,
@@ -260,6 +279,9 @@ def init_database():
 
         # 检查并添加 signature 列到 users 表（如果表已存在但缺少该列）
         _migrate_sqlite_add_signature(cursor)
+
+        # 检查并添加 phone 列到 users 表（如果表已存在但缺少该列）
+        _migrate_sqlite_add_phone(cursor)
 
         # 检查并添加 asset_number 和 purchase_amount 列
         _migrate_sqlite_add_asset_fields(cursor)
@@ -293,6 +315,12 @@ def init_database():
         
         # 创建每日转盘相关表
         _migrate_sqlite_create_wheel_tables(cursor)
+        
+        # 检查并添加 operation_logs 表的 source 列
+        _migrate_sqlite_add_operation_log_source(cursor)
+        
+        # 创建后台管理操作日志表
+        _migrate_sqlite_create_admin_operation_logs_table(cursor)
 
         # 创建其他表...
         # (省略其他表的创建代码，保持原有逻辑)
@@ -374,6 +402,32 @@ def _migrate_mysql_add_signature():
                 print("✓ MySQL: 已添加 signature 列到 users 表")
     except Exception as e:
         print(f"⚠ MySQL signature 迁移警告: {e}")
+
+
+def _migrate_sqlite_add_phone(cursor):
+    """SQLite: 检查并添加 phone 列到 users 表"""
+    try:
+        cursor.execute("SELECT phone FROM users LIMIT 1")
+    except sqlite3.OperationalError:
+        # 列不存在，添加它
+        cursor.execute("ALTER TABLE users ADD COLUMN phone TEXT DEFAULT ''")
+        print("✓ SQLite: 已添加 phone 列到 users 表")
+
+
+def _migrate_mysql_add_phone():
+    """MySQL: 检查并添加 phone 列到 users 表"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT phone FROM users LIMIT 1")
+            except Exception:
+                # 列不存在，添加它
+                cursor.execute("ALTER TABLE users ADD COLUMN phone VARCHAR(20) DEFAULT ''")
+                conn.commit()
+                print("✓ MySQL: 已添加 phone 列到 users 表")
+    except Exception as e:
+        print(f"⚠ MySQL phone 迁移警告: {e}")
 
 
 def _migrate_sqlite_add_asset_fields(cursor):
@@ -652,9 +706,10 @@ class DatabaseStore:
     
     def save_device(self, device: Device) -> bool:
         """保存设备"""
+        import traceback
         with get_db_transaction() as conn:
             cursor = conn.cursor()
-            
+
             # 检查设备是否存在
             cursor.execute(
                 "SELECT id FROM devices WHERE id = %s" if IS_MYSQL else
@@ -700,22 +755,49 @@ class DatabaseStore:
                 """
 
                 params = (
-                    device.name, device.device_type.value if device.device_type else None, device.model, device.cabinet_number,
-                    device.status.value if device.status else None, device.remark, device.jira_address,
-                    device.borrower, device.borrower_id, device.custodian_id, device.phone, format_datetime(device.borrow_time),
-                    device.location, device.reason, device.entry_source,
-                    format_datetime(device.expected_return_date), device.admin_operator,
-                    format_datetime(device.ship_time), device.ship_remark, device.ship_by,
-                    device.pre_ship_borrower, format_datetime(device.pre_ship_borrow_time),
+                    escape_percent(device.name),
+                    device.device_type.value if device.device_type else None,
+                    escape_percent(device.model),
+                    escape_percent(device.cabinet_number),
+                    device.status.value if device.status else None,
+                    escape_percent(device.remark),
+                    escape_percent(device.jira_address),
+                    escape_percent(device.borrower),
+                    device.borrower_id,
+                    device.custodian_id,
+                    escape_percent(device.phone),
+                    format_datetime(device.borrow_time),
+                    escape_percent(device.location),
+                    escape_percent(device.reason),
+                    escape_percent(device.entry_source),
+                    format_datetime(device.expected_return_date),
+                    escape_percent(device.admin_operator),
+                    format_datetime(device.ship_time),
+                    escape_percent(device.ship_remark),
+                    escape_percent(device.ship_by),
+                    escape_percent(device.pre_ship_borrower),
+                    format_datetime(device.pre_ship_borrow_time),
                     format_datetime(device.pre_ship_expected_return_date),
-                    format_datetime(device.lost_time), device.damage_reason,
-                    format_datetime(device.damage_time), device.previous_borrower, device.previous_status,
-                    device.sn, device.system_version, device.imei, device.carrier,
-                    device.software_version, device.hardware_version,
-                    device.project_attribute, device.connection_method,
-                    device.os_version, device.os_platform, device.product_name,
-                    device.screen_orientation, device.screen_resolution,
-                    device.asset_number, device.purchase_amount,
+                    format_datetime(device.lost_time),
+                    escape_percent(device.damage_reason),
+                    format_datetime(device.damage_time),
+                    escape_percent(device.previous_borrower),
+                    device.previous_status,
+                    escape_percent(device.sn),
+                    escape_percent(device.system_version),
+                    escape_percent(device.imei),
+                    escape_percent(device.carrier),
+                    escape_percent(device.software_version),
+                    escape_percent(device.hardware_version),
+                    escape_percent(device.project_attribute),
+                    escape_percent(device.connection_method),
+                    escape_percent(device.os_version),
+                    escape_percent(device.os_platform),
+                    escape_percent(device.product_name),
+                    escape_percent(device.screen_orientation),
+                    escape_percent(device.screen_resolution),
+                    escape_percent(device.asset_number),
+                    device.purchase_amount,
                     1 if device.is_deleted else 0,
                     device.id
                 )
@@ -733,7 +815,7 @@ class DatabaseStore:
                     connection_method, os_version, os_platform, product_name,
                     screen_orientation, screen_resolution, asset_number, purchase_amount, is_deleted
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """ if IS_MYSQL else """INSERT INTO devices (
                     id, name, device_type, model, cabinet_number, status, remark,
@@ -745,31 +827,73 @@ class DatabaseStore:
                     carrier, software_version, hardware_version, project_attribute,
                     connection_method, os_version, os_platform, product_name,
                     screen_orientation, screen_resolution, asset_number, purchase_amount, is_deleted
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
 
                 params = (
-                    device.id, device.name, device.device_type.value if device.device_type else None, device.model,
-                    device.cabinet_number, device.status.value if device.status else None,
-                    device.remark, device.jira_address, device.borrower, device.borrower_id, device.custodian_id, device.phone,
-                    format_datetime(device.borrow_time), device.location, device.reason,
-                    device.entry_source, format_datetime(device.expected_return_date),
-                    device.admin_operator, format_datetime(device.ship_time),
-                    device.ship_remark, device.ship_by, device.pre_ship_borrower,
+                    device.id,
+                    escape_percent(device.name),
+                    device.device_type.value if device.device_type else None,
+                    escape_percent(device.model),
+                    escape_percent(device.cabinet_number),
+                    device.status.value if device.status else None,
+                    escape_percent(device.remark),
+                    escape_percent(device.jira_address),
+                    escape_percent(device.borrower),
+                    device.borrower_id,
+                    device.custodian_id,
+                    escape_percent(device.phone),
+                    format_datetime(device.borrow_time),
+                    escape_percent(device.location),
+                    escape_percent(device.reason),
+                    escape_percent(device.entry_source),
+                    format_datetime(device.expected_return_date),
+                    escape_percent(device.admin_operator),
+                    format_datetime(device.ship_time),
+                    escape_percent(device.ship_remark),
+                    escape_percent(device.ship_by),
+                    escape_percent(device.pre_ship_borrower),
                     format_datetime(device.pre_ship_borrow_time),
                     format_datetime(device.pre_ship_expected_return_date),
-                    format_datetime(device.lost_time), device.damage_reason,
-                    format_datetime(device.damage_time), device.previous_borrower, device.previous_status,
-                    device.sn, device.system_version, device.imei, device.carrier,
-                    device.software_version, device.hardware_version,
-                    device.project_attribute, device.connection_method,
-                    device.os_version, device.os_platform, device.product_name,
-                    device.screen_orientation, device.screen_resolution,
-                    device.asset_number, device.purchase_amount,
+                    format_datetime(device.lost_time),
+                    escape_percent(device.damage_reason),
+                    format_datetime(device.damage_time),
+                    escape_percent(device.previous_borrower),
+                    device.previous_status,
+                    escape_percent(device.sn),
+                    escape_percent(device.system_version),
+                    escape_percent(device.imei),
+                    escape_percent(device.carrier),
+                    escape_percent(device.software_version),
+                    escape_percent(device.hardware_version),
+                    escape_percent(device.project_attribute),
+                    escape_percent(device.connection_method),
+                    escape_percent(device.os_version),
+                    escape_percent(device.os_platform),
+                    escape_percent(device.product_name),
+                    escape_percent(device.screen_orientation),
+                    escape_percent(device.screen_resolution),
+                    escape_percent(device.asset_number),
+                    device.purchase_amount,
                     1 if device.is_deleted else 0
                 )
-                cursor.execute(sql, params)
+
+                # DEBUG: 打印调试信息
+                print(f"[DEBUG] save_device - device.id: {device.id}")
+                print(f"[DEBUG] save_device - device.name: {device.name}")
+                print(f"[DEBUG] save_device - device.remark: {device.remark}")
+                print(f"[DEBUG] save_device - device.model: {device.model}")
+                print(f"[DEBUG] save_device - params count: {len(params)}")
+                print(f"[DEBUG] save_device - IS_MYSQL: {IS_MYSQL}")
+
+                try:
+                    cursor.execute(sql, params)
+                except Exception as e:
+                    print(f"[DEBUG] save_device - SQL execute error: {e}")
+                    print(f"[DEBUG] save_device - traceback: {traceback.format_exc()}")
+                    raise
             
             return True
     
@@ -1062,19 +1186,19 @@ class DatabaseStore:
     
     # ========== 操作日志相关操作 ==========
 
-    def add_operation_log(self, operation: str, device_name: str, operator: str) -> bool:
+    def add_operation_log(self, operation: str, device_name: str, operator: str, source: str = "admin") -> bool:
         """添加操作日志"""
         with get_db_transaction() as conn:
             cursor = conn.cursor()
             import uuid
             sql = """INSERT INTO operation_logs (
-                id, operation_time, operator, operation_content, device_info
-            ) VALUES (%s, CURRENT_TIMESTAMP, %s, %s, %s)
+                id, operation_time, operator, operation_content, device_info, source
+            ) VALUES (%s, CURRENT_TIMESTAMP, %s, %s, %s, %s)
             """ if IS_MYSQL else """INSERT INTO operation_logs (
-                id, operation_time, operator, operation_content, device_info
-            ) VALUES (?, CURRENT_TIMESTAMP, ?, ?, ?)
+                id, operation_time, operator, operation_content, device_info, source
+            ) VALUES (?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
             """
-            params = (str(uuid.uuid4()), operator, operation, device_name)
+            params = (str(uuid.uuid4()), operator, operation, device_name, source)
             cursor.execute(sql, params)
             return True
 
@@ -1091,22 +1215,167 @@ class DatabaseStore:
         with get_db_transaction() as conn:
             cursor = conn.cursor()
             sql = """INSERT INTO operation_logs (
-                id, operation_time, operator, operation_content, device_info
-            ) VALUES (%s, %s, %s, %s, %s)
+                id, operation_time, operator, operation_content, device_info, source
+            ) VALUES (%s, %s, %s, %s, %s, %s)
             """ if IS_MYSQL else """INSERT INTO operation_logs (
-                id, operation_time, operator, operation_content, device_info
-            ) VALUES (?, ?, ?, ?, ?)
+                id, operation_time, operator, operation_content, device_info, source
+            ) VALUES (?, ?, ?, ?, ?, ?)
             """
             params = (
                 log.id,
                 format_datetime(log.operation_time),
                 log.operator,
                 log.operation_content,
-                log.device_info
+                log.device_info,
+                log.source
             )
             cursor.execute(sql, params)
             return True
-    
+
+    # ========== 后台管理操作日志相关操作 ==========
+
+    def save_admin_operation_log(self, log: AdminOperationLog) -> bool:
+        """保存后台管理操作日志"""
+        with get_db_transaction() as conn:
+            cursor = conn.cursor()
+            sql = """INSERT INTO admin_operation_logs (
+                id, operation_time, admin_id, admin_name, action_type, action_name,
+                target_type, target_id, target_name, description, ip_address,
+                user_agent, request_method, request_path, request_params, result, error_message
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """ if IS_MYSQL else """INSERT INTO admin_operation_logs (
+                id, operation_time, admin_id, admin_name, action_type, action_name,
+                target_type, target_id, target_name, description, ip_address,
+                user_agent, request_method, request_path, request_params, result, error_message
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            params = (
+                log.id,
+                format_datetime(log.operation_time),
+                log.admin_id,
+                log.admin_name,
+                log.action_type,
+                log.action_name,
+                log.target_type,
+                log.target_id,
+                log.target_name,
+                log.description,
+                log.ip_address,
+                log.user_agent,
+                log.request_method,
+                log.request_path,
+                log.request_params,
+                log.result,
+                log.error_message
+            )
+            cursor.execute(sql, params)
+            return True
+
+    def get_admin_operation_logs(self, limit: int = 100, offset: int = 0,
+                                  admin_id: str = None, action_type: str = None,
+                                  target_type: str = None, result: str = None,
+                                  start_time: datetime = None, end_time: datetime = None) -> List[AdminOperationLog]:
+        """获取后台管理操作日志列表"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+
+            # 构建查询条件
+            conditions = []
+            params = []
+
+            if admin_id:
+                conditions.append("admin_id = %s" if IS_MYSQL else "admin_id = ?")
+                params.append(admin_id)
+            if action_type:
+                conditions.append("action_type = %s" if IS_MYSQL else "action_type = ?")
+                params.append(action_type)
+            if target_type:
+                conditions.append("target_type = %s" if IS_MYSQL else "target_type = ?")
+                params.append(target_type)
+            if result:
+                conditions.append("result = %s" if IS_MYSQL else "result = ?")
+                params.append(result)
+            if start_time:
+                conditions.append("operation_time >= %s" if IS_MYSQL else "operation_time >= ?")
+                params.append(format_datetime(start_time))
+            if end_time:
+                conditions.append("operation_time <= %s" if IS_MYSQL else "operation_time <= ?")
+                params.append(format_datetime(end_time))
+
+            # 构建SQL
+            where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
+
+            sql = f"""
+                SELECT * FROM admin_operation_logs
+                {where_clause}
+                ORDER BY operation_time DESC
+                LIMIT %s OFFSET %s
+            """ if IS_MYSQL else f"""
+                SELECT * FROM admin_operation_logs
+                {where_clause}
+                ORDER BY operation_time DESC
+                LIMIT ? OFFSET ?
+            """
+            params.extend([limit, offset])
+
+            cursor.execute(sql, tuple(params))
+            rows = cursor.fetchall()
+            return [AdminOperationLog.from_dict(row_to_dict(row)) for row in rows]
+
+    def get_admin_operation_logs_count(self, admin_id: str = None, action_type: str = None,
+                                        target_type: str = None, result: str = None,
+                                        start_time: datetime = None, end_time: datetime = None) -> int:
+        """获取后台管理操作日志总数"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+
+            # 构建查询条件
+            conditions = []
+            params = []
+
+            if admin_id:
+                conditions.append("admin_id = %s" if IS_MYSQL else "admin_id = ?")
+                params.append(admin_id)
+            if action_type:
+                conditions.append("action_type = %s" if IS_MYSQL else "action_type = ?")
+                params.append(action_type)
+            if target_type:
+                conditions.append("target_type = %s" if IS_MYSQL else "target_type = ?")
+                params.append(target_type)
+            if result:
+                conditions.append("result = %s" if IS_MYSQL else "result = ?")
+                params.append(result)
+            if start_time:
+                conditions.append("operation_time >= %s" if IS_MYSQL else "operation_time >= ?")
+                params.append(format_datetime(start_time))
+            if end_time:
+                conditions.append("operation_time <= %s" if IS_MYSQL else "operation_time <= ?")
+                params.append(format_datetime(end_time))
+
+            where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
+
+            sql = f"SELECT COUNT(*) as count FROM admin_operation_logs {where_clause}"
+            cursor.execute(sql, tuple(params))
+            row = cursor.fetchone()
+            return row['count'] if IS_MYSQL else row[0]
+
+    def clear_admin_operation_logs(self, days: int = 90) -> int:
+        """清理指定天数之前的后台管理操作日志"""
+        from datetime import timedelta
+        with get_db_transaction() as conn:
+            cursor = conn.cursor()
+            cutoff_date = datetime.now() - timedelta(days=days)
+
+            sql = """
+                DELETE FROM admin_operation_logs
+                WHERE operation_time < %s
+            """ if IS_MYSQL else """
+                DELETE FROM admin_operation_logs
+                WHERE operation_time < ?
+            """
+            cursor.execute(sql, (format_datetime(cutoff_date),))
+            return cursor.rowcount
+
     # ========== 查看记录相关操作 ==========
     
     def get_view_records_by_device(self, device_id: str, limit: int = 20) -> list:
@@ -2609,3 +2878,103 @@ def _migrate_mysql_create_wheel_tables():
             print("✓ MySQL: 已创建每日转盘相关表")
     except Exception as e:
         print(f"⚠ MySQL 每日转盘表迁移警告: {e}")
+
+
+def _migrate_mysql_add_operation_log_source():
+    """MySQL: 检查并添加 operation_logs 表的 source 列"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT source FROM operation_logs LIMIT 1")
+            except Exception:
+                # 列不存在，添加它
+                cursor.execute("ALTER TABLE operation_logs ADD COLUMN source VARCHAR(20) DEFAULT 'admin'")
+                cursor.execute("CREATE INDEX idx_source ON operation_logs(source)")
+                conn.commit()
+                print("✓ MySQL: 已添加 source 列到 operation_logs 表")
+    except Exception as e:
+        print(f"⚠ MySQL operation_logs source 列迁移警告: {e}")
+
+
+def _migrate_sqlite_add_operation_log_source(cursor):
+    """SQLite: 检查并添加 operation_logs 表的 source 列"""
+    try:
+        cursor.execute("SELECT source FROM operation_logs LIMIT 1")
+    except sqlite3.OperationalError:
+        # 列不存在，添加它
+        cursor.execute("ALTER TABLE operation_logs ADD COLUMN source TEXT DEFAULT 'admin'")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_operation_logs_source ON operation_logs(source)")
+        print("✓ SQLite: 已添加 source 列到 operation_logs 表")
+
+
+def _migrate_mysql_create_admin_operation_logs_table():
+    """MySQL: 创建后台管理操作日志表"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS admin_operation_logs (
+                    id VARCHAR(64) PRIMARY KEY,
+                    operation_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    admin_id VARCHAR(64) NOT NULL,
+                    admin_name VARCHAR(100) NOT NULL,
+                    action_type VARCHAR(50) NOT NULL,
+                    action_name VARCHAR(100) NOT NULL,
+                    target_type VARCHAR(50) NOT NULL,
+                    target_id VARCHAR(64),
+                    target_name VARCHAR(200),
+                    description TEXT,
+                    ip_address VARCHAR(50),
+                    user_agent TEXT,
+                    request_method VARCHAR(10),
+                    request_path VARCHAR(500),
+                    request_params TEXT,
+                    result VARCHAR(20) DEFAULT 'SUCCESS',
+                    error_message TEXT,
+                    INDEX idx_admin_id (admin_id),
+                    INDEX idx_operation_time (operation_time),
+                    INDEX idx_action_type (action_type),
+                    INDEX idx_target_type (target_type),
+                    INDEX idx_result (result)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            ''')
+            conn.commit()
+            print("✓ MySQL: 已创建 admin_operation_logs 表")
+    except Exception as e:
+        print(f"⚠ MySQL 创建 admin_operation_logs 表警告: {e}")
+
+
+def _migrate_sqlite_create_admin_operation_logs_table(cursor):
+    """SQLite: 创建后台管理操作日志表"""
+    try:
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS admin_operation_logs (
+                id TEXT PRIMARY KEY,
+                operation_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                admin_id TEXT NOT NULL,
+                admin_name TEXT NOT NULL,
+                action_type TEXT NOT NULL,
+                action_name TEXT NOT NULL,
+                target_type TEXT NOT NULL,
+                target_id TEXT,
+                target_name TEXT,
+                description TEXT,
+                ip_address TEXT,
+                user_agent TEXT,
+                request_method TEXT,
+                request_path TEXT,
+                request_params TEXT,
+                result TEXT DEFAULT 'SUCCESS',
+                error_message TEXT
+            )
+        ''')
+        # 创建索引
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_admin_logs_admin_id ON admin_operation_logs(admin_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_admin_logs_time ON admin_operation_logs(operation_time)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_admin_logs_action ON admin_operation_logs(action_type)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_admin_logs_target ON admin_operation_logs(target_type)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_admin_logs_result ON admin_operation_logs(result)")
+        print("✓ SQLite: 已创建 admin_operation_logs 表")
+    except Exception as e:
+        print(f"⚠ SQLite 创建 admin_operation_logs 表警告: {e}")

@@ -555,6 +555,84 @@ body {
     color: #333;
 }
 
+/* 借出归还折线图样式 */
+.chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.chart-header h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0;
+}
+
+.time-range-tabs {
+    display: flex;
+    gap: 4px;
+    background: #f5f5f5;
+    padding: 4px;
+    border-radius: 6px;
+}
+
+.time-range-tabs .tab-btn {
+    padding: 4px 12px;
+    border: none;
+    background: transparent;
+    font-size: 13px;
+    color: #666;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.time-range-tabs .tab-btn:hover {
+    color: #1890ff;
+}
+
+.time-range-tabs .tab-btn.active {
+    background: #fff;
+    color: #1890ff;
+    font-weight: 500;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.chart-legend {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 12px;
+    padding-left: 8px;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #666;
+}
+
+.legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+.legend-dot.borrow {
+    background: #1890ff;
+}
+
+.legend-dot.return {
+    background: #52c41a;
+}
+
+.line-chart-container {
+    height: 280px;
+    position: relative;
+}
+
 /* 内容行 */
 .content-row {
     display: grid;

@@ -56,6 +56,26 @@ app.secret_key = SECRET_KEY
 # 初始化数据库（创建必要的表）
 init_database()
 
+# 自定义Jinja2过滤器：处理nan值
+import math
+@app.template_filter('nan_to_empty')
+def nan_to_empty(value):
+    """将nan值转换为空字符串或'-'"""
+    if value is None:
+        return '-'
+    if isinstance(value, float) and math.isnan(value):
+        return '-'
+    return value
+
+@app.template_filter('nan_to_default')
+def nan_to_default(value, default='-'):
+    """将nan值转换为指定默认值"""
+    if value is None:
+        return default
+    if isinstance(value, float) and math.isnan(value):
+        return default
+    return value
+
 
 def login_required(f):
     """登录验证装饰器 - 未登录跳转到设备选择页面"""
@@ -391,14 +411,55 @@ def index():
 
 @app.route('/select-device')
 def select_device_type():
-    """设备选择页面 - 直接重定向到电脑端登录"""
-    return redirect(url_for('pc_login'))
+    """设备选择页面"""
+    return render_template('select_device_type.html')
 
 
 @app.route('/login/mobile', methods=['GET', 'POST'])
 def mobile_login():
-    """手机端登录页面 - 直接重定向到电脑端登录"""
-    return redirect(url_for('pc_login'))
+    """手机端登录页面 - 使用邮箱登录，与PC端保持一致"""
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip().lower()
+        password = request.form.get('password', '').strip()
+
+        if not email or not password:
+            return render_template('mobile/login.html', error='请输入邮箱和密码')
+
+        # 使用与PC端相同的验证方式
+        user = api_client.verify_user_login(email, password)
+        if user:
+            session['user_id'] = user.id
+            session['email'] = user.email
+            session['login_device_type'] = 'mobile'
+
+            # 首次登录奖励积分
+            points_result = points_service.first_login_reward(user.id)
+            if points_result['success']:
+                session['first_login_points'] = points_result['points']
+                session['points_message'] = points_result['message']
+                daily_result = points_service.daily_login_reward(user.id)
+                if daily_result['success']:
+                    session['daily_login_points'] = daily_result['points']
+                    session['daily_login_message'] = daily_result['message']
+            else:
+                daily_result = points_service.daily_login_reward(user.id)
+                if daily_result['success']:
+                    session['daily_login_points'] = daily_result['points']
+                    session['daily_login_message'] = daily_result['message']
+
+            # 检查是否需要设置借用人名称
+            if not user.borrower_name:
+                return redirect(url_for('set_borrower_name'))
+
+            # 检查是否是首次登录
+            if user.is_first_login:
+                return redirect(url_for('change_password'))
+
+            return redirect(url_for('home'))
+        else:
+            return render_template('mobile/login.html', error='邮箱或密码错误，或账号已被冻结')
+
+    return render_template('mobile/login.html')
 
 
 @app.route('/login/pc', methods=['GET', 'POST'])
@@ -611,26 +672,201 @@ def change_password():
 @app.route('/home')
 @login_required
 def home():
-    """手机端首页 - 直接重定向到PC端首页"""
-    return redirect(url_for('pc_dashboard'))
+    """手机端首页 - 显示我的借用、归还、转借、预约等基础操作"""
+    from datetime import datetime
+    user = get_current_user()
+
+    # 检查用户是否存在（可能已被删除）
+    if not user or 'borrower_name' not in user:
+        session.clear()
+        return redirect(url_for('login'))
+
+    # 重新加载数据以获取最新数据
+    api_client.reload_data()
+
+    # 获取所有设备
+    all_devices = api_client.get_all_devices()
+
+    # 获取我保管的设备数量
+    my_custodian_devices = [d for d in all_devices if d.cabinet_number == user['borrower_name']]
+    my_custodian_count = len(my_custodian_devices)
+
+    # 获取当前用户借用的设备，并计算剩余逾期时间
+    raw_borrowed_devices = [d for d in all_devices if d.borrower == user['borrower_name'] and d.status != DeviceStatus.SHIPPED]
+    my_borrowed_devices = []
+    for device in raw_borrowed_devices:
+        device.is_overdue = False
+        device.overdue_days = 0
+        device.remaining_time_display = ''
+        device.can_renew = False
+
+        if device.expected_return_date:
+            time_diff = device.expected_return_date - datetime.now()
+            total_seconds = time_diff.total_seconds()
+
+            if total_seconds < -60:
+                # 已逾期超过1分钟
+                device.is_overdue = True
+                device.overdue_days = int(abs(total_seconds) // (24 * 3600))
+                if device.overdue_days <= 3:
+                    device.can_renew = True
+            elif total_seconds < 0:
+                # 逾期1分钟内
+                device.remaining_time_display = '0 分钟'
+                device.can_renew = True
+            else:
+                # 剩余时间
+                remaining_days = int(total_seconds // (24 * 3600))
+                actual_remaining_hours = int(total_seconds // 3600)
+                if remaining_days > 0:
+                    device.remaining_time_display = f"{remaining_days} 天"
+                elif actual_remaining_hours > 0:
+                    device.remaining_time_display = f"{actual_remaining_hours} 小时"
+                else:
+                    mins = int(total_seconds // 60)
+                    device.remaining_time_display = f"{mins} 分钟"
+
+                # 剩余时间小于24小时才能续借
+                total_hours_float = total_seconds / 3600
+                total_hours_int = int(total_hours_float)
+                remaining_hours = total_hours_int if total_hours_float == total_hours_int else total_hours_int + 1
+                device.can_renew = remaining_hours < 24
+        else:
+            device.remaining_time_display = '长期借用'
+            device.can_renew = False
+
+        my_borrowed_devices.append(device)
+
+    my_borrowed_count = len(my_borrowed_devices)
+
+    # 获取我的预约
+    my_reservations = api_client.get_user_reservations(user['user_id'])
+
+    # 筛选需要显示的预约
+    active_reservations = []
+    now = datetime.now()
+
+    for r in my_reservations:
+        if r.status in ['待保管人确认', '待借用人确认', '待2人确认']:
+            active_reservations.append(r)
+        elif r.status == '已同意':
+            if r.start_time and r.start_time > now:
+                active_reservations.append(r)
+        elif r.status == '已拒绝':
+            if r.start_time and r.start_time > now:
+                active_reservations.append(r)
+
+    my_reservation_count = len(active_reservations)
+
+    # 获取需要当前用户确认的预约（作为保管人或借用人）
+    pending_confirm_reservations = []
+    for device in all_devices:
+        is_custodian = device.cabinet_number == user['borrower_name']
+        is_borrower = (device.borrower and user['borrower_name'] in device.borrower) and device.status == DeviceStatus.BORROWED
+
+        if not is_custodian and not is_borrower:
+            continue
+
+        reservations = api_client.get_device_reservations(device.id, None, False)
+
+        for r in reservations:
+            if is_custodian and r.status in ['待保管人确认', '待2人确认'] and not r.custodian_approved:
+                if r.custodian_id == user['user_id'] or (not r.custodian_id and device.cabinet_number == user['borrower_name']):
+                    pending_confirm_reservations.append({
+                        'id': r.id,
+                        'reserver_name': r.reserver_name,
+                        'reserver_id': r.reserver_id,
+                        'device_id': device.id,
+                        'device_name': device.name,
+                        'device_type': get_device_type_str(device),
+                        'start_time': r.start_time,
+                        'end_time': r.end_time,
+                        'confirm_role': 'custodian',
+                        'role_display': '保管人确认'
+                    })
+
+            if is_borrower and r.status in ['待借用人确认', '待2人确认'] and not r.borrower_approved:
+                is_current_borrower = (
+                    r.current_borrower_id == user['user_id'] or
+                    r.current_borrower_name == user['borrower_name'] or
+                    device.borrower == user['borrower_name']
+                )
+                if is_current_borrower:
+                    pending_confirm_reservations.append({
+                        'id': r.id,
+                        'reserver_name': r.reserver_name,
+                        'reserver_id': r.reserver_id,
+                        'device_id': device.id,
+                        'device_name': device.name,
+                        'device_type': get_device_type_str(device),
+                        'start_time': r.start_time,
+                        'end_time': r.end_time,
+                        'confirm_role': 'borrower',
+                        'role_display': '借用人确认'
+                    })
+
+    return render_template('mobile/dashboard.html',
+                         user=user,
+                         my_borrowed_devices=my_borrowed_devices,
+                         my_borrowed_count=my_borrowed_count,
+                         my_custodian_count=my_custodian_count,
+                         my_reservation_count=my_reservation_count,
+                         my_reservations=active_reservations,
+                         pending_confirm_reservations=pending_confirm_reservations)
 
 
 @app.route('/devices')
 @login_required
 def device_list():
-    """设备列表页面 - 手机端，直接重定向到PC端"""
+    """移动端设备列表"""
+    user = get_current_user()
     device_type = request.args.get('type', 'car')
-    return redirect(url_for('pc_device_list', type=device_type))
+
+    # 重新加载数据
+    api_client.reload_data()
+
+    # 获取所有设备
+    all_devices = api_client.get_all_devices()
+
+    # 根据类型筛选
+    if device_type == 'car':
+        devices = [d for d in all_devices if d.device_type.value == '车机']
+    elif device_type == 'phone':
+        devices = [d for d in all_devices if d.device_type.value == '手机']
+    elif device_type == 'instrument':
+        devices = [d for d in all_devices if d.device_type.value == '仪表']
+    elif device_type == 'simcard':
+        devices = [d for d in all_devices if d.device_type.value == '手机卡']
+    elif device_type == 'other':
+        devices = [d for d in all_devices if d.device_type.value == '其它']
+    else:
+        devices = all_devices
+
+    return render_template('mobile/device_list.html',
+                         devices=devices,
+                         device_type=device_type,
+                         user=user)
 
 
 @app.route('/device/<device_id>')
 @login_required
 def device_detail(device_id):
-    """设备详情页面 - 手机端，直接重定向到PC端"""
-    device_type = request.args.get('device_type', '')
-    if device_type:
-        return redirect(url_for('pc_device_detail', device_id=device_id, device_type=device_type))
-    return redirect(url_for('pc_device_detail', device_id=device_id))
+    """移动端设备详情"""
+    user = get_current_user()
+    device_type = request.args.get('device_type', 'car')
+
+    # 重新加载数据
+    api_client.reload_data()
+
+    # 获取设备详情
+    device = api_client.get_device(device_id)
+    if not device:
+        return render_template('mobile/device_detail.html', error='设备不存在', user=user)
+
+    return render_template('mobile/device_detail.html',
+                         device=device,
+                         device_type=device_type,
+                         user=user)
 
 
 @app.route('/device/<device_id>/simple')
@@ -689,8 +925,34 @@ def edit_remark(remark_id):
 @app.route('/my-records')
 @login_required
 def my_records():
-    """我的记录页面 - 直接重定向到PC端"""
-    return redirect(url_for('pc_records'))
+    """移动端我的记录"""
+    user = get_current_user()
+    filter_type = request.args.get('filter_type', 'all')
+
+    # 重新加载数据
+    api_client.reload_data()
+
+    # 获取所有记录
+    all_records = api_client.get_all_records()
+
+    # 筛选当前用户的记录
+    my_records_list = [r for r in all_records if r.borrower == user['borrower_name']]
+
+    # 根据筛选类型过滤
+    if filter_type == 'borrowed':
+        # 借用中的记录（没有归还时间的借用记录）
+        records = [r for r in my_records_list if r.action == '借用' and not r.return_time]
+    elif filter_type == 'returned':
+        # 已归还的记录
+        records = [r for r in my_records_list if r.return_time]
+    else:
+        # 全部记录
+        records = my_records_list
+
+    return render_template('mobile/records.html',
+                         records=records,
+                         filter_type=filter_type,
+                         user=user)
 
 
 # ==================== PC端路由 ====================
@@ -1583,9 +1845,6 @@ def pc_device_detail(device_id):
 
     # 获取设备借用记录
     all_raw_records = api_client.get_device_records(device_id, device_type, limit=10000)
-    print(f"[DEBUG] 设备详情页 - device_id: {device_id}, device_type: {device_type}, 记录数: {len(all_raw_records)}")
-    for r in all_raw_records[:5]:
-        print(f"[DEBUG] 记录: {r.operation_type.value}, {r.borrower}, {r.reason}")
 
     # 格式化显示用的记录列表（限制20条）
     raw_records = all_raw_records[:20]
@@ -1773,6 +2032,14 @@ def pc_device_detail_simple(device_id):
     if user['borrower_name']:
         api_client.add_view_record(device_id, user['borrower_name'], device_type)
 
+    # 获取设备图片和附件
+    device_images = get_device_images(device_id)
+    device_attachments = get_device_attachments(device_id)
+
+    # 格式化附件大小
+    for att in device_attachments:
+        att['size_formatted'] = format_file_size(att['size'])
+
     stats = get_device_stats()
 
     return render_template('pc/device_detail_simple.html',
@@ -1784,6 +2051,8 @@ def pc_device_detail_simple(device_id):
                          is_no_cabinet=is_no_cabinet,
                          user=user,
                          current_theme=get_current_theme_icon(user['user_id']),
+                         device_images=device_images,
+                         device_attachments=device_attachments,
                          **stats)
 
 
@@ -2073,7 +2342,7 @@ def api_borrow():
     device.entry_source = EntrySource.USER.value
     device.previous_borrower = ''  # 清空上一个借用人，因为从在库借用
     
-    api_client.update_device(device)
+    api_client.update_device(device, source="user")
     
     # 解析原因和备注（格式：原因 - 详细说明）
     reason_parts = reason.split(' - ', 1)
@@ -2103,7 +2372,7 @@ def api_borrow():
             api_client._db.save_user(u)
             break
 
-    api_client.add_operation_log(f"借出设备: {user['borrower_name']}", device.name)
+    api_client.add_operation_log(f"借出设备: {user['borrower_name']}", device.name, operator=user['borrower_name'], source="user")
 
     # 借用成功，奖励积分
     points_result = points_service.borrow_reward(user['user_id'], device.name, device.id)
@@ -2206,7 +2475,7 @@ def api_return():
     device.entry_source = ''
     device.expected_return_date = None
     
-    api_client.update_device(device)
+    api_client.update_device(device, source="user")
     
     # 解析归还原因和备注（格式：原因 - 备注）
     reason_parts = return_reason.split(' - ', 1)
@@ -2229,7 +2498,7 @@ def api_return():
     )
     api_client._db.save_record(record)
 
-    api_client.add_operation_log(f"归还设备: {original_borrower}", device.name)
+    api_client.add_operation_log(f"归还设备: {original_borrower}", device.name, operator=user['borrower_name'], source="user")
     
     # 更新原借用人的归还次数
     for u in api_client._users:
@@ -2488,7 +2757,7 @@ def api_transfer_to_me():
     device.entry_source = EntrySource.USER.value
     device.expected_return_date = expected_return  # 使用预约结束时间或默认1天
     
-    api_client.update_device(device)
+    api_client.update_device(device, source="user")
     
     # 添加记录
     record = Record(
@@ -2512,7 +2781,7 @@ def api_transfer_to_me():
             api_client._db.save_user(u)
             break
 
-    api_client.add_operation_log(f"转给自己: {original_borrower} -> {user['borrower_name']}", device.name)
+    api_client.add_operation_log(f"转给自己: {original_borrower} -> {user['borrower_name']}", device.name, operator=user['borrower_name'], source="user")
     
     
     # 通知原借用人（如果存在且不是当前用户）
@@ -2608,7 +2877,7 @@ def api_return_by_custodian():
     device.expected_return_date = None
     device.lost_time = None
 
-    api_client.update_device(device)
+    api_client.update_device(device, source="user")
 
     # 添加记录
     record = Record(
@@ -2625,7 +2894,7 @@ def api_return_by_custodian():
     )
     api_client._db.save_record(record)
 
-    api_client.add_operation_log(f"保管人代还 {original_borrower}", device.name)
+    api_client.add_operation_log(f"保管人代还 {original_borrower}", device.name, operator=user['borrower_name'], source="user")
     
     # 更新原借用人的归还次数
     for u in api_client._users:
@@ -2856,7 +3125,7 @@ def api_report_lost():
     device.lost_time = datetime.now()
     device.previous_borrower = device.borrower
     
-    api_client.update_device(device)
+    api_client.update_device(device, source="user")
     
     # 添加记录
     record = Record(
@@ -2874,7 +3143,7 @@ def api_report_lost():
     )
     api_client._db.save_record(record)
     
-    api_client.add_operation_log(f"报备丢失: {user['borrower_name']}", device.name)
+    api_client.add_operation_log(f"报备丢失: {user['borrower_name']}", device.name, operator=user['borrower_name'], source="user")
     
     
     # 通知保管人（如果存在且不是报备人自己）
@@ -2951,7 +3220,7 @@ def api_report_damage():
     device.damage_reason = damage_reason
     device.damage_time = datetime.now()
     
-    api_client.update_device(device)
+    api_client.update_device(device, source="user")
     
     # 添加记录
     if action == 'return':
@@ -2977,7 +3246,7 @@ def api_report_damage():
             reason=damage_reason,
             entry_source=EntrySource.USER.value
         )
-        api_client.add_operation_log(f"损坏归还: {user['borrower_name']}", device.name)
+        api_client.add_operation_log(f"损坏归还: {user['borrower_name']}", device.name, operator=user['borrower_name'], source="user")
     else:
         # 仅报备损坏，继续借用
         record = Record(
@@ -2993,7 +3262,7 @@ def api_report_damage():
             reason=damage_reason,
             entry_source=EntrySource.USER.value
         )
-        api_client.add_operation_log(f"报备损坏: {user['borrower_name']}", device.name)
+        api_client.add_operation_log(f"报备损坏: {user['borrower_name']}", device.name, operator=user['borrower_name'], source="user")
     
     api_client._db.save_record(record)
     
@@ -3080,7 +3349,7 @@ def api_ship_device():
     device.ship_remark = remark
     device.ship_by = user['borrower_name']
 
-    api_client.update_device(device)
+    api_client.update_device(device, source="user")
 
     # 添加记录
     record = Record(
@@ -3099,7 +3368,7 @@ def api_ship_device():
     )
     api_client._db.save_record(record)
 
-    api_client.add_operation_log(f"寄出设备: {user['borrower_name']}", device.name)
+    api_client.add_operation_log(f"寄出设备: {user['borrower_name']}", device.name, operator=user['borrower_name'], source="user")
     
 
     return jsonify({'success': True, 'message': '寄出登记成功'})
@@ -3139,7 +3408,7 @@ def api_unship_device():
     device.pre_ship_borrow_time = None
     device.pre_ship_expected_return_date = None
 
-    api_client.update_device(device)
+    api_client.update_device(device, source="user")
 
     # 添加记录
     record = Record(
@@ -3157,7 +3426,7 @@ def api_unship_device():
     )
     api_client._db.save_record(record)
 
-    api_client.add_operation_log(f"未寄出还原 {user['borrower_name']}", device.name)
+    api_client.add_operation_log(f"未寄出还原 {user['borrower_name']}", device.name, operator=user['borrower_name'], source="user")
     
 
     return jsonify({'success': True, 'message': '已还原为借用状态'})
@@ -3217,7 +3486,7 @@ def api_found_device():
         device.lost_time = None
         device.previous_status = ''  # 清空原始状态记录
         
-        api_client.update_device(device)
+        api_client.update_device(device, source="user")
         
         # 添加记录
         record = Record(
@@ -3233,7 +3502,7 @@ def api_found_device():
             entry_source=EntrySource.USER.value
         )
         api_client._db.save_record(record)
-        api_client.add_operation_log(f"设备找回转借 {transfer_to}", device.name)
+        api_client.add_operation_log(f"设备找回转借 {transfer_to}", device.name, operator=user['borrower_name'], source="user")
     elif action == 'keep':
         # 转给自己 - 设备变为借出状态
         device.status = DeviceStatus.BORROWED
@@ -3242,7 +3511,7 @@ def api_found_device():
         device.lost_time = None
         device.previous_status = ''  # 清空原始状态记录
         
-        api_client.update_device(device)
+        api_client.update_device(device, source="user")
         
         # 添加记录
         from_desc = original_borrower or '丢失状态'
@@ -3259,7 +3528,7 @@ def api_found_device():
             entry_source=EntrySource.USER.value
         )
         api_client._db.save_record(record)
-        api_client.add_operation_log(f"设备找回转给自己: {user['borrower_name']}", device.name)
+        api_client.add_operation_log(f"设备找回转给自己: {user['borrower_name']}", device.name, operator=user['borrower_name'], source="user")
     else:
         # 归还入库 - 恢复设备原始状态（流通、无柜号、封存等）
         previous_status = device.previous_status
@@ -3278,7 +3547,7 @@ def api_found_device():
         device.lost_time = None
         device.previous_status = ''  # 清空原始状态记录
 
-        api_client.update_device(device)
+        api_client.update_device(device, source="user")
 
         # 添加记录
         from_desc = original_borrower or '丢失状态'
@@ -3296,7 +3565,7 @@ def api_found_device():
             entry_source=EntrySource.USER.value
         )
         api_client._db.save_record(record)
-        api_client.add_operation_log(f"设备找回归还: {user['borrower_name']}", device.name)
+        api_client.add_operation_log(f"设备找回归还: {user['borrower_name']}", device.name, operator=user['borrower_name'], source="user")
     
     
     
@@ -3391,7 +3660,7 @@ def api_repair_device():
         device.damage_time = None
         device.previous_status = ''  # 清空原始状态记录
 
-        api_client.update_device(device)
+        api_client.update_device(device, source="user")
 
         record = Record(
             id=str(uuid.uuid4()),
@@ -3405,7 +3674,7 @@ def api_repair_device():
             reason='设备已修复并转借',
             entry_source=EntrySource.USER.value
         )
-        api_client.add_operation_log(f"修复转借 {transfer_to}", device.name)
+        api_client.add_operation_log(f"修复转借 {transfer_to}", device.name, operator=user['borrower_name'], source="user")
     elif action == 'keep':
         # 转给自己 - 设备变为借出状态
         device.status = DeviceStatus.BORROWED
@@ -3415,7 +3684,7 @@ def api_repair_device():
         device.damage_time = None
         device.previous_status = ''  # 清空原始状态记录
 
-        api_client.update_device(device)
+        api_client.update_device(device, source="user")
         
         record = Record(
             id=str(uuid.uuid4()),
@@ -3429,7 +3698,7 @@ def api_repair_device():
             reason='设备已修复，转给自己',
             entry_source=EntrySource.USER.value
         )
-        api_client.add_operation_log(f"修复转给自己: {user['borrower_name']}", device.name)
+        api_client.add_operation_log(f"修复转给自己: {user['borrower_name']}", device.name, operator=user['borrower_name'], source="user")
     else:
         # 归还入库 - 恢复设备原始状态（流通、无柜号、封存等）
         previous_status = device.previous_status
@@ -3449,7 +3718,7 @@ def api_repair_device():
         device.damage_time = None
         device.previous_status = ''  # 清空原始状态记录
 
-        api_client.update_device(device)
+        api_client.update_device(device, source="user")
         
         to_status = device.status.value
         record = Record(
@@ -3464,7 +3733,7 @@ def api_repair_device():
             reason=f'设备已修复，恢复为{to_status}状态',
             entry_source=EntrySource.USER.value
         )
-        api_client.add_operation_log(f"修复归还: {user['borrower_name']}", device.name)
+        api_client.add_operation_log(f"修复归还: {user['borrower_name']}", device.name, operator=user['borrower_name'], source="user")
     
     api_client._db.save_record(record)
     
@@ -3537,7 +3806,7 @@ def api_not_found():
         device.phone = ''  # 清空手机号
         device.previous_borrower = ''  # 清空上一个借用人
         
-        api_client.update_device(device)
+        api_client.update_device(device, source="user")
         
         # 添加记录 - 使用 NOT_FOUND 类型
         record = Record(
@@ -3554,7 +3823,7 @@ def api_not_found():
             entry_source=EntrySource.USER.value
         )
         api_client._db.save_record(record)
-        api_client.add_operation_log(f"未找到退回 {user['borrower_name']} -> {previous_borrower}", device.name)
+        api_client.add_operation_log(f"未找到退回 {user['borrower_name']} -> {previous_borrower}", device.name, operator=user['borrower_name'], source="user")
     else:
         # 没有上一个借用人，转为丢失状态
         device.previous_status = device.status.value  # 保存原始状态
@@ -3562,7 +3831,7 @@ def api_not_found():
         device.previous_borrower = device.borrower
         device.lost_time = datetime.now()
         
-        api_client.update_device(device)
+        api_client.update_device(device, source="user")
         
         # 添加记录
         record = Record(
@@ -3579,7 +3848,7 @@ def api_not_found():
             entry_source=EntrySource.USER.value
         )
         api_client._db.save_record(record)
-        api_client.add_operation_log(f"未找到转丢失: {user['borrower_name']}", device.name)
+        api_client.add_operation_log(f"未找到转丢失: {user['borrower_name']}", device.name, operator=user['borrower_name'], source="user")
     
     
     return jsonify({'success': True, 'message': '操作成功'})
@@ -3615,7 +3884,7 @@ def api_not_found_direct():
     device.borrower = ''  # 清空借用人，设备不在任何人名下
     device.phone = ''
     
-    api_client.update_device(device)
+    api_client.update_device(device, source="user")
     
     # 添加记录
     record = Record(
@@ -3632,7 +3901,7 @@ def api_not_found_direct():
         entry_source=EntrySource.USER.value
     )
     api_client._db.save_record(record)
-    api_client.add_operation_log(f"未找到标记丢失 {user['borrower_name']}", device.name)
+    api_client.add_operation_log(f"未找到标记丢失 {user['borrower_name']}", device.name, operator=user['borrower_name'], source="user")
     
     
     return jsonify({'success': True, 'message': '已标记为丢失'})
@@ -3686,7 +3955,7 @@ def api_transfer_custodian():
     # 转让保管人（修改 cabinet_number）
     device.cabinet_number = target_user.borrower_name
     
-    api_client.update_device(device)
+    api_client.update_device(device, source="user")
     
     # 添加记录
     record = Record(
@@ -3702,7 +3971,7 @@ def api_transfer_custodian():
         entry_source=EntrySource.USER.value
     )
     api_client._db.save_record(record)
-    api_client.add_operation_log(f"转让保管人 {original_custodian} -> {new_custodian}", device.name)
+    api_client.add_operation_log(f"转让保管人 {original_custodian} -> {new_custodian}", device.name, operator=user['borrower_name'], source="user")
     
     
     # 发送通知给新保管人
@@ -3800,7 +4069,7 @@ def api_renew():
     # 更新设备的预计归还日期
     device.expected_return_date = new_expected_return_date
     
-    api_client.update_device(device)
+    api_client.update_device(device, source="user")
     
     # 添加记录
     record = Record(
@@ -3817,7 +4086,7 @@ def api_renew():
         entry_source=EntrySource.USER.value
     )
     api_client._db.save_record(record)
-    api_client.add_operation_log(f"续借设备 {user['borrower_name']}, {days if new_expected_return_date else '长期'}天", device.name)
+    api_client.add_operation_log(f"续借设备 {user['borrower_name']}, {days if new_expected_return_date else '长期'}天", device.name, operator=user['borrower_name'], source="user")
     
     
     # 通知保管人（如果存在且不是借用人自己）
@@ -4562,7 +4831,6 @@ def api_create_bounty():
             entry_source=EntrySource.USER.value
         )
         result = api_client._db.save_record(record)
-        print(f"[DEBUG] 发布悬赏记录保存结果: {result}, device_id: {device.id}, record_id: {record.id}")
 
         # 添加操作日志
         api_client._db.add_operation_log(
@@ -4695,7 +4963,6 @@ def api_confirm_bounty(bounty_id):
                     entry_source=EntrySource.USER.value
                 )
                 result = api_client._db.save_record(record)
-                print(f"[DEBUG] 悬赏完成记录保存结果: {result}, record: {record}")
 
                 # 添加操作日志
                 api_client._db.add_operation_log(
@@ -4776,7 +5043,6 @@ def api_cancel_bounty(bounty_id):
     # 如果关联了设备，添加取消记录
     if bounty.device_id:
         device = api_client._db.get_device_by_id(bounty.device_id)
-        print(f"[DEBUG] 取消悬赏 - bounty.device_id: {bounty.device_id}, device: {device}")
         if device:
             # 添加设备借用记录
             from common.models import Record, OperationType
@@ -4793,7 +5059,6 @@ def api_cancel_bounty(bounty_id):
                 entry_source=EntrySource.USER.value
             )
             result = api_client._db.save_record(record)
-            print(f"[DEBUG] 取消悬赏记录保存结果: {result}, record: {record}")
 
             # 添加操作日志
             api_client._db.add_operation_log(
@@ -4801,10 +5066,6 @@ def api_cancel_bounty(bounty_id):
                 device_name=device.name,
                 operator=user['borrower_name']
             )
-        else:
-            print(f"[DEBUG] 取消悬赏 - 设备不存在: {bounty.device_id}")
-    else:
-        print(f"[DEBUG] 取消悬赏 - bounty.device_id 为空")
 
     # 删除悬赏
     api_client._db.delete_bounty(bounty_id)
@@ -5467,7 +5728,7 @@ def api_transfer():
     device.entry_source = EntrySource.USER.value
     device.expected_return_date = datetime.now() + timedelta(days=1)  # 转借后预计归还时间刷新为当前时间+1天
     
-    api_client.update_device(device)
+    api_client.update_device(device, source="user")
     
     # 添加记录
     record = Record(
@@ -5492,7 +5753,7 @@ def api_transfer():
             api_client._db.save_user(u)
             break
     
-    api_client.add_operation_log(f"转借设备 {original_borrower or '保管人'} -> {transfer_to}", device.name)
+    api_client.add_operation_log(f"转借设备 {original_borrower or '保管人'} -> {transfer_to}", device.name, operator=user['borrower_name'], source="user")
     
     # 通知转借对象
     api_client.add_notification(
@@ -6090,7 +6351,7 @@ def api_wheel_hidden_titles():
 if __name__ == '__main__':
     print(f"用户服务启动在端口 {USER_SERVICE_PORT}")
     try:
-        app.run(debug=True, host='0.0.0.0', port=USER_SERVICE_PORT)
+        app.run(debug=False, host='0.0.0.0', port=USER_SERVICE_PORT)
     finally:
         # 关闭定时任务
         if scheduler:

@@ -108,6 +108,30 @@
                     <span class="info-value">{{ device.screen_resolution }}</span>
                 </div>
                 {% endif %}
+                <div class="info-row">
+                    <span class="info-label">SN码</span>
+                    <span class="info-value">{{ device.sn|nan_to_default }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">IMEI</span>
+                    <span class="info-value">{{ device.imei|nan_to_default }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">系统版本</span>
+                    <span class="info-value">{{ device.system_version|nan_to_default }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">运营商</span>
+                    <span class="info-value">{{ device.carrier|nan_to_default }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">固定资产编号</span>
+                    <span class="info-value">{{ device.asset_number|nan_to_default }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">购买金额(元)</span>
+                    <span class="info-value">{{ device.purchase_amount|nan_to_default }}</span>
+                </div>
                 {% if device.status.value == '丢失' %}
                 <div class="info-row" style="color: #ff4d4f;">
                     <span class="info-label">丢失时间</span>
