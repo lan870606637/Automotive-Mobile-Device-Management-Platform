@@ -25,13 +25,7 @@ USER_SERVICE_PORT = 5000
 ADMIN_SERVICE_PORT = 5001
 MOBILE_SERVICE_PORT = 5002
 
-# 数据库配置
-DB_TYPE = os.getenv('DB_TYPE', 'sqlite')  # sqlite 或 mysql
-
-# SQLite配置
-SQLITE_DB_PATH = os.path.join(BASE_DIR, 'device_management.db')
-
-# MySQL配置
+# 数据库配置（仅支持MySQL）
 MYSQL_HOST = os.getenv('MYSQL_HOST', 'localhost')
 MYSQL_PORT = int(os.getenv('MYSQL_PORT', '3306'))
 MYSQL_USER = os.getenv('MYSQL_USER', 'root')
@@ -39,10 +33,7 @@ MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD', '')
 MYSQL_DATABASE = os.getenv('MYSQL_DATABASE', 'device_management')
 
 # 数据库连接URL
-if DB_TYPE == 'mysql':
-    SQLALCHEMY_DATABASE_URI = f'mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DATABASE}?charset=utf8mb4'
-else:
-    SQLALCHEMY_DATABASE_URI = f'sqlite:///{SQLITE_DB_PATH}'
+SQLALCHEMY_DATABASE_URI = f'mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DATABASE}?charset=utf8mb4'
 
 # Excel 文件路径
 EXCEL_FILES = {

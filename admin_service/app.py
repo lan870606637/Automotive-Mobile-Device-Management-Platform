@@ -1807,7 +1807,7 @@ def api_device_detail(device_id):
 def api_permanent_delete_device(device_id):
     """物理删除设备API - 彻底从数据库删除"""
     try:
-        from common.db_store import get_db_transaction, IS_MYSQL
+        from common.db_store import get_db_transaction
         from common.models import ReservationStatus
         
         with get_db_transaction() as conn:
@@ -1815,8 +1815,7 @@ def api_permanent_delete_device(device_id):
             
             # 先查询设备信息用于日志
             cursor.execute(
-                "SELECT name, device_type FROM devices WHERE id = %s" if hasattr(cursor, 'executemany') else 
-                "SELECT name, device_type FROM devices WHERE id = ?",
+                "SELECT name, device_type FROM devices WHERE id = %s",
                 (device_id,)
             )
             row = cursor.fetchone()
@@ -1824,20 +1823,18 @@ def api_permanent_delete_device(device_id):
             if not row:
                 return jsonify({'success': False, 'message': '设备不存在'})
             
-            device_name = row[0] if not isinstance(row, dict) else row['name']
-            device_type = row[1] if not isinstance(row, dict) else row['device_type']
+            device_name = row['name']
+            device_type = row['device_type']
             
             # 先删除关联的预约记录
             cursor.execute(
-                "DELETE FROM reservations WHERE device_id = %s AND device_type = %s" if IS_MYSQL else 
-                "DELETE FROM reservations WHERE device_id = ? AND device_type = ?",
+                "DELETE FROM reservations WHERE device_id = %s AND device_type = %s",
                 (device_id, device_type)
             )
             
             # 物理删除设备
             cursor.execute(
-                "DELETE FROM devices WHERE id = %s" if hasattr(cursor, 'executemany') else 
-                "DELETE FROM devices WHERE id = ?",
+                "DELETE FROM devices WHERE id = %s",
                 (device_id,)
             )
             

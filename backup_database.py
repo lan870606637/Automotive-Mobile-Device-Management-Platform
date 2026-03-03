@@ -17,8 +17,7 @@ from common import config
 def backup_database():
     """备份数据库"""
     # 获取数据库配置
-    db_type = config.DB_TYPE
-    db_name = config.MYSQL_DATABASE if db_type == 'mysql' else 'device_management'
+    db_name = config.MYSQL_DATABASE
     
     # 创建备份目录
     backup_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database_backup')
@@ -31,37 +30,9 @@ def backup_database():
     print("=" * 60)
     print("💾 数据库备份")
     print("=" * 60)
-    print(f"\n数据库类型: {db_type}")
+    print(f"\n数据库类型: MySQL")
     print(f"数据库名: {db_name}")
     print(f"备份文件: {backup_file}")
-    
-    if db_type != 'mysql':
-        print("\n⚠️ 当前使用的是 SQLite 数据库")
-        print("SQLite 数据库文件直接复制即可备份")
-        
-        # 复制 SQLite 文件
-        sqlite_file = config.SQLITE_DB_PATH
-        if os.path.exists(sqlite_file):
-            backup_sqlite = os.path.join(backup_dir, f'{db_name}_{timestamp}.db')
-            import shutil
-            shutil.copy2(sqlite_file, backup_sqlite)
-            
-            file_size = os.path.getsize(backup_sqlite)
-            file_size_mb = file_size / (1024 * 1024)
-            
-            print(f"\n✅ 备份成功！")
-            print(f"   文件大小: {file_size_mb:.2f} MB")
-            print(f"   保存位置: {backup_sqlite}")
-            
-            # 同时更新最新备份
-            latest_backup = os.path.join(backup_dir, f'{db_name}.db')
-            shutil.copy2(sqlite_file, latest_backup)
-            print(f"   最新备份: {latest_backup}")
-        else:
-            print(f"\n❌ SQLite 文件不存在: {sqlite_file}")
-        
-        print("\n" + "=" * 60)
-        return
     
     try:
         # 使用 mysqldump 备份

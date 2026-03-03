@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 """
 数据库操作模块
-支持SQLite和MySQL两种数据库
+仅支持MySQL数据库
 """
 import os
-import sqlite3
 import threading
 import uuid
 from datetime import datetime
@@ -15,40 +14,57 @@ from .models import Device, CarMachine, Instrument, Phone, SimCard, OtherDevice,
 from .models import DeviceStatus, DeviceType, OperationType, ReservationStatus, PointsTransactionType, BountyStatus, ShopItemType, ShopItemSource
 
 # 导入配置
-from .config import DB_TYPE, SQLITE_DB_PATH, MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE
+from .config import MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE
 
 # 全局线程锁，用于写操作同步
 db_write_lock = threading.Lock()
 
-# 数据库类型标志
-IS_MYSQL = (DB_TYPE == 'mysql')
+# 导入pymysql
+import pymysql
+from pymysql.cursors import DictCursor
+# 让pymysql兼容MySQLdb接口
+pymysql.install_as_MySQLdb()
 
-# 如果是MySQL，导入pymysql
-if IS_MYSQL:
-    import pymysql
-    from pymysql.cursors import DictCursor
-    # 让pymysql兼容MySQLdb接口
-    pymysql.install_as_MySQLdb()
+# 使用简单的连接缓存（pymysql没有内置连接池）
+_connection_cache = {}
+
+def get_mysql_connection():
+    """获取MySQL连接（带简单缓存）"""
+    import threading
+    tid = threading.current_thread().ident
     
-    # 使用简单的连接缓存（pymysql没有内置连接池）
-    _connection_cache = {}
+    if tid in _connection_cache:
+        conn = _connection_cache[tid]
+        try:
+            # 测试连接是否有效
+            conn.ping(reconnect=True)
+            return conn
+        except:
+            # 连接已失效，创建新连接
+            pass
     
-    def get_mysql_connection():
-        """获取MySQL连接（带简单缓存）"""
-        import threading
-        tid = threading.current_thread().ident
-        
-        if tid in _connection_cache:
-            conn = _connection_cache[tid]
-            try:
-                # 测试连接是否有效
-                conn.ping(reconnect=True)
-                return conn
-            except:
-                # 连接已失效，创建新连接
-                pass
-        
-        # 创建新连接
+    # 创建新连接
+    conn = pymysql.connect(
+        host=MYSQL_HOST,
+        port=MYSQL_PORT,
+        user=MYSQL_USER,
+        password=MYSQL_PASSWORD,
+        database=MYSQL_DATABASE,
+        charset='utf8mb4',
+        cursorclass=DictCursor,
+        autocommit=False,
+        use_unicode=True
+    )
+    _connection_cache[tid] = conn
+    return conn
+
+
+@contextmanager
+def get_db_connection():
+    """获取数据库连接的上下文管理器"""
+    conn = None
+    try:
+        # MySQL: 创建新连接，不缓存
         conn = pymysql.connect(
             host=MYSQL_HOST,
             port=MYSQL_PORT,
@@ -60,36 +76,6 @@ if IS_MYSQL:
             autocommit=False,
             use_unicode=True
         )
-        _connection_cache[tid] = conn
-        return conn
-
-
-@contextmanager
-def get_db_connection():
-    """获取数据库连接的上下文管理器"""
-    conn = None
-    try:
-        if IS_MYSQL:
-            # MySQL: 创建新连接，不缓存
-            conn = pymysql.connect(
-                host=MYSQL_HOST,
-                port=MYSQL_PORT,
-                user=MYSQL_USER,
-                password=MYSQL_PASSWORD,
-                database=MYSQL_DATABASE,
-                charset='utf8mb4',
-                cursorclass=DictCursor,
-                autocommit=False,
-                use_unicode=True
-            )
-        else:
-            conn = sqlite3.connect(SQLITE_DB_PATH, timeout=30.0, check_same_thread=False)
-            conn.row_factory = sqlite3.Row
-            # 启用WAL模式，提高并发性能
-            conn.execute('PRAGMA journal_mode=WAL')
-            conn.execute('PRAGMA synchronous=NORMAL')
-            conn.execute('PRAGMA cache_size=10000')
-            conn.execute('PRAGMA temp_store=MEMORY')
         
         yield conn
     finally:
@@ -101,34 +87,20 @@ def get_db_connection():
 def get_db_transaction():
     """获取数据库事务上下文管理器（带锁保护）"""
     with db_write_lock:
-        if IS_MYSQL:
-            # 使用连接缓存
-            conn = get_mysql_connection()
-        else:
-            conn = sqlite3.connect(SQLITE_DB_PATH, timeout=30.0, check_same_thread=False)
-            conn.row_factory = sqlite3.Row
-            conn.execute('PRAGMA journal_mode=WAL')
-            conn.execute('PRAGMA synchronous=NORMAL')
+        # 使用连接缓存
+        conn = get_mysql_connection()
         
         try:
-            if not IS_MYSQL:
-                conn.execute('BEGIN EXCLUSIVE')
             yield conn
             conn.commit()
         except Exception as e:
             conn.rollback()
             raise e
-        finally:
-            if not IS_MYSQL:
-                conn.close()
 
 
 def row_to_dict(row) -> Dict[str, Any]:
     """将数据库行转换为字典"""
-    if IS_MYSQL:
-        return row
-    else:
-        return {key: row[key] for key in row.keys()}
+    return row
 
 
 def safe_str(val):
@@ -177,164 +149,42 @@ def escape_percent(val):
 
 def init_database():
     """初始化数据库，创建必要的表（MySQL下不需要，表已预先创建）"""
-    if IS_MYSQL:
-        # MySQL表已经通过init_mysql.py创建
-        # 检查并添加 borrower_id 列（如果不存在）
-        _migrate_mysql_add_borrower_id()
-        # 检查并添加 avatar 列（如果不存在）
-        _migrate_mysql_add_avatar()
-        # 检查并添加 signature 列（如果不存在）
-        _migrate_mysql_add_signature()
-        # 检查并添加 phone 列（如果不存在）
-        _migrate_mysql_add_phone()
-        # 检查并添加 asset_number 和 purchase_amount 列（如果不存在）
-        _migrate_mysql_add_asset_fields()
-        # 检查并添加 custodian_id 列（如果不存在）
-        _migrate_mysql_add_custodian_id()
-        # 检查并添加 previous_status 列（如果不存在）
-        _migrate_mysql_add_previous_status()
-        # 创建 reservations 表
-        _migrate_mysql_create_reservations()
-        # 创建邮件发送记录表
-        _migrate_mysql_create_email_logs()
-        # 创建积分相关表
-        _migrate_mysql_create_points_tables()
-        # 创建悬赏表
-        _migrate_mysql_create_bounties_table()
-        # 创建积分商城相关表
-        _migrate_mysql_create_shop_tables()
-        # 添加用户装扮字段
-        _migrate_mysql_add_user_equip_fields()
-        # 添加用户鼠标皮肤字段
-        _migrate_mysql_add_user_cursor_field()
-        # 创建每日转盘相关表
-        _migrate_mysql_create_wheel_tables()
-        # 检查并添加 operation_logs 表的 source 列
-        _migrate_mysql_add_operation_log_source()
-        # 创建后台管理操作日志表
-        _migrate_mysql_create_admin_operation_logs_table()
-        return
+    # MySQL表已经通过init_mysql.py创建
+    # 检查并添加 borrower_id 列（如果不存在）
+    _migrate_mysql_add_borrower_id()
+    # 检查并添加 avatar 列（如果不存在）
+    _migrate_mysql_add_avatar()
+    # 检查并添加 signature 列（如果不存在）
+    _migrate_mysql_add_signature()
+    # 检查并添加 phone 列（如果不存在）
+    _migrate_mysql_add_phone()
+    # 检查并添加 asset_number 和 purchase_amount 列（如果不存在）
+    _migrate_mysql_add_asset_fields()
+    # 检查并添加 custodian_id 列（如果不存在）
+    _migrate_mysql_add_custodian_id()
+    # 检查并添加 previous_status 列（如果不存在）
+    _migrate_mysql_add_previous_status()
+    # 创建 reservations 表
+    _migrate_mysql_create_reservations()
+    # 创建邮件发送记录表
+    _migrate_mysql_create_email_logs()
+    # 创建积分相关表
+    _migrate_mysql_create_points_tables()
+    # 创建悬赏表
+    _migrate_mysql_create_bounties_table()
+    # 创建积分商城相关表
+    _migrate_mysql_create_shop_tables()
+    # 添加用户装扮字段
+    _migrate_mysql_add_user_equip_fields()
+    # 添加用户鼠标皮肤字段
+    _migrate_mysql_add_user_cursor_field()
+    # 创建每日转盘相关表
+    _migrate_mysql_create_wheel_tables()
+    # 检查并添加 operation_logs 表的 source 列
+    _migrate_mysql_add_operation_log_source()
+    # 创建后台管理操作日志表
+    _migrate_mysql_create_admin_operation_logs_table()
 
-    # SQLite初始化逻辑...
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-
-        # 创建设备表
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS devices (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                device_type TEXT NOT NULL,
-                model TEXT,
-                cabinet_number TEXT,
-                status TEXT NOT NULL,
-                remark TEXT,
-                jira_address TEXT,
-                is_deleted INTEGER DEFAULT 0,
-                create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                borrower TEXT,
-                borrower_id TEXT,
-                custodian_id TEXT,
-                phone TEXT,
-                borrow_time TIMESTAMP,
-                location TEXT,
-                reason TEXT,
-                entry_source TEXT,
-                expected_return_date TIMESTAMP,
-                admin_operator TEXT,
-                ship_time TIMESTAMP,
-                ship_remark TEXT,
-                ship_by TEXT,
-                pre_ship_borrower TEXT,
-                pre_ship_borrow_time TIMESTAMP,
-                pre_ship_expected_return_date TIMESTAMP,
-                lost_time TIMESTAMP,
-                damage_reason TEXT,
-                damage_time TIMESTAMP,
-                previous_borrower TEXT,
-                previous_status TEXT,
-                sn TEXT,
-                system_version TEXT,
-                imei TEXT,
-                carrier TEXT,
-                software_version TEXT,
-                hardware_version TEXT,
-                project_attribute TEXT,
-                connection_method TEXT,
-                os_version TEXT,
-                os_platform TEXT,
-                product_name TEXT,
-                screen_orientation TEXT,
-                screen_resolution TEXT,
-                asset_number TEXT,
-                purchase_amount REAL DEFAULT 0
-            )
-        ''')
-
-        # 检查并添加 borrower_id 列（如果表已存在但缺少该列）
-        _migrate_sqlite_add_borrower_id(cursor)
-
-        # 检查并添加 avatar 列到 users 表（如果表已存在但缺少该列）
-        _migrate_sqlite_add_avatar(cursor)
-
-        # 检查并添加 signature 列到 users 表（如果表已存在但缺少该列）
-        _migrate_sqlite_add_signature(cursor)
-
-        # 检查并添加 phone 列到 users 表（如果表已存在但缺少该列）
-        _migrate_sqlite_add_phone(cursor)
-
-        # 检查并添加 asset_number 和 purchase_amount 列
-        _migrate_sqlite_add_asset_fields(cursor)
-
-        # 检查并添加 custodian_id 列
-        _migrate_sqlite_add_custodian_id(cursor)
-
-        # 检查并添加 previous_status 列
-        _migrate_sqlite_add_previous_status(cursor)
-
-        # 创建 reservations 表
-        _migrate_sqlite_create_reservations(cursor)
-
-        # 创建邮件发送记录表
-        _migrate_sqlite_create_email_logs(cursor)
-
-        # 创建积分相关表
-        _migrate_sqlite_create_points_tables(cursor)
-
-        # 创建悬赏表
-        _migrate_sqlite_create_bounties_table(cursor)
-        
-        # 创建积分商城相关表
-        _migrate_sqlite_create_shop_tables(cursor)
-        
-        # 添加用户装扮字段
-        _migrate_sqlite_add_user_equip_fields(cursor)
-        
-        # 添加用户鼠标皮肤字段
-        _migrate_sqlite_add_user_cursor_field(cursor)
-        
-        # 创建每日转盘相关表
-        _migrate_sqlite_create_wheel_tables(cursor)
-        
-        # 检查并添加 operation_logs 表的 source 列
-        _migrate_sqlite_add_operation_log_source(cursor)
-        
-        # 创建后台管理操作日志表
-        _migrate_sqlite_create_admin_operation_logs_table(cursor)
-
-        # 创建其他表...
-        # (省略其他表的创建代码，保持原有逻辑)
-
-        conn.commit()
-
-def _migrate_sqlite_add_borrower_id(cursor):
-    """SQLite: 检查并添加 borrower_id 列"""
-    try:
-        cursor.execute("SELECT borrower_id FROM devices LIMIT 1")
-    except sqlite3.OperationalError:
-        # 列不存在，添加它
-        cursor.execute("ALTER TABLE devices ADD COLUMN borrower_id TEXT")
-        print("✓ SQLite: 已添加 borrower_id 列到 devices 表")
 
 def _migrate_mysql_add_borrower_id():
     """MySQL: 检查并添加 borrower_id 列"""
@@ -350,16 +200,6 @@ def _migrate_mysql_add_borrower_id():
                 print("✓ MySQL: 已添加 borrower_id 列到 devices 表")
     except Exception as e:
         print(f"⚠ MySQL 迁移警告: {e}")
-
-
-def _migrate_sqlite_add_avatar(cursor):
-    """SQLite: 检查并添加 avatar 列到 users 表"""
-    try:
-        cursor.execute("SELECT avatar FROM users LIMIT 1")
-    except sqlite3.OperationalError:
-        # 列不存在，添加它
-        cursor.execute("ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT ''")
-        print("✓ SQLite: 已添加 avatar 列到 users 表")
 
 
 def _migrate_mysql_add_avatar():
@@ -378,16 +218,6 @@ def _migrate_mysql_add_avatar():
         print(f"⚠ MySQL avatar 迁移警告: {e}")
 
 
-def _migrate_sqlite_add_signature(cursor):
-    """SQLite: 检查并添加 signature 列到 users 表"""
-    try:
-        cursor.execute("SELECT signature FROM users LIMIT 1")
-    except sqlite3.OperationalError:
-        # 列不存在，添加它
-        cursor.execute("ALTER TABLE users ADD COLUMN signature TEXT DEFAULT ''")
-        print("✓ SQLite: 已添加 signature 列到 users 表")
-
-
 def _migrate_mysql_add_signature():
     """MySQL: 检查并添加 signature 列到 users 表"""
     try:
@@ -404,16 +234,6 @@ def _migrate_mysql_add_signature():
         print(f"⚠ MySQL signature 迁移警告: {e}")
 
 
-def _migrate_sqlite_add_phone(cursor):
-    """SQLite: 检查并添加 phone 列到 users 表"""
-    try:
-        cursor.execute("SELECT phone FROM users LIMIT 1")
-    except sqlite3.OperationalError:
-        # 列不存在，添加它
-        cursor.execute("ALTER TABLE users ADD COLUMN phone TEXT DEFAULT ''")
-        print("✓ SQLite: 已添加 phone 列到 users 表")
-
-
 def _migrate_mysql_add_phone():
     """MySQL: 检查并添加 phone 列到 users 表"""
     try:
@@ -428,23 +248,6 @@ def _migrate_mysql_add_phone():
                 print("✓ MySQL: 已添加 phone 列到 users 表")
     except Exception as e:
         print(f"⚠ MySQL phone 迁移警告: {e}")
-
-
-def _migrate_sqlite_add_asset_fields(cursor):
-    """SQLite: 检查并添加 asset_number 和 purchase_amount 列到 devices 表"""
-    try:
-        cursor.execute("SELECT asset_number FROM devices LIMIT 1")
-    except sqlite3.OperationalError:
-        # 列不存在，添加它
-        cursor.execute("ALTER TABLE devices ADD COLUMN asset_number TEXT")
-        print("✓ SQLite: 已添加 asset_number 列到 devices 表")
-
-    try:
-        cursor.execute("SELECT purchase_amount FROM devices LIMIT 1")
-    except sqlite3.OperationalError:
-        # 列不存在，添加它
-        cursor.execute("ALTER TABLE devices ADD COLUMN purchase_amount REAL DEFAULT 0")
-        print("✓ SQLite: 已添加 purchase_amount 列到 devices 表")
 
 
 def _migrate_mysql_add_asset_fields():
@@ -471,16 +274,6 @@ def _migrate_mysql_add_asset_fields():
         print(f"⚠ MySQL asset fields 迁移警告: {e}")
 
 
-def _migrate_sqlite_add_custodian_id(cursor):
-    """SQLite: 检查并添加 custodian_id 列到 devices 表"""
-    try:
-        cursor.execute("SELECT custodian_id FROM devices LIMIT 1")
-    except sqlite3.OperationalError:
-        # 列不存在，添加它
-        cursor.execute("ALTER TABLE devices ADD COLUMN custodian_id TEXT")
-        print("✓ SQLite: 已添加 custodian_id 列到 devices 表")
-
-
 def _migrate_mysql_add_custodian_id():
     """MySQL: 检查并添加 custodian_id 列到 devices 表"""
     try:
@@ -497,16 +290,6 @@ def _migrate_mysql_add_custodian_id():
         print(f"⚠ MySQL custodian_id 迁移警告: {e}")
 
 
-def _migrate_sqlite_add_previous_status(cursor):
-    """SQLite: 检查并添加 previous_status 列到 devices 表"""
-    try:
-        cursor.execute("SELECT previous_status FROM devices LIMIT 1")
-    except sqlite3.OperationalError:
-        # 列不存在，添加它
-        cursor.execute("ALTER TABLE devices ADD COLUMN previous_status TEXT")
-        print("✓ SQLite: 已添加 previous_status 列到 devices 表")
-
-
 def _migrate_mysql_add_previous_status():
     """MySQL: 检查并添加 previous_status 列到 devices 表"""
     try:
@@ -521,49 +304,6 @@ def _migrate_mysql_add_previous_status():
                 print("✓ MySQL: 已添加 previous_status 列到 devices 表")
     except Exception as e:
         print(f"⚠ MySQL previous_status 迁移警告: {e}")
-
-
-def _migrate_sqlite_create_reservations(cursor):
-    """SQLite: 创建 reservations 表"""
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS reservations (
-            id TEXT PRIMARY KEY,
-            device_id TEXT NOT NULL,
-            device_type TEXT NOT NULL,
-            device_name TEXT NOT NULL,
-            reserver_id TEXT NOT NULL,
-            reserver_name TEXT NOT NULL,
-            start_time TIMESTAMP NOT NULL,
-            end_time TIMESTAMP NOT NULL,
-            status TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            custodian_approved INTEGER DEFAULT 0,
-            custodian_approved_at TIMESTAMP,
-            borrower_approved INTEGER DEFAULT 0,
-            borrower_approved_at TIMESTAMP,
-            custodian_notified INTEGER DEFAULT 0,
-            borrower_notified INTEGER DEFAULT 0,
-            cancelled_by TEXT,
-            cancelled_at TIMESTAMP,
-            cancel_reason TEXT,
-            rejected_by TEXT,
-            rejected_at TIMESTAMP,
-            converted_to_borrow INTEGER DEFAULT 0,
-            converted_at TIMESTAMP,
-            custodian_id TEXT,
-            current_borrower_id TEXT,
-            current_borrower_name TEXT,
-            reason TEXT
-        )
-    ''')
-    
-    # 创建索引
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_reservations_device ON reservations(device_id, device_type)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_reservations_reserver ON reservations(reserver_id)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_reservations_status ON reservations(status)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_reservations_time ON reservations(start_time, end_time)')
-    print("✓ SQLite: 已创建 reservations 表")
 
 
 def _migrate_mysql_create_reservations():
@@ -613,27 +353,6 @@ def _migrate_mysql_create_reservations():
         print(f"⚠ MySQL reservations 表迁移警告: {e}")
 
 
-def _migrate_sqlite_create_email_logs(cursor):
-    """SQLite: 创建邮件发送记录表"""
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS email_logs (
-            id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            user_email TEXT NOT NULL,
-            email_type TEXT NOT NULL,
-            related_id TEXT,
-            related_type TEXT,
-            sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            status TEXT DEFAULT 'sent',
-            content TEXT
-        )
-    ''')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_email_logs_user ON email_logs(user_id)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_email_logs_type ON email_logs(email_type)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_email_logs_sent_at ON email_logs(sent_at)')
-    print("✓ SQLite: 已创建 email_logs 表")
-
-
 def _migrate_mysql_create_email_logs():
     """MySQL: 创建邮件发送记录表"""
     try:
@@ -680,8 +399,7 @@ class DatabaseStore:
             
             if device_type:
                 cursor.execute(
-                    "SELECT * FROM devices WHERE device_type = %s AND is_deleted = 0" if IS_MYSQL else 
-                    "SELECT * FROM devices WHERE device_type = ? AND is_deleted = 0",
+                    "SELECT * FROM devices WHERE device_type = %s AND is_deleted = 0",
                     (device_type,)
                 )
             else:
@@ -695,8 +413,7 @@ class DatabaseStore:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT * FROM devices WHERE id = %s AND is_deleted = 0" if IS_MYSQL else
-                "SELECT * FROM devices WHERE id = ? AND is_deleted = 0",
+                "SELECT * FROM devices WHERE id = %s AND is_deleted = 0",
                 (device_id,)
             )
             row = cursor.fetchone()
@@ -712,8 +429,7 @@ class DatabaseStore:
 
             # 检查设备是否存在
             cursor.execute(
-                "SELECT id FROM devices WHERE id = %s" if IS_MYSQL else
-                "SELECT id FROM devices WHERE id = ?",
+                "SELECT id FROM devices WHERE id = %s",
                 (device.id,)
             )
             exists = cursor.fetchone()
@@ -736,22 +452,6 @@ class DatabaseStore:
                     screen_orientation = %s, screen_resolution = %s,
                     asset_number = %s, purchase_amount = %s, is_deleted = %s
                     WHERE id = %s
-                """ if IS_MYSQL else """UPDATE devices SET
-                    name = ?, device_type = ?, model = ?, cabinet_number = ?,
-                    status = ?, remark = ?, jira_address = ?, borrower = ?,
-                    borrower_id = ?, custodian_id = ?, phone = ?, borrow_time = ?, location = ?, reason = ?,
-                    entry_source = ?, expected_return_date = ?, admin_operator = ?,
-                    ship_time = ?, ship_remark = ?, ship_by = ?,
-                    pre_ship_borrower = ?, pre_ship_borrow_time = ?,
-                    pre_ship_expected_return_date = ?, lost_time = ?,
-                    damage_reason = ?, damage_time = ?, previous_borrower = ?, previous_status = ?,
-                    sn = ?, system_version = ?, imei = ?, carrier = ?,
-                    software_version = ?, hardware_version = ?,
-                    project_attribute = ?, connection_method = ?,
-                    os_version = ?, os_platform = ?, product_name = ?,
-                    screen_orientation = ?, screen_resolution = ?,
-                    asset_number = ?, purchase_amount = ?, is_deleted = ?
-                    WHERE id = ?
                 """
 
                 params = (
@@ -817,19 +517,6 @@ class DatabaseStore:
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """ if IS_MYSQL else """INSERT INTO devices (
-                    id, name, device_type, model, cabinet_number, status, remark,
-                    jira_address, borrower, borrower_id, custodian_id, phone, borrow_time, location, reason,
-                    entry_source, expected_return_date, admin_operator, ship_time,
-                    ship_remark, ship_by, pre_ship_borrower, pre_ship_borrow_time,
-                    pre_ship_expected_return_date, lost_time, damage_reason,
-                    damage_time, previous_borrower, previous_status, sn, system_version, imei,
-                    carrier, software_version, hardware_version, project_attribute,
-                    connection_method, os_version, os_platform, product_name,
-                    screen_orientation, screen_resolution, asset_number, purchase_amount, is_deleted
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
 
                 params = (
@@ -886,7 +573,6 @@ class DatabaseStore:
                 print(f"[DEBUG] save_device - device.remark: {device.remark}")
                 print(f"[DEBUG] save_device - device.model: {device.model}")
                 print(f"[DEBUG] save_device - params count: {len(params)}")
-                print(f"[DEBUG] save_device - IS_MYSQL: {IS_MYSQL}")
 
                 try:
                     cursor.execute(sql, params)
@@ -902,8 +588,7 @@ class DatabaseStore:
         with get_db_transaction() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "UPDATE devices SET is_deleted = 1 WHERE id = %s" if IS_MYSQL else
-                "UPDATE devices SET is_deleted = 1 WHERE id = ?",
+                "UPDATE devices SET is_deleted = 1 WHERE id = %s",
                 (device_id,)
             )
             return True
@@ -923,8 +608,7 @@ class DatabaseStore:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT * FROM users WHERE id = %s AND is_deleted = 0" if IS_MYSQL else
-                "SELECT * FROM users WHERE id = ? AND is_deleted = 0",
+                "SELECT * FROM users WHERE id = %s AND is_deleted = 0",
                 (user_id,)
             )
             row = cursor.fetchone()
@@ -937,8 +621,7 @@ class DatabaseStore:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT * FROM users WHERE email = %s AND is_deleted = 0" if IS_MYSQL else
-                "SELECT * FROM users WHERE email = ? AND is_deleted = 0",
+                "SELECT * FROM users WHERE email = %s AND is_deleted = 0",
                 (email,)
             )
             row = cursor.fetchone()
@@ -952,8 +635,7 @@ class DatabaseStore:
             cursor = conn.cursor()
             
             cursor.execute(
-                "SELECT id FROM users WHERE id = %s" if IS_MYSQL else
-                "SELECT id FROM users WHERE id = ?",
+                "SELECT id FROM users WHERE id = %s",
                 (user.id,)
             )
             exists = cursor.fetchone()
@@ -964,11 +646,6 @@ class DatabaseStore:
                     borrow_count = %s, return_count = %s, is_frozen = %s, is_admin = %s, is_deleted = %s, is_first_login = %s,
                     current_title = %s, current_avatar_frame = %s, current_theme = %s, current_cursor = %s
                     WHERE id = %s
-                """ if IS_MYSQL else """UPDATE users SET
-                    email = ?, password = ?, borrower_name = ?, avatar = ?, signature = ?,
-                    borrow_count = ?, return_count = ?, is_frozen = ?, is_admin = ?, is_deleted = ?, is_first_login = ?,
-                    current_title = ?, current_avatar_frame = ?, current_theme = ?, current_cursor = ?
-                    WHERE id = ?
                 """
                 params = (
                     user.email, user.password, user.borrower_name, user.avatar, user.signature,
@@ -990,11 +667,6 @@ class DatabaseStore:
                     return_count, is_frozen, is_admin, is_deleted, is_first_login, create_time,
                     current_title, current_avatar_frame, current_theme, current_cursor
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, %s, CURRENT_TIMESTAMP, %s, %s, %s, %s)
-                """ if IS_MYSQL else """INSERT INTO users (
-                    id, email, password, borrower_name, avatar, signature, borrow_count,
-                    return_count, is_frozen, is_admin, is_deleted, is_first_login, create_time,
-                    current_title, current_avatar_frame, current_theme, current_cursor
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
                 """
                 params = (
                     user.id, user.email, user.password,
@@ -1019,8 +691,7 @@ class DatabaseStore:
             cursor = conn.cursor()
             if limit:
                 cursor.execute(
-                    "SELECT * FROM records ORDER BY operation_time DESC LIMIT %s" if IS_MYSQL else
-                    "SELECT * FROM records ORDER BY operation_time DESC LIMIT ?",
+                    "SELECT * FROM records ORDER BY operation_time DESC LIMIT %s",
                     (limit,)
                 )
             else:
@@ -1033,8 +704,7 @@ class DatabaseStore:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT * FROM records WHERE device_id = %s ORDER BY operation_time DESC" if IS_MYSQL else
-                "SELECT * FROM records WHERE device_id = ? ORDER BY operation_time DESC",
+                "SELECT * FROM records WHERE device_id = %s ORDER BY operation_time DESC",
                 (device_id,)
             )
             rows = cursor.fetchall()
@@ -1048,10 +718,6 @@ class DatabaseStore:
                 id, device_id, device_name, device_type, operation_type, operator,
                 operation_time, borrower, phone, reason, entry_source, remark
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """ if IS_MYSQL else """INSERT INTO records (
-                id, device_id, device_name, device_type, operation_type, operator,
-                operation_time, borrower, phone, reason, entry_source, remark
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             params = (
                 record.id, record.device_id, record.device_name, record.device_type,
@@ -1071,8 +737,7 @@ class DatabaseStore:
             cursor = conn.cursor()
             if device_id:
                 cursor.execute(
-                    "SELECT * FROM user_remarks WHERE device_id = %s ORDER BY create_time DESC" if IS_MYSQL else
-                    "SELECT * FROM user_remarks WHERE device_id = ? ORDER BY create_time DESC",
+                    "SELECT * FROM user_remarks WHERE device_id = %s ORDER BY create_time DESC",
                     (device_id,)
                 )
             else:
@@ -1095,9 +760,6 @@ class DatabaseStore:
             sql = """INSERT INTO user_remarks (
                 id, device_id, device_type, content, creator, create_time, is_inappropriate
             ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """ if IS_MYSQL else """INSERT INTO user_remarks (
-                id, device_id, device_type, content, creator, create_time, is_inappropriate
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """
             params = (
                 remark.id, remark.device_id, remark.device_type,
@@ -1114,8 +776,7 @@ class DatabaseStore:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT * FROM admins WHERE username = %s" if IS_MYSQL else
-                "SELECT * FROM admins WHERE username = ?",
+                "SELECT * FROM admins WHERE username = %s",
                 (username,)
             )
             row = cursor.fetchone()
@@ -1130,8 +791,7 @@ class DatabaseStore:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT * FROM notifications WHERE user_id = %s ORDER BY create_time DESC" if IS_MYSQL else
-                "SELECT * FROM notifications WHERE user_id = ? ORDER BY create_time DESC",
+                "SELECT * FROM notifications WHERE user_id = %s ORDER BY create_time DESC",
                 (user_id,)
             )
             rows = cursor.fetchall()
@@ -1145,10 +805,6 @@ class DatabaseStore:
                 id, user_id, user_name, title, content, device_name, device_id,
                 is_read, create_time, notification_type
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """ if IS_MYSQL else """INSERT INTO notifications (
-                id, user_id, user_name, title, content, device_name, device_id,
-                is_read, create_time, notification_type
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             params = (
                 notification.id, notification.user_id, notification.user_name,
@@ -1163,7 +819,7 @@ class DatabaseStore:
         """将通知标记为已读"""
         with get_db_transaction() as conn:
             cursor = conn.cursor()
-            sql = "UPDATE notifications SET is_read = 1 WHERE id = %s" if IS_MYSQL else "UPDATE notifications SET is_read = 1 WHERE id = ?"
+            sql = "UPDATE notifications SET is_read = 1 WHERE id = %s"
             params = (notification_id,)
             cursor.execute(sql, params)
             return True
@@ -1176,7 +832,6 @@ class DatabaseStore:
             cursor = conn.cursor()
             if active_only:
                 cursor.execute(
-                    "SELECT * FROM announcements WHERE is_active = 1 ORDER BY sort_order DESC, create_time DESC" if IS_MYSQL else
                     "SELECT * FROM announcements WHERE is_active = 1 ORDER BY sort_order DESC, create_time DESC"
                 )
             else:
@@ -1194,9 +849,6 @@ class DatabaseStore:
             sql = """INSERT INTO operation_logs (
                 id, operation_time, operator, operation_content, device_info, source
             ) VALUES (%s, CURRENT_TIMESTAMP, %s, %s, %s, %s)
-            """ if IS_MYSQL else """INSERT INTO operation_logs (
-                id, operation_time, operator, operation_content, device_info, source
-            ) VALUES (?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
             """
             params = (str(uuid.uuid4()), operator, operation, device_name, source)
             cursor.execute(sql, params)
@@ -1217,9 +869,6 @@ class DatabaseStore:
             sql = """INSERT INTO operation_logs (
                 id, operation_time, operator, operation_content, device_info, source
             ) VALUES (%s, %s, %s, %s, %s, %s)
-            """ if IS_MYSQL else """INSERT INTO operation_logs (
-                id, operation_time, operator, operation_content, device_info, source
-            ) VALUES (?, ?, ?, ?, ?, ?)
             """
             params = (
                 log.id,
@@ -1243,11 +892,6 @@ class DatabaseStore:
                 target_type, target_id, target_name, description, ip_address,
                 user_agent, request_method, request_path, request_params, result, error_message
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """ if IS_MYSQL else """INSERT INTO admin_operation_logs (
-                id, operation_time, admin_id, admin_name, action_type, action_name,
-                target_type, target_id, target_name, description, ip_address,
-                user_agent, request_method, request_path, request_params, result, error_message
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             params = (
                 log.id,
@@ -1284,22 +928,22 @@ class DatabaseStore:
             params = []
 
             if admin_id:
-                conditions.append("admin_id = %s" if IS_MYSQL else "admin_id = ?")
+                conditions.append("admin_id = %s")
                 params.append(admin_id)
             if action_type:
-                conditions.append("action_type = %s" if IS_MYSQL else "action_type = ?")
+                conditions.append("action_type = %s")
                 params.append(action_type)
             if target_type:
-                conditions.append("target_type = %s" if IS_MYSQL else "target_type = ?")
+                conditions.append("target_type = %s")
                 params.append(target_type)
             if result:
-                conditions.append("result = %s" if IS_MYSQL else "result = ?")
+                conditions.append("result = %s")
                 params.append(result)
             if start_time:
-                conditions.append("operation_time >= %s" if IS_MYSQL else "operation_time >= ?")
+                conditions.append("operation_time >= %s")
                 params.append(format_datetime(start_time))
             if end_time:
-                conditions.append("operation_time <= %s" if IS_MYSQL else "operation_time <= ?")
+                conditions.append("operation_time <= %s")
                 params.append(format_datetime(end_time))
 
             # 构建SQL
@@ -1310,11 +954,6 @@ class DatabaseStore:
                 {where_clause}
                 ORDER BY operation_time DESC
                 LIMIT %s OFFSET %s
-            """ if IS_MYSQL else f"""
-                SELECT * FROM admin_operation_logs
-                {where_clause}
-                ORDER BY operation_time DESC
-                LIMIT ? OFFSET ?
             """
             params.extend([limit, offset])
 
@@ -1334,22 +973,22 @@ class DatabaseStore:
             params = []
 
             if admin_id:
-                conditions.append("admin_id = %s" if IS_MYSQL else "admin_id = ?")
+                conditions.append("admin_id = %s")
                 params.append(admin_id)
             if action_type:
-                conditions.append("action_type = %s" if IS_MYSQL else "action_type = ?")
+                conditions.append("action_type = %s")
                 params.append(action_type)
             if target_type:
-                conditions.append("target_type = %s" if IS_MYSQL else "target_type = ?")
+                conditions.append("target_type = %s")
                 params.append(target_type)
             if result:
-                conditions.append("result = %s" if IS_MYSQL else "result = ?")
+                conditions.append("result = %s")
                 params.append(result)
             if start_time:
-                conditions.append("operation_time >= %s" if IS_MYSQL else "operation_time >= ?")
+                conditions.append("operation_time >= %s")
                 params.append(format_datetime(start_time))
             if end_time:
-                conditions.append("operation_time <= %s" if IS_MYSQL else "operation_time <= ?")
+                conditions.append("operation_time <= %s")
                 params.append(format_datetime(end_time))
 
             where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
@@ -1357,7 +996,7 @@ class DatabaseStore:
             sql = f"SELECT COUNT(*) as count FROM admin_operation_logs {where_clause}"
             cursor.execute(sql, tuple(params))
             row = cursor.fetchone()
-            return row['count'] if IS_MYSQL else row[0]
+            return row['count']
 
     def clear_admin_operation_logs(self, days: int = 90) -> int:
         """清理指定天数之前的后台管理操作日志"""
@@ -1369,9 +1008,6 @@ class DatabaseStore:
             sql = """
                 DELETE FROM admin_operation_logs
                 WHERE operation_time < %s
-            """ if IS_MYSQL else """
-                DELETE FROM admin_operation_logs
-                WHERE operation_time < ?
             """
             cursor.execute(sql, (format_datetime(cutoff_date),))
             return cursor.rowcount
@@ -1383,8 +1019,7 @@ class DatabaseStore:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT * FROM view_records WHERE device_id = %s ORDER BY view_time DESC LIMIT %s" if IS_MYSQL else
-                "SELECT * FROM view_records WHERE device_id = ? ORDER BY view_time DESC LIMIT ?",
+                "SELECT * FROM view_records WHERE device_id = %s ORDER BY view_time DESC LIMIT %s",
                 (device_id, limit)
             )
             rows = cursor.fetchall()
@@ -1398,9 +1033,6 @@ class DatabaseStore:
             sql = """INSERT INTO view_records (
                 id, device_id, device_type, viewer, view_time
             ) VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
-            """ if IS_MYSQL else """INSERT INTO view_records (
-                id, device_id, device_type, viewer, view_time
-            ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
             """
             params = (str(uuid.uuid4()), device_id, device_type, viewer)
             cursor.execute(sql, params)
@@ -1417,8 +1049,7 @@ class DatabaseStore:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT * FROM user_likes WHERE to_user_id = %s" if IS_MYSQL else
-                "SELECT * FROM user_likes WHERE to_user_id = ?",
+                "SELECT * FROM user_likes WHERE to_user_id = %s",
                 (user_id,)
             )
             rows = cursor.fetchall()
@@ -1429,8 +1060,7 @@ class DatabaseStore:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT * FROM user_likes WHERE from_user_id = %s" if IS_MYSQL else
-                "SELECT * FROM user_likes WHERE from_user_id = ?",
+                "SELECT * FROM user_likes WHERE from_user_id = %s",
                 (from_user_id,)
             )
             rows = cursor.fetchall()
@@ -1443,9 +1073,6 @@ class DatabaseStore:
             sql = """INSERT INTO user_likes (
                 id, from_user_id, to_user_id, create_date, create_time
             ) VALUES (%s, %s, %s, %s, %s)
-            """ if IS_MYSQL else """INSERT INTO user_likes (
-                id, from_user_id, to_user_id, create_date, create_time
-            ) VALUES (?, ?, ?, ?, ?)
             """
             params = (
                 like.id, like.from_user_id, like.to_user_id,
@@ -1461,8 +1088,7 @@ class DatabaseStore:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT * FROM reservations WHERE id = %s" if IS_MYSQL else
-                "SELECT * FROM reservations WHERE id = ?",
+                "SELECT * FROM reservations WHERE id = %s",
                 (reservation_id,)
             )
             row = cursor.fetchone()
@@ -1476,25 +1102,25 @@ class DatabaseStore:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            sql = "SELECT * FROM reservations WHERE device_id = %s" if IS_MYSQL else "SELECT * FROM reservations WHERE device_id = ?"
+            sql = "SELECT * FROM reservations WHERE device_id = %s"
             params = [device_id]
             
             if device_type:
-                sql += " AND device_type = %s" if IS_MYSQL else " AND device_type = ?"
+                sql += " AND device_type = %s"
                 params.append(device_type)
             
             if status:
                 if isinstance(status, list):
-                    placeholders = ','.join(['%s' if IS_MYSQL else '?'] * len(status))
+                    placeholders = ','.join(['%s'] * len(status))
                     sql += f" AND status IN ({placeholders})"
                     params.extend(status)
                 else:
-                    sql += " AND status = %s" if IS_MYSQL else " AND status = ?"
+                    sql += " AND status = %s"
                     params.append(status)
             
             if active_only:
                 # 只获取未结束的有效预约（排除已取消、已拒绝、已过期、已转借用的预约）
-                sql += " AND end_time > %s AND status NOT IN ('已取消', '已拒绝', '已过期', '已转借用')" if IS_MYSQL else " AND end_time > ? AND status NOT IN ('已取消', '已拒绝', '已过期', '已转借用')"
+                sql += " AND end_time > %s AND status NOT IN ('已取消', '已拒绝', '已过期', '已转借用')"
                 params.append(format_datetime(datetime.now()))
             
             sql += " ORDER BY start_time ASC"
@@ -1517,10 +1143,7 @@ class DatabaseStore:
             cursor.execute(
                 """INSERT INTO email_logs 
                    (id, user_id, user_email, email_type, related_id, related_type, sent_at, status, content)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""" if IS_MYSQL else
-                """INSERT INTO email_logs 
-                   (id, user_id, user_email, email_type, related_id, related_type, sent_at, status, content)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (email_id, user_id, user_email, email_type, related_id, related_type, sent_at, status, content)
             )
             return True
@@ -1534,9 +1157,6 @@ class DatabaseStore:
                 cursor.execute(
                     """SELECT * FROM email_logs 
                        WHERE user_id = %s AND email_type = %s 
-                       ORDER BY sent_at DESC""" if IS_MYSQL else
-                    """SELECT * FROM email_logs 
-                       WHERE user_id = ? AND email_type = ? 
                        ORDER BY sent_at DESC""",
                     (user_id, email_type)
                 )
@@ -1544,9 +1164,6 @@ class DatabaseStore:
                 cursor.execute(
                     """SELECT * FROM email_logs 
                        WHERE user_id = %s 
-                       ORDER BY sent_at DESC""" if IS_MYSQL else
-                    """SELECT * FROM email_logs 
-                       WHERE user_id = ? 
                        ORDER BY sent_at DESC""",
                     (user_id,)
                 )
@@ -1568,9 +1185,6 @@ class DatabaseStore:
                 cursor.execute(
                     """SELECT sent_at FROM email_logs 
                        WHERE user_id = %s AND email_type = %s AND related_id = %s
-                       ORDER BY sent_at DESC LIMIT 1""" if IS_MYSQL else
-                    """SELECT sent_at FROM email_logs 
-                       WHERE user_id = ? AND email_type = ? AND related_id = ?
                        ORDER BY sent_at DESC LIMIT 1""",
                     (user_id, email_type, related_id)
                 )
@@ -1578,15 +1192,12 @@ class DatabaseStore:
                 cursor.execute(
                     """SELECT sent_at FROM email_logs 
                        WHERE user_id = %s AND email_type = %s
-                       ORDER BY sent_at DESC LIMIT 1""" if IS_MYSQL else
-                    """SELECT sent_at FROM email_logs 
-                       WHERE user_id = ? AND email_type = ?
                        ORDER BY sent_at DESC LIMIT 1""",
                     (user_id, email_type)
                 )
             row = cursor.fetchone()
             if row:
-                return parse_datetime(row['sent_at'] if IS_MYSQL else row[0])
+                return parse_datetime(row['sent_at'])
             return None
 
     def has_email_sent_within_hours(self, user_id: str, email_type: str, 
@@ -1611,11 +1222,11 @@ class DatabaseStore:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            sql = "SELECT * FROM reservations WHERE reserver_id = %s" if IS_MYSQL else "SELECT * FROM reservations WHERE reserver_id = ?"
+            sql = "SELECT * FROM reservations WHERE reserver_id = %s"
             params = [reserver_id]
             
             if status:
-                sql += " AND status = %s" if IS_MYSQL else " AND status = ?"
+                sql += " AND status = %s"
                 params.append(status)
             
             sql += " ORDER BY created_at DESC"
@@ -1633,12 +1244,9 @@ class DatabaseStore:
                 sql = """SELECT * FROM reservations 
                         WHERE custodian_id = %s 
                         AND status IN ('待保管人确认', '待2人确认')
-                        AND custodian_approved = 0""" if IS_MYSQL else """SELECT * FROM reservations 
-                        WHERE custodian_id = ? 
-                        AND status IN ('待保管人确认', '待2人确认')
                         AND custodian_approved = 0"""
             else:
-                sql = "SELECT * FROM reservations WHERE custodian_id = %s" if IS_MYSQL else "SELECT * FROM reservations WHERE custodian_id = ?"
+                sql = "SELECT * FROM reservations WHERE custodian_id = %s"
             
             cursor.execute(sql, (custodian_id,))
             rows = cursor.fetchall()
@@ -1653,12 +1261,9 @@ class DatabaseStore:
                 sql = """SELECT * FROM reservations 
                         WHERE current_borrower_id = %s 
                         AND status IN ('待借用人确认', '待2人确认')
-                        AND borrower_approved = 0""" if IS_MYSQL else """SELECT * FROM reservations 
-                        WHERE current_borrower_id = ? 
-                        AND status IN ('待借用人确认', '待2人确认')
                         AND borrower_approved = 0"""
             else:
-                sql = "SELECT * FROM reservations WHERE current_borrower_id = %s" if IS_MYSQL else "SELECT * FROM reservations WHERE current_borrower_id = ?"
+                sql = "SELECT * FROM reservations WHERE current_borrower_id = %s"
             
             cursor.execute(sql, (borrower_id,))
             rows = cursor.fetchall()
@@ -1671,8 +1276,7 @@ class DatabaseStore:
             
             # 检查是否存在
             cursor.execute(
-                "SELECT id FROM reservations WHERE id = %s" if IS_MYSQL else
-                "SELECT id FROM reservations WHERE id = ?",
+                "SELECT id FROM reservations WHERE id = %s",
                 (reservation.id,)
             )
             exists = cursor.fetchone()
@@ -1693,20 +1297,6 @@ class DatabaseStore:
                     custodian_id = %s, current_borrower_id = %s, current_borrower_name = %s,
                     reason = %s
                     WHERE id = %s
-                """ if IS_MYSQL else """UPDATE reservations SET
-                    device_id = ?, device_type = ?, device_name = ?,
-                    reserver_id = ?, reserver_name = ?,
-                    start_time = ?, end_time = ?, status = ?,
-                    updated_at = ?,
-                    custodian_approved = ?, custodian_approved_at = ?,
-                    borrower_approved = ?, borrower_approved_at = ?,
-                    custodian_notified = ?, borrower_notified = ?,
-                    cancelled_by = ?, cancelled_at = ?, cancel_reason = ?,
-                    rejected_by = ?, rejected_at = ?,
-                    converted_to_borrow = ?, converted_at = ?,
-                    custodian_id = ?, current_borrower_id = ?, current_borrower_name = ?,
-                    reason = ?
-                    WHERE id = ?
                 """
                 params = (
                     reservation.device_id, reservation.device_type, reservation.device_name,
@@ -1738,20 +1328,6 @@ class DatabaseStore:
                     custodian_id, current_borrower_id, current_borrower_name,
                     reason
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """ if IS_MYSQL else """INSERT INTO reservations (
-                    id, device_id, device_type, device_name,
-                    reserver_id, reserver_name,
-                    start_time, end_time, status,
-                    created_at, updated_at,
-                    custodian_approved, custodian_approved_at,
-                    borrower_approved, borrower_approved_at,
-                    custodian_notified, borrower_notified,
-                    cancelled_by, cancelled_at, cancel_reason,
-                    rejected_by, rejected_at,
-                    converted_to_borrow, converted_at,
-                    custodian_id, current_borrower_id, current_borrower_name,
-                    reason
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
                 params = (
                     reservation.id, reservation.device_id, reservation.device_type, reservation.device_name,
@@ -1776,8 +1352,7 @@ class DatabaseStore:
         with get_db_transaction() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "DELETE FROM reservations WHERE id = %s" if IS_MYSQL else
-                "DELETE FROM reservations WHERE id = ?",
+                "DELETE FROM reservations WHERE id = %s",
                 (reservation_id,)
             )
             return cursor.rowcount > 0
@@ -1791,10 +1366,6 @@ class DatabaseStore:
                 """SELECT * FROM reservations 
                    WHERE status = '已同意' 
                    AND start_time <= %s 
-                   AND converted_to_borrow = 0""" if IS_MYSQL else
-                """SELECT * FROM reservations 
-                   WHERE status = '已同意' 
-                   AND start_time <= ? 
                    AND converted_to_borrow = 0""",
                 (now,)
             )
@@ -1809,9 +1380,6 @@ class DatabaseStore:
             cursor.execute(
                 """SELECT * FROM reservations 
                    WHERE end_time <= %s 
-                   AND status IN ('已取消', '已拒绝', '已过期', '已转借用')""" if IS_MYSQL else
-                """SELECT * FROM reservations 
-                   WHERE end_time <= ? 
                    AND status IN ('已取消', '已拒绝', '已过期', '已转借用')""",
                 (cutoff,)
             )
@@ -1826,10 +1394,7 @@ class DatabaseStore:
             cursor.execute(
                 """SELECT * FROM reservations 
                    WHERE status IN ('待保管人确认', '待借用人确认', '待2人确认')
-                   AND start_time <= %s""" if IS_MYSQL else
-                """SELECT * FROM reservations 
-                   WHERE status IN ('待保管人确认', '待借用人确认', '待2人确认')
-                   AND start_time <= ?""",
+                   AND start_time <= %s""",
                 (now,)
             )
             rows = cursor.fetchall()
@@ -1840,8 +1405,7 @@ class DatabaseStore:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT * FROM reservations WHERE status = %s" if IS_MYSQL else
-                "SELECT * FROM reservations WHERE status = ?",
+                "SELECT * FROM reservations WHERE status = %s",
                 (status,)
             )
             rows = cursor.fetchall()
@@ -1854,8 +1418,7 @@ class DatabaseStore:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT * FROM user_points WHERE user_id = %s" if IS_MYSQL else
-                "SELECT * FROM user_points WHERE user_id = ?",
+                "SELECT * FROM user_points WHERE user_id = %s",
                 (user_id,)
             )
             row = cursor.fetchone()
@@ -1870,8 +1433,7 @@ class DatabaseStore:
             
             # 检查是否存在
             cursor.execute(
-                "SELECT id FROM user_points WHERE user_id = %s" if IS_MYSQL else
-                "SELECT id FROM user_points WHERE user_id = ?",
+                "SELECT id FROM user_points WHERE user_id = %s",
                 (user_points.user_id,)
             )
             exists = cursor.fetchone()
@@ -1880,9 +1442,6 @@ class DatabaseStore:
                 sql = """UPDATE user_points SET
                     points = %s, total_earned = %s, total_spent = %s, update_time = %s
                     WHERE user_id = %s
-                """ if IS_MYSQL else """UPDATE user_points SET
-                    points = ?, total_earned = ?, total_spent = ?, update_time = ?
-                    WHERE user_id = ?
                 """
                 params = (
                     user_points.points, user_points.total_earned, user_points.total_spent,
@@ -1892,9 +1451,6 @@ class DatabaseStore:
                 sql = """INSERT INTO user_points (
                     id, user_id, points, total_earned, total_spent, update_time
                 ) VALUES (%s, %s, %s, %s, %s, %s)
-                """ if IS_MYSQL else """INSERT INTO user_points (
-                    id, user_id, points, total_earned, total_spent, update_time
-                ) VALUES (?, ?, ?, ?, ?, ?)
                 """
                 params = (
                     user_points.id, user_points.user_id, user_points.points,
@@ -1912,10 +1468,6 @@ class DatabaseStore:
                 id, user_id, transaction_type, points_change, points_after,
                 description, related_id, create_time
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """ if IS_MYSQL else """INSERT INTO points_records (
-                id, user_id, transaction_type, points_change, points_after,
-                description, related_id, create_time
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """
             params = (
                 record.id, record.user_id,
@@ -1932,14 +1484,12 @@ class DatabaseStore:
             cursor = conn.cursor()
             if limit:
                 cursor.execute(
-                    "SELECT * FROM points_records WHERE user_id = %s ORDER BY create_time DESC LIMIT %s" if IS_MYSQL else
-                    "SELECT * FROM points_records WHERE user_id = ? ORDER BY create_time DESC LIMIT ?",
+                    "SELECT * FROM points_records WHERE user_id = %s ORDER BY create_time DESC LIMIT %s",
                     (user_id, limit)
                 )
             else:
                 cursor.execute(
-                    "SELECT * FROM points_records WHERE user_id = %s ORDER BY create_time DESC" if IS_MYSQL else
-                    "SELECT * FROM points_records WHERE user_id = ? ORDER BY create_time DESC",
+                    "SELECT * FROM points_records WHERE user_id = %s ORDER BY create_time DESC",
                     (user_id,)
                 )
             rows = cursor.fetchall()
@@ -1960,8 +1510,7 @@ class DatabaseStore:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT * FROM bounties WHERE id = %s" if IS_MYSQL else
-                "SELECT * FROM bounties WHERE id = ?",
+                "SELECT * FROM bounties WHERE id = %s",
                 (bounty_id,)
             )
             row = cursor.fetchone()
@@ -1978,13 +1527,13 @@ class DatabaseStore:
             params = []
             
             if status:
-                sql += " WHERE status = %s" if IS_MYSQL else " WHERE status = ?"
+                sql += " WHERE status = %s"
                 params.append(status)
             
             sql += " ORDER BY create_time DESC"
             
             if limit:
-                sql += " LIMIT %s" if IS_MYSQL else " LIMIT ?"
+                sql += " LIMIT %s"
                 params.append(limit)
             
             cursor.execute(sql, tuple(params) if params else ())
@@ -1996,8 +1545,7 @@ class DatabaseStore:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT * FROM bounties WHERE publisher_id = %s ORDER BY create_time DESC" if IS_MYSQL else
-                "SELECT * FROM bounties WHERE publisher_id = ? ORDER BY create_time DESC",
+                "SELECT * FROM bounties WHERE publisher_id = %s ORDER BY create_time DESC",
                 (publisher_id,)
             )
             rows = cursor.fetchall()
@@ -2008,8 +1556,7 @@ class DatabaseStore:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT * FROM bounties WHERE claimer_id = %s ORDER BY create_time DESC" if IS_MYSQL else
-                "SELECT * FROM bounties WHERE claimer_id = ? ORDER BY create_time DESC",
+                "SELECT * FROM bounties WHERE claimer_id = %s ORDER BY create_time DESC",
                 (claimer_id,)
             )
             rows = cursor.fetchall()
@@ -2022,8 +1569,7 @@ class DatabaseStore:
             
             # 检查是否存在
             cursor.execute(
-                "SELECT id FROM bounties WHERE id = %s" if IS_MYSQL else
-                "SELECT id FROM bounties WHERE id = ?",
+                "SELECT id FROM bounties WHERE id = %s",
                 (bounty.id,)
             )
             exists = cursor.fetchone()
@@ -2036,13 +1582,6 @@ class DatabaseStore:
                     expire_time = %s, claimer_id = %s, claimer_name = %s, finder_description = %s,
                     is_active = %s
                     WHERE id = %s
-                """ if IS_MYSQL else """UPDATE bounties SET
-                    title = ?, description = ?, publisher_id = ?, publisher_name = ?,
-                    reward_points = ?, status = ?, device_name = ?, device_id = ?,
-                    device_previous_status = ?, claim_time = ?, complete_time = ?,
-                    expire_time = ?, claimer_id = ?, claimer_name = ?, finder_description = ?,
-                    is_active = ?
-                    WHERE id = ?
                 """
                 params = (
                     bounty.title, bounty.description, bounty.publisher_id, bounty.publisher_name,
@@ -2062,12 +1601,6 @@ class DatabaseStore:
                     claim_time, complete_time, expire_time, claimer_id, claimer_name, finder_description,
                     is_active
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """ if IS_MYSQL else """INSERT INTO bounties (
-                    id, title, description, publisher_id, publisher_name, reward_points,
-                    status, device_name, device_id, device_previous_status, create_time,
-                    claim_time, complete_time, expire_time, claimer_id, claimer_name, finder_description,
-                    is_active
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
                 params = (
                     bounty.id, bounty.title, bounty.description, bounty.publisher_id,
@@ -2089,8 +1622,7 @@ class DatabaseStore:
         with get_db_transaction() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "DELETE FROM bounties WHERE id = %s" if IS_MYSQL else
-                "DELETE FROM bounties WHERE id = ?",
+                "DELETE FROM bounties WHERE id = %s",
                 (bounty_id,)
             )
             return cursor.rowcount > 0
@@ -2101,8 +1633,7 @@ class DatabaseStore:
             cursor = conn.cursor()
             now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             cursor.execute(
-                "SELECT * FROM bounties WHERE status = '待认领' AND expire_time < %s" if IS_MYSQL else
-                "SELECT * FROM bounties WHERE status = '待认领' AND expire_time < ?",
+                "SELECT * FROM bounties WHERE status = '待认领' AND expire_time < %s",
                 (now,)
             )
             rows = cursor.fetchall()
@@ -2128,8 +1659,7 @@ class DatabaseStore:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT * FROM shop_items WHERE id = %s" if IS_MYSQL else
-                "SELECT * FROM shop_items WHERE id = ?",
+                "SELECT * FROM shop_items WHERE id = %s",
                 (item_id,)
             )
             row = cursor.fetchone()
@@ -2149,7 +1679,7 @@ class DatabaseStore:
                 sql += " AND is_active = 1"
             
             if item_type:
-                sql += " AND item_type = %s" if IS_MYSQL else " AND item_type = ?"
+                sql += " AND item_type = %s"
                 params.append(item_type)
             
             sql += " ORDER BY sort_order ASC, create_time ASC"
@@ -2164,8 +1694,7 @@ class DatabaseStore:
             cursor = conn.cursor()
             
             cursor.execute(
-                "SELECT id FROM shop_items WHERE id = %s" if IS_MYSQL else
-                "SELECT id FROM shop_items WHERE id = ?",
+                "SELECT id FROM shop_items WHERE id = %s",
                 (item.id,)
             )
             exists = cursor.fetchone()
@@ -2175,10 +1704,6 @@ class DatabaseStore:
                     name = %s, description = %s, item_type = %s, price = %s,
                     icon = %s, color = %s, is_active = %s, sort_order = %s
                     WHERE id = %s
-                """ if IS_MYSQL else """UPDATE shop_items SET
-                    name = ?, description = ?, item_type = ?, price = ?,
-                    icon = ?, color = ?, is_active = ?, sort_order = ?
-                    WHERE id = ?
                 """
                 params = (
                     item.name, item.description,
@@ -2190,9 +1715,6 @@ class DatabaseStore:
                 sql = """INSERT INTO shop_items (
                     id, name, description, item_type, price, icon, color, is_active, sort_order, create_time
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """ if IS_MYSQL else """INSERT INTO shop_items (
-                    id, name, description, item_type, price, icon, color, is_active, sort_order, create_time
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
                 params = (
                     item.id, item.name, item.description,
@@ -2210,8 +1732,7 @@ class DatabaseStore:
         with get_db_transaction() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "DELETE FROM shop_items WHERE id = %s" if IS_MYSQL else
-                "DELETE FROM shop_items WHERE id = ?",
+                "DELETE FROM shop_items WHERE id = %s",
                 (item_id,)
             )
             return True
@@ -2223,11 +1744,11 @@ class DatabaseStore:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            sql = "SELECT * FROM user_inventory WHERE user_id = %s" if IS_MYSQL else "SELECT * FROM user_inventory WHERE user_id = ?"
+            sql = "SELECT * FROM user_inventory WHERE user_id = %s"
             params = [user_id]
             
             if item_type:
-                sql += " AND item_type = %s" if IS_MYSQL else " AND item_type = ?"
+                sql += " AND item_type = %s"
                 params.append(item_type)
             
             sql += " ORDER BY acquire_time DESC"
@@ -2241,8 +1762,7 @@ class DatabaseStore:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT * FROM user_inventory WHERE id = %s" if IS_MYSQL else
-                "SELECT * FROM user_inventory WHERE id = ?",
+                "SELECT * FROM user_inventory WHERE id = %s",
                 (inventory_id,)
             )
             row = cursor.fetchone()
@@ -2258,10 +1778,6 @@ class DatabaseStore:
                 id, user_id, item_id, item_type, item_name, item_icon, item_color,
                 source, is_used, acquire_time, use_time
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """ if IS_MYSQL else """INSERT INTO user_inventory (
-                id, user_id, item_id, item_type, item_name, item_icon, item_color,
-                source, is_used, acquire_time, use_time
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             params = (
                 item.id, item.user_id, item.item_id,
@@ -2282,9 +1798,6 @@ class DatabaseStore:
             sql = """UPDATE user_inventory SET
                 is_used = %s, use_time = %s
                 WHERE id = %s
-            """ if IS_MYSQL else """UPDATE user_inventory SET
-                is_used = ?, use_time = ?
-                WHERE id = ?
             """
             params = (
                 1 if is_used else 0,
@@ -2299,8 +1812,7 @@ class DatabaseStore:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT id FROM user_inventory WHERE user_id = %s AND item_id = %s LIMIT 1" if IS_MYSQL else
-                "SELECT id FROM user_inventory WHERE user_id = ? AND item_id = ? LIMIT 1",
+                "SELECT id FROM user_inventory WHERE user_id = %s AND item_id = %s LIMIT 1",
                 (user_id, item_id)
             )
             return cursor.fetchone() is not None
@@ -2314,9 +1826,6 @@ class DatabaseStore:
             sql = """INSERT INTO wheel_records (
                 id, user_id, prize_id, prize_name, prize_points, cost, create_time
             ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """ if IS_MYSQL else """INSERT INTO wheel_records (
-                id, user_id, prize_id, prize_name, prize_points, cost, create_time
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """
             params = (
                 str(uuid.uuid4()),
@@ -2335,20 +1844,12 @@ class DatabaseStore:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             # date_str 格式: YYYY-MM-DD
-            if IS_MYSQL:
-                cursor.execute(
-                    """SELECT * FROM wheel_records 
-                       WHERE user_id = %s AND DATE(create_time) = %s 
-                       ORDER BY create_time ASC""",
-                    (user_id, date_str)
-                )
-            else:
-                cursor.execute(
-                    """SELECT * FROM wheel_records 
-                       WHERE user_id = ? AND date(create_time) = ? 
-                       ORDER BY create_time ASC""",
-                    (user_id, date_str)
-                )
+            cursor.execute(
+                """SELECT * FROM wheel_records 
+                   WHERE user_id = %s AND DATE(create_time) = %s 
+                   ORDER BY create_time ASC""",
+                (user_id, date_str)
+            )
             rows = cursor.fetchall()
             return [row_to_dict(row) for row in rows]
 
@@ -2360,11 +1861,7 @@ class DatabaseStore:
                 """SELECT * FROM wheel_records 
                    WHERE user_id = %s 
                    ORDER BY create_time DESC 
-                   LIMIT %s""" if IS_MYSQL else
-                """SELECT * FROM wheel_records 
-                   WHERE user_id = ? 
-                   ORDER BY create_time DESC 
-                   LIMIT ?""",
+                   LIMIT %s""",
                 (user_id, limit)
             )
             rows = cursor.fetchall()
@@ -2377,9 +1874,6 @@ class DatabaseStore:
             sql = """INSERT INTO user_hidden_titles (
                 id, user_id, title_id, title_name, title_color, acquire_time
             ) VALUES (%s, %s, %s, %s, %s, %s)
-            """ if IS_MYSQL else """INSERT INTO user_hidden_titles (
-                id, user_id, title_id, title_name, title_color, acquire_time
-            ) VALUES (?, ?, ?, ?, ?, ?)
             """
             params = (
                 str(uuid.uuid4()),
@@ -2398,9 +1892,7 @@ class DatabaseStore:
             cursor = conn.cursor()
             cursor.execute(
                 """SELECT id FROM user_hidden_titles 
-                   WHERE user_id = %s AND title_id = %s LIMIT 1""" if IS_MYSQL else
-                """SELECT id FROM user_hidden_titles 
-                   WHERE user_id = ? AND title_id = ? LIMIT 1""",
+                   WHERE user_id = %s AND title_id = %s LIMIT 1""",
                 (user_id, title_id)
             )
             return cursor.fetchone() is not None
@@ -2412,9 +1904,6 @@ class DatabaseStore:
             cursor.execute(
                 """SELECT * FROM user_hidden_titles 
                    WHERE user_id = %s 
-                   ORDER BY acquire_time DESC""" if IS_MYSQL else
-                """SELECT * FROM user_hidden_titles 
-                   WHERE user_id = ? 
                    ORDER BY acquire_time DESC""",
                 (user_id,)
             )
@@ -2423,43 +1912,6 @@ class DatabaseStore:
 
 
 # ========== 数据库迁移函数 ==========
-
-def _migrate_sqlite_create_points_tables(cursor):
-    """SQLite: 创建积分相关表"""
-    # 创建用户积分表
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS user_points (
-            id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL UNIQUE,
-            points INTEGER DEFAULT 0,
-            total_earned INTEGER DEFAULT 0,
-            total_spent INTEGER DEFAULT 0,
-            update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id)
-        )
-    ''')
-    
-    # 创建积分记录表
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS points_records (
-            id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            transaction_type TEXT NOT NULL,
-            points_change INTEGER NOT NULL,
-            points_after INTEGER NOT NULL,
-            description TEXT,
-            related_id TEXT,
-            create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id)
-        )
-    ''')
-    
-    # 创建索引
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_points_user ON user_points(user_id)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_points_records_user ON points_records(user_id)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_points_records_time ON points_records(create_time)')
-    print("✓ SQLite: 已创建积分相关表")
-
 
 def _migrate_mysql_create_points_tables():
     """MySQL: 创建积分相关表"""
@@ -2502,50 +1954,6 @@ def _migrate_mysql_create_points_tables():
             print("✓ MySQL: 已创建积分相关表")
     except Exception as e:
         print(f"⚠ MySQL 积分表迁移警告: {e}")
-
-
-def _migrate_sqlite_create_shop_tables(cursor):
-    """SQLite: 创建积分商城相关表"""
-    # 创建商品表
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS shop_items (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            description TEXT,
-            item_type TEXT NOT NULL,
-            price INTEGER NOT NULL,
-            icon TEXT,
-            color TEXT,
-            is_active INTEGER DEFAULT 1,
-            sort_order INTEGER DEFAULT 0,
-            create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    # 创建用户背包表
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS user_inventory (
-            id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            item_id TEXT NOT NULL,
-            item_type TEXT NOT NULL,
-            item_name TEXT NOT NULL,
-            item_icon TEXT,
-            item_color TEXT,
-            source TEXT DEFAULT '积分商城',
-            is_used INTEGER DEFAULT 0,
-            acquire_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            use_time TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id)
-        )
-    ''')
-    
-    # 创建索引
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_shop_items_type ON shop_items(item_type)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_shop_items_active ON shop_items(is_active)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_inventory_user ON user_inventory(user_id)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_inventory_item ON user_inventory(item_id)')
-    print("✓ SQLite: 已创建积分商城相关表")
 
 
 def _migrate_mysql_create_shop_tables():
@@ -2598,27 +2006,6 @@ def _migrate_mysql_create_shop_tables():
         print(f"⚠ MySQL 积分商城表迁移警告: {e}")
 
 
-def _migrate_sqlite_add_user_equip_fields(cursor):
-    """SQLite: 添加用户装扮字段"""
-    try:
-        cursor.execute("SELECT current_title FROM users LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("ALTER TABLE users ADD COLUMN current_title TEXT DEFAULT ''")
-        print("✓ SQLite: 已添加 current_title 列到 users 表")
-
-    try:
-        cursor.execute("SELECT current_avatar_frame FROM users LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("ALTER TABLE users ADD COLUMN current_avatar_frame TEXT DEFAULT ''")
-        print("✓ SQLite: 已添加 current_avatar_frame 列到 users 表")
-
-    try:
-        cursor.execute("SELECT current_theme FROM users LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("ALTER TABLE users ADD COLUMN current_theme TEXT DEFAULT ''")
-        print("✓ SQLite: 已添加 current_theme 列到 users 表")
-
-
 def _migrate_mysql_add_user_equip_fields():
     """MySQL: 添加用户装扮字段"""
     try:
@@ -2648,15 +2035,6 @@ def _migrate_mysql_add_user_equip_fields():
         print(f"⚠ MySQL 用户装扮字段迁移警告: {e}")
 
 
-def _migrate_sqlite_add_user_cursor_field(cursor):
-    """SQLite: 添加用户鼠标皮肤字段"""
-    try:
-        cursor.execute("SELECT current_cursor FROM users LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("ALTER TABLE users ADD COLUMN current_cursor TEXT DEFAULT ''")
-        print("✓ SQLite: 已添加 current_cursor 列到 users 表")
-
-
 def _migrate_mysql_add_user_cursor_field():
     """MySQL: 添加用户鼠标皮肤字段"""
     try:
@@ -2670,65 +2048,6 @@ def _migrate_mysql_add_user_cursor_field():
                 print("✓ MySQL: 已添加 current_cursor 列到 users 表")
     except Exception as e:
         print(f"⚠ MySQL 用户鼠标皮肤字段迁移警告: {e}")
-
-
-def _migrate_sqlite_create_bounties_table(cursor):
-    """SQLite: 创建悬赏表"""
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS bounties (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            description TEXT,
-            publisher_id TEXT NOT NULL,
-            publisher_name TEXT NOT NULL,
-            reward_points INTEGER NOT NULL,
-            status TEXT DEFAULT '待认领',
-            device_name TEXT,
-            device_id TEXT,
-            device_previous_status TEXT,
-            create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            claim_time TIMESTAMP,
-            complete_time TIMESTAMP,
-            claimer_id TEXT,
-            claimer_name TEXT,
-            finder_description TEXT,
-            FOREIGN KEY (publisher_id) REFERENCES users(id)
-        )
-    ''')
-
-    # 创建索引
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_bounties_status ON bounties(status)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_bounties_publisher ON bounties(publisher_id)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_bounties_claimer ON bounties(claimer_id)')
-    print("✓ SQLite: 已创建悬赏表")
-
-    # 检查并添加 device_id 列
-    try:
-        cursor.execute("SELECT device_id FROM bounties LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("ALTER TABLE bounties ADD COLUMN device_id TEXT")
-        print("✓ SQLite: 已添加 device_id 列到 bounties 表")
-
-    # 检查并添加 device_previous_status 列
-    try:
-        cursor.execute("SELECT device_previous_status FROM bounties LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("ALTER TABLE bounties ADD COLUMN device_previous_status TEXT")
-        print("✓ SQLite: 已添加 device_previous_status 列到 bounties 表")
-
-    # 检查并添加 expire_time 列
-    try:
-        cursor.execute("SELECT expire_time FROM bounties LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("ALTER TABLE bounties ADD COLUMN expire_time TIMESTAMP")
-        print("✓ SQLite: 已添加 expire_time 列到 bounties 表")
-
-    # 检查并添加 is_active 列
-    try:
-        cursor.execute("SELECT is_active FROM bounties LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("ALTER TABLE bounties ADD COLUMN is_active INTEGER DEFAULT 1")
-        print("✓ SQLite: 已添加 is_active 列到 bounties 表")
 
 
 def _migrate_mysql_create_bounties_table():
@@ -2800,43 +2119,6 @@ def _migrate_mysql_create_bounties_table():
         print(f"⚠ MySQL 悬赏表迁移警告: {e}")
 
 
-def _migrate_sqlite_create_wheel_tables(cursor):
-    """SQLite: 创建每日转盘相关表"""
-    # 创建转盘抽奖记录表
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS wheel_records (
-            id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            prize_id TEXT NOT NULL,
-            prize_name TEXT NOT NULL,
-            prize_points INTEGER DEFAULT 0,
-            cost INTEGER DEFAULT 0,
-            create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id)
-        )
-    ''')
-    
-    # 创建用户隐藏称号表
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS user_hidden_titles (
-            id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            title_id TEXT NOT NULL,
-            title_name TEXT NOT NULL,
-            title_color TEXT DEFAULT '#1890ff',
-            acquire_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id)
-        )
-    ''')
-    
-    # 创建索引
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_wheel_records_user ON wheel_records(user_id)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_wheel_records_time ON wheel_records(create_time)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_hidden_titles_user ON user_hidden_titles(user_id)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_hidden_titles_title ON user_hidden_titles(title_id)')
-    print("✓ SQLite: 已创建每日转盘相关表")
-
-
 def _migrate_mysql_create_wheel_tables():
     """MySQL: 创建每日转盘相关表"""
     try:
@@ -2897,17 +2179,6 @@ def _migrate_mysql_add_operation_log_source():
         print(f"⚠ MySQL operation_logs source 列迁移警告: {e}")
 
 
-def _migrate_sqlite_add_operation_log_source(cursor):
-    """SQLite: 检查并添加 operation_logs 表的 source 列"""
-    try:
-        cursor.execute("SELECT source FROM operation_logs LIMIT 1")
-    except sqlite3.OperationalError:
-        # 列不存在，添加它
-        cursor.execute("ALTER TABLE operation_logs ADD COLUMN source TEXT DEFAULT 'admin'")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_operation_logs_source ON operation_logs(source)")
-        print("✓ SQLite: 已添加 source 列到 operation_logs 表")
-
-
 def _migrate_mysql_create_admin_operation_logs_table():
     """MySQL: 创建后台管理操作日志表"""
     try:
@@ -2943,38 +2214,3 @@ def _migrate_mysql_create_admin_operation_logs_table():
             print("✓ MySQL: 已创建 admin_operation_logs 表")
     except Exception as e:
         print(f"⚠ MySQL 创建 admin_operation_logs 表警告: {e}")
-
-
-def _migrate_sqlite_create_admin_operation_logs_table(cursor):
-    """SQLite: 创建后台管理操作日志表"""
-    try:
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS admin_operation_logs (
-                id TEXT PRIMARY KEY,
-                operation_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                admin_id TEXT NOT NULL,
-                admin_name TEXT NOT NULL,
-                action_type TEXT NOT NULL,
-                action_name TEXT NOT NULL,
-                target_type TEXT NOT NULL,
-                target_id TEXT,
-                target_name TEXT,
-                description TEXT,
-                ip_address TEXT,
-                user_agent TEXT,
-                request_method TEXT,
-                request_path TEXT,
-                request_params TEXT,
-                result TEXT DEFAULT 'SUCCESS',
-                error_message TEXT
-            )
-        ''')
-        # 创建索引
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_admin_logs_admin_id ON admin_operation_logs(admin_id)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_admin_logs_time ON admin_operation_logs(operation_time)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_admin_logs_action ON admin_operation_logs(action_type)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_admin_logs_target ON admin_operation_logs(target_type)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_admin_logs_result ON admin_operation_logs(result)")
-        print("✓ SQLite: 已创建 admin_operation_logs 表")
-    except Exception as e:
-        print(f"⚠ SQLite 创建 admin_operation_logs 表警告: {e}")

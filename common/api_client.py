@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 数据客户端
-从SQLite数据库读取和保存数据
+从MySQL数据库读取和保存数据
 """
 import uuid
 import os
