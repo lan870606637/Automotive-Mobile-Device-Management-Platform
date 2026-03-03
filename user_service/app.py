@@ -15,6 +15,7 @@ import io
 import base64
 import re
 import json
+import calendar
 import urllib.request
 import urllib.parse
 from datetime import datetime, timedelta
@@ -5953,6 +5954,124 @@ if APSCHEDULER_AVAILABLE:
     scheduler.add_job(auto_deduct_overdue_points_job, 'interval', minutes=60, id='auto_deduct_overdue_points')
     scheduler.start()
     print("✓ 定时任务已启动：每分钟处理预约、每5分钟检查逾期提醒、每30分钟检查预约确认提醒、每小时自动扣除逾期积分")
+
+
+@app.route('/api/stats/borrow-return', methods=['GET'])
+@login_required
+def api_borrow_return_stats():
+    """获取借出归还统计数据API - 用于折线图展示"""
+    try:
+        range_type = request.args.get('range', 'day')  # day, month, year
+        
+        # 获取所有记录
+        all_records = api_client.get_records()
+        
+        # 根据时间范围确定日期格式和天数
+        if range_type == 'day':
+            # 按小时统计今日数据
+            labels = [f'{h:02d}:00' for h in range(24)]
+            borrow_data = [0] * 24
+            return_data = [0] * 24
+            
+            today = datetime.now().strftime('%Y-%m-%d')
+            
+            for record in all_records:
+                try:
+                    record_date = record.operation_time.strftime('%Y-%m-%d')
+                    if record_date == today:
+                        hour = record.operation_time.hour
+                        op_type = record.operation_type
+                        # 处理枚举类型或字符串类型
+                        op_value = op_type.value if hasattr(op_type, 'value') else str(op_type)
+                        if op_value in ['借出', '强制借出']:
+                            borrow_data[hour] += 1
+                        elif op_value in ['归还', '强制归还']:
+                            return_data[hour] += 1
+                except Exception as rec_err:
+                    print(f'处理记录时出错: {rec_err}')
+                    continue
+            
+            return jsonify({
+                'success': True,
+                'labels': labels,
+                'borrow': borrow_data,
+                'return': return_data
+            })
+        
+        elif range_type == 'month':
+            # 按天统计本月数据
+            now = datetime.now()
+            year = now.year
+            month = now.month
+            
+            # 获取当月天数
+            _, days_in_month = calendar.monthrange(year, month)
+            
+            labels = [f'{i+1}日' for i in range(days_in_month)]
+            borrow_data = [0] * days_in_month
+            return_data = [0] * days_in_month
+            
+            for record in all_records:
+                try:
+                    record_time = record.operation_time
+                    if record_time.year == year and record_time.month == month:
+                        day = record_time.day - 1  # 转换为0-based索引
+                        op_type = record.operation_type
+                        op_value = op_type.value if hasattr(op_type, 'value') else str(op_type)
+                        if op_value in ['借出', '强制借出']:
+                            borrow_data[day] += 1
+                        elif op_value in ['归还', '强制归还']:
+                            return_data[day] += 1
+                except Exception as rec_err:
+                    print(f'处理记录时出错: {rec_err}')
+                    continue
+            
+            return jsonify({
+                'success': True,
+                'labels': labels,
+                'borrow': borrow_data,
+                'return': return_data
+            })
+        
+        elif range_type == 'year':
+            # 按月份统计本年数据
+            now = datetime.now()
+            year = now.year
+            
+            labels = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']
+            borrow_data = [0] * 12
+            return_data = [0] * 12
+            
+            for record in all_records:
+                try:
+                    record_time = record.operation_time
+                    if record_time.year == year:
+                        month = record_time.month - 1  # 转换为0-based索引
+                        op_type = record.operation_type
+                        op_value = op_type.value if hasattr(op_type, 'value') else str(op_type)
+                        if op_value in ['借出', '强制借出']:
+                            borrow_data[month] += 1
+                        elif op_value in ['归还', '强制归还']:
+                            return_data[month] += 1
+                except Exception as rec_err:
+                    print(f'处理记录时出错: {rec_err}')
+                    continue
+            
+            return jsonify({
+                'success': True,
+                'labels': labels,
+                'borrow': borrow_data,
+                'return': return_data
+            })
+        
+        else:
+            return jsonify({'success': False, 'message': '无效的时间范围参数'}), 400
+            
+    except Exception as e:
+        import traceback
+        print(f'获取借出归还统计数据失败: {e}')
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'message': f'获取统计数据失败: {str(e)}'}), 500
 
 
 # ==================== 错误处理 ====================

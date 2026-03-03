@@ -108,6 +108,7 @@
                     <span class="info-value">{{ device.screen_resolution }}</span>
                 </div>
                 {% endif %}
+                {% if device_type == '手机' %}
                 <div class="info-row">
                     <span class="info-label">SN码</span>
                     <span class="info-value">{{ device.sn|nan_to_default }}</span>
@@ -132,6 +133,7 @@
                     <span class="info-label">购买金额(元)</span>
                     <span class="info-value">{{ device.purchase_amount|nan_to_default }}</span>
                 </div>
+                {% endif %}
                 {% if device.status.value == '丢失' %}
                 <div class="info-row" style="color: #ff4d4f;">
                     <span class="info-label">丢失时间</span>

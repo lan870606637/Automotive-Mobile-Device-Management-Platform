@@ -4,6 +4,8 @@
 
 {% set active_nav = 'all_records' %}
 
+
+
 {% block content %}
 <h1 class="page-title">🌍 全部借用记录</h1>
 
@@ -29,6 +31,31 @@
             <span class="stat-label">归还次数</span>
         </div>
         <div class="stat-value">{{ return_count }}</div>
+    </div>
+</div>
+
+<!-- 借出/归还趋势图 -->
+<div class="card" style="margin-top: 24px;">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+        <span class="card-title">📈 借出/归还趋势</span>
+        <div class="time-range-tabs" style="display: flex; gap: 8px;">
+            <button class="tab-btn btn btn-primary" data-range="day" onclick="switchTimeRange('day')">今日</button>
+            <button class="tab-btn btn btn-default" data-range="month" onclick="switchTimeRange('month')">本月</button>
+            <button class="tab-btn btn btn-default" data-range="year" onclick="switchTimeRange('year')">本年</button>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="chart-legend" style="display: flex; gap: 24px; margin-bottom: 16px; justify-content: center;">
+            <span class="legend-item" style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: #595959;">
+                <span class="legend-dot" style="width: 12px; height: 12px; border-radius: 50%; background: #1890ff;"></span>借出
+            </span>
+            <span class="legend-item" style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: #595959;">
+                <span class="legend-dot" style="width: 12px; height: 12px; border-radius: 50%; background: #52c41a;"></span>归还
+            </span>
+        </div>
+        <div class="line-chart-container" style="height: 300px; position: relative;">
+            <canvas id="borrowReturnChart"></canvas>
+        </div>
     </div>
 </div>
 
@@ -285,10 +312,163 @@
 }
 </style>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
+// 借出归还折线图实例
+let borrowReturnChart = null;
+let currentTimeRange = 'day';
+
 let currentRankingType = 'borrow';
 let rankingsData = [];
 let remainingLikes = 5;
+
+// 切换时间范围
+function switchTimeRange(range) {
+    currentTimeRange = range;
+    
+    // 更新按钮状态
+    document.querySelectorAll('.time-range-tabs .tab-btn').forEach(btn => {
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-default');
+        if (btn.dataset.range === range) {
+            btn.classList.remove('btn-default');
+            btn.classList.add('btn-primary');
+        }
+    });
+    
+    // 加载对应范围的数据
+    loadBorrowReturnData(range);
+}
+
+// 加载借出归还数据
+async function loadBorrowReturnData(range) {
+    try {
+        console.log('正在加载图表数据，范围:', range);
+        const response = await fetch(`/api/stats/borrow-return?range=${range}`);
+        const result = await response.json();
+        console.log('API返回结果:', result);
+        
+        if (result.success) {
+            renderChart(result.labels, result.borrow, result.return);
+        } else {
+            console.error('获取统计数据失败:', result.message);
+            // 显示空图表
+            renderChart([], [], []);
+        }
+    } catch (error) {
+        console.error('加载图表数据失败:', error);
+        // 显示空图表
+        renderChart([], [], []);
+    }
+}
+
+// 渲染折线图
+function renderChart(labels, borrowData, returnData) {
+    // 检查 Chart.js 是否已加载
+    if (typeof Chart === 'undefined') {
+        console.error('Chart.js 未加载');
+        return;
+    }
+    
+    const canvas = document.getElementById('borrowReturnChart');
+    if (!canvas) {
+        console.error('找不到图表画布元素');
+        return;
+    }
+    
+    const ctx = canvas.getContext('2d');
+    
+    // 如果图表已存在，先销毁
+    if (borrowReturnChart) {
+        borrowReturnChart.destroy();
+    }
+    
+    borrowReturnChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: '借出',
+                    data: borrowData,
+                    borderColor: '#1890ff',
+                    backgroundColor: 'rgba(24, 144, 255, 0.1)',
+                    borderWidth: 2,
+                    pointRadius: 3,
+                    pointBackgroundColor: '#1890ff',
+                    tension: 0.3,
+                    fill: true
+                },
+                {
+                    label: '归还',
+                    data: returnData,
+                    borderColor: '#52c41a',
+                    backgroundColor: 'rgba(82, 196, 26, 0.1)',
+                    borderWidth: 2,
+                    pointRadius: 3,
+                    pointBackgroundColor: '#52c41a',
+                    tension: 0.3,
+                    fill: true
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    titleColor: '#fff',
+                    bodyColor: '#fff',
+                    borderColor: '#ddd',
+                    borderWidth: 1,
+                    padding: 10,
+                    callbacks: {
+                        label: function(context) {
+                            return context.dataset.label + ': ' + context.parsed.y + ' 次';
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: {
+                        display: false
+                    },
+                    ticks: {
+                        font: {
+                            size: 11
+                        },
+                        maxRotation: 45,
+                        minRotation: 0
+                    }
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: {
+                        color: '#f0f0f0'
+                    },
+                    ticks: {
+                        font: {
+                            size: 11
+                        },
+                        stepSize: 1
+                    }
+                }
+            },
+            interaction: {
+                mode: 'nearest',
+                axis: 'x',
+                intersect: false
+            }
+        }
+    });
+}
 
 // 切换排名类型
 function switchRanking(type) {
@@ -461,7 +641,15 @@ function showToast(message) {
 
 // 页面加载时初始化
 document.addEventListener('DOMContentLoaded', function() {
-    loadRankings();
+    console.log('DOMContentLoaded fired, Chart.js status:', typeof Chart);
+    
+    // 只在有排名容器时加载排名数据
+    if (document.getElementById('rankingContainer')) {
+        loadRankings();
+    }
+    
+    // 加载图表数据
+    loadBorrowReturnData('day');
 });
 </script>
 {% endblock %}
