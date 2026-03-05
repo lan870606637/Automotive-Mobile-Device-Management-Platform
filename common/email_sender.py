@@ -57,8 +57,14 @@ class EmailSender:
     def _create_smtp_connection(self):
         """创建SMTP连接"""
         try:
-            server = smtplib.SMTP(self.smtp_server, self.smtp_port)
-            server.starttls()
+            # 根据端口选择连接方式
+            # 465端口使用SSL直接连接
+            # 587端口使用STARTTLS
+            if self.smtp_port == 465:
+                server = smtplib.SMTP_SSL(self.smtp_server, self.smtp_port)
+            else:
+                server = smtplib.SMTP(self.smtp_server, self.smtp_port)
+                server.starttls()
             server.login(self.username, self.password)
             return server
         except Exception as e:

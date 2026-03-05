@@ -117,58 +117,15 @@
                         </tr>
                     </thead>
                     <tbody id="userTableBody">
-                        {% for user in users %}
+                        <!-- 数据由前端JavaScript加载 -->
                         <tr>
-                            <td><code style="font-size: 11px; color: #666;">{{ user.id[:8] }}...</code></td>
-                            <td>
-                                <div style="display:flex;align-items:center;gap:12px;">
-                                    <div class="user-avatar-small">{{ user.name[0] if user.name else '?' }}</div>
-                                    <strong>{{ user.name }}</strong>
-                                </div>
-                            </td>
-                            <td>{{ user.email or '-' }}</td>
-                            <td>{{ user.borrow_count }}</td>
-                            <td>
-                                {% if user.is_admin %}
-                                <span class="role-badge admin">管理员</span>
-                                {% else %}
-                                <span class="role-badge user">普通用户</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if user.is_frozen %}
-                                <span class="role-badge frozen">已冻结</span>
-                                {% else %}
-                                <span style="color: #52c41a;">正常</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if user.is_first_login %}
-                                <span style="color: #faad14;">是</span>
-                                {% else %}
-                                <span style="color: #999;">否</span>
-                                {% endif %}
-                            </td>
-                            <td>{{ user.register_time }}</td>
-                            <td>
-                                <div class="table-actions">
-                                    <button class="btn btn-sm btn-secondary" onclick="editUser('{{ user.id }}')">编辑</button>
-                                    <button class="btn btn-sm btn-warning" onclick="resetPassword('{{ user.id }}', '{{ user.name }}')">重置密码</button>
-                                    {% if user.is_frozen %}
-                                    <button class="btn btn-sm btn-success" onclick="unfreezeUser('{{ user.id }}')">解冻</button>
-                                    {% else %}
-                                    <button class="btn btn-sm btn-warning" onclick="freezeUser('{{ user.id }}')">冻结</button>
-                                    {% endif %}
-                                    {% if user.is_admin %}
-                                    <button class="btn btn-sm btn-danger" onclick="removeAdmin('{{ user.id }}')">取消管理</button>
-                                    {% else %}
-                                    <button class="btn btn-sm btn-primary" onclick="setAdmin('{{ user.id }}')">设管理</button>
-                                    {% endif %}
-                                    <button class="btn btn-sm btn-danger" onclick="deleteUser('{{ user.id }}', '{{ user.name }}')">删除</button>
+                            <td colspan="9" class="empty-cell" style="padding: 40px; text-align: center;">
+                                <div style="color: #999;">
+                                    <div style="font-size: 24px; margin-bottom: 8px;">⏳</div>
+                                    <div>正在加载用户数据...</div>
                                 </div>
                             </td>
                         </tr>
-                        {% endfor %}
                     </tbody>
                 </table>
             </div>
@@ -244,16 +201,112 @@
 
     <script>
         let users = [];
+        let currentPage = 1;
+        let totalPages = 1;
+        let isLoading = false;
+
+        // 显示加载状态
+        function showLoading() {
+            const tbody = document.getElementById('userTableBody');
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="9" style="padding: 60px; text-align: center;">
+                        <div style="color: #999;">
+                            <div class="loading-spinner" style="
+                                width: 40px;
+                                height: 40px;
+                                border: 3px solid #f3f3f3;
+                                border-top: 3px solid #1890ff;
+                                border-radius: 50%;
+                                animation: spin 1s linear infinite;
+                                margin: 0 auto 16px;
+                            "></div>
+                            <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
+                            <div>正在加载用户数据...</div>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
 
         // 加载用户列表
-        async function loadUsers() {
+        async function loadUsers(page = 1, search = '') {
+            if (isLoading) return;
+            isLoading = true;
+
+            // 显示加载状态
+            showLoading();
+
             try {
-                const response = await fetch('/api/admin/users');
-                users = await response.json();
-                renderUsers(users);
+                const params = new URLSearchParams();
+                params.append('page', page);
+                params.append('per_page', 20);
+                if (search) params.append('search', search);
+
+                const response = await fetch(`/api/admin/users?${params.toString()}`);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const result = await response.json();
+
+                if (result.users) {
+                    users = result.users;
+                    currentPage = result.page;
+                    totalPages = result.total_pages;
+                    renderUsers(users);
+                    renderPagination();
+                } else {
+                    // 兼容旧格式（直接返回数组）
+                    users = Array.isArray(result) ? result : [];
+                    renderUsers(users);
+                }
             } catch (error) {
-                showToast('加载用户列表失败', 'error');
+                console.error('加载用户列表失败:', error);
+                const tbody = document.getElementById('userTableBody');
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="9" style="padding: 60px; text-align: center;">
+                            <div style="color: #ff4d4f;">
+                                <div style="font-size: 48px; margin-bottom: 16px;">⚠️</div>
+                                <div style="font-size: 16px; margin-bottom: 8px;">加载失败</div>
+                                <div style="color: #999; font-size: 14px; margin-bottom: 16px;">${error.message}</div>
+                                <button class="btn btn-primary" onclick="loadUsers(${page}, '${search}')">重新加载</button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                showToast('加载用户列表失败: ' + error.message, 'error');
+            } finally {
+                isLoading = false;
             }
+        }
+
+        // 渲染分页
+        function renderPagination() {
+            // 移除旧的分页
+            const oldPagination = document.querySelector('.pagination');
+            if (oldPagination) oldPagination.remove();
+
+            if (totalPages <= 1) return;
+
+            const tbody = document.getElementById('userTableBody');
+            const paginationRow = document.createElement('tr');
+            paginationRow.innerHTML = `
+                <td colspan="9" style="padding: 16px; text-align: center;">
+                    <div class="pagination" style="display: inline-flex; gap: 8px; align-items: center;">
+                        <button class="btn btn-sm ${currentPage === 1 ? 'disabled' : ''}" 
+                                onclick="loadUsers(${currentPage - 1})" 
+                                ${currentPage === 1 ? 'disabled' : ''}>上一页</button>
+                        <span>第 ${currentPage} / ${totalPages} 页</span>
+                        <button class="btn btn-sm ${currentPage === totalPages ? 'disabled' : ''}" 
+                                onclick="loadUsers(${currentPage + 1})" 
+                                ${currentPage === totalPages ? 'disabled' : ''}>下一页</button>
+                    </div>
+                </td>
+            `;
+            tbody.parentNode.appendChild(paginationRow);
         }
 
         // 渲染用户列表
@@ -542,24 +595,26 @@
             }
         }
 
-        // 筛选功能
-        document.getElementById('searchInput')?.addEventListener('input', filterUsers);
+        // 搜索功能 - 使用后端搜索
+        let searchTimeout;
+        document.getElementById('searchInput')?.addEventListener('input', function() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                const keyword = this.value.trim();
+                loadUsers(1, keyword);
+            }, 300);
+        });
+
+        // 状态筛选（前端筛选）
         document.getElementById('filterStatus')?.addEventListener('change', filterUsers);
         document.getElementById('filterRole')?.addEventListener('change', filterUsers);
 
         function filterUsers() {
-            const keyword = document.getElementById('searchInput')?.value?.toLowerCase() || '';
             const status = document.getElementById('filterStatus')?.value || '';
             const role = document.getElementById('filterRole')?.value || '';
 
             let filtered = users;
 
-            if (keyword) {
-                filtered = filtered.filter(u => 
-                    (u.name && u.name.toLowerCase().includes(keyword)) ||
-                    (u.email && u.email.toLowerCase().includes(keyword))
-                );
-            }
             if (status === '正常') filtered = filtered.filter(u => !u.is_frozen);
             if (status === '已冻结') filtered = filtered.filter(u => u.is_frozen);
             if (role === '管理员') filtered = filtered.filter(u => u.is_admin);
@@ -572,7 +627,7 @@
             document.getElementById('searchInput').value = '';
             document.getElementById('filterStatus').value = '';
             document.getElementById('filterRole').value = '';
-            renderUsers(users);
+            loadUsers(1, '');
         }
 
         // 关闭弹窗
@@ -591,7 +646,7 @@
         }
 
         // 初始化
-        document.addEventListener('DOMContentLoaded', loadUsers);
+        document.addEventListener('DOMContentLoaded', () => loadUsers(1));
     </script>
 </body>
 </html>

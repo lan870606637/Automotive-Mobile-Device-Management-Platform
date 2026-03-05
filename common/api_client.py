@@ -15,8 +15,11 @@ from .models import DeviceStatus, DeviceType, OperationType, EntrySource, Admin,
 from .db_store import DatabaseStore, get_db_transaction
 from .email_sender import email_sender
 
-# 创建邮件发送线程池
-email_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="email_sender")
+# 创建邮件发送线程池（根据CPU核心数动态配置，提高并发能力）
+import os
+# 动态计算worker数量：CPU核心数 + 4，但不超过32
+_email_max_workers = min(32, (os.cpu_count() or 1) + 4)
+email_executor = ThreadPoolExecutor(max_workers=_email_max_workers, thread_name_prefix="email_sender")
 
 # 创建全局 DatabaseStore 实例
 _db_store = DatabaseStore()
@@ -417,13 +420,20 @@ class APIClient:
         for d in all_devices:
             if d.name == device.name:
                 return False
-        
+
         self._db.save_device(device)
-        
+
+        # 使设备缓存失效
+        try:
+            from .cache_manager import data_cache
+            data_cache.invalidate_devices_cache()
+        except Exception:
+            pass
+
         # 添加操作日志
         self.add_operation_log(f"新增设备", device.name)
         return True
-    
+
     def update_device(self, device: Device, source: str = "admin") -> bool:
         """更新设备信息
 
@@ -434,10 +444,18 @@ class APIClient:
         existing = self._db.get_device_by_id(device.id)
         if existing:
             self._db.save_device(device)
+
+            # 使设备缓存失效
+            try:
+                from .cache_manager import data_cache
+                data_cache.invalidate_device_cache(device.id)
+            except Exception:
+                pass
+
             self.add_operation_log(f"更新设备信息", device.name, source=source)
             return True
         return False
-    
+
     def delete_device(self, device_id: str) -> bool:
         """软删除设备"""
         device = self._db.get_device_by_id(device_id)
@@ -445,9 +463,17 @@ class APIClient:
             # 取消所有有效预约
             device_type = self._get_device_type_str(device)
             self._cancel_reservations_on_device_delete(device_id, device_type, device.name)
-            
+
             device.is_deleted = True
             self._db.save_device(device)
+
+            # 使设备缓存失效
+            try:
+                from .cache_manager import data_cache
+                data_cache.invalidate_device_cache(device_id)
+            except Exception:
+                pass
+
             self.add_operation_log(f"删除设备", device.name)
             return True
         return False

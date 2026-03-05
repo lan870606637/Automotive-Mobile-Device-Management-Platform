@@ -182,12 +182,8 @@ function validateForm(formData, rules) {
 
 // 页面加载完成后初始化
 document.addEventListener('DOMContentLoaded', function() {
-    // 添加页面转场动画
-    document.body.style.opacity = '0';
-    setTimeout(() => {
-        document.body.style.transition = 'opacity 0.3s';
-        document.body.style.opacity = '1';
-    }, 10);
+    // 页面转场动画已移除，避免跳转时闪白
+    // 保持页面立即显示，提升用户体验
     
     // 阻止双击缩放
     let lastTouchEnd = 0;

@@ -934,7 +934,7 @@ def my_records():
     api_client.reload_data()
 
     # 获取所有记录
-    all_records = api_client.get_all_records()
+    all_records = api_client.get_records()
 
     # 筛选当前用户的记录
     my_records_list = [r for r in all_records if r.borrower == user['borrower_name']]
@@ -3113,11 +3113,18 @@ def api_report_lost():
     if not device:
         return jsonify({'success': False, 'message': '设备不存在'})
     
-    # 检查是否是当前借用人
-    if device.borrower != user['borrower_name']:
-        return jsonify({'success': False, 'message': '您不是该设备的当前借用人'})
+    # 检查是否是当前借用人或保管人
+    is_borrower = device.borrower == user['borrower_name']
+    is_custodian = device.cabinet_number == user['borrower_name']
     
-    if device.status != DeviceStatus.BORROWED:
+    if not is_borrower and not is_custodian:
+        return jsonify({'success': False, 'message': '您不是该设备的当前借用人或保管人'})
+    
+    # 检查设备状态：借用人只能报备借出状态的设备，保管人可以报备在库/保管中/借出状态的设备
+    if is_borrower and device.status != DeviceStatus.BORROWED:
+        return jsonify({'success': False, 'message': '设备状态异常'})
+    
+    if is_custodian and device.status not in [DeviceStatus.IN_STOCK, DeviceStatus.IN_CUSTODY, DeviceStatus.BORROWED]:
         return jsonify({'success': False, 'message': '设备状态异常'})
     
     # 更新设备状态为丢失
@@ -4020,7 +4027,6 @@ def api_renew():
     
     # 检查是否逾期超过3天
     if device.expected_return_date:
-        from datetime import datetime
         now = datetime.now()
         if now > device.expected_return_date:
             overdue_days = (now.date() - device.expected_return_date.date()).days
@@ -4098,11 +4104,12 @@ def api_renew():
                 custodian_user = u
                 break
         if custodian_user:
+            return_date_str = device.expected_return_date.strftime('%Y-%m-%d') if device.expected_return_date else '长期借用'
             api_client.add_notification(
                 user_id=custodian_user.id,
                 user_name=custodian_user.borrower_name,
                 title="设备借用续期通知",
-                content=f"您保管的设备「{device.name}」已被借用人 {user['borrower_name']} 续期，新的预计归还日期：{device.expected_return_date.strftime('%Y-%m-%d')}",
+                content=f"您保管的设备「{device.name}」已被借用人 {user['borrower_name']} 续期，新的预计归还日期：{return_date_str}",
                 device_name=device.name,
                 device_id=device.id,
                 notification_type="info"
@@ -4119,9 +4126,10 @@ def api_renew():
     # 获取用户当前总积分
     total_points = get_user_total_points(user['user_id'])
 
+    return_date_msg = device.expected_return_date.strftime('%Y-%m-%d') if device.expected_return_date else '长期借用'
     return jsonify({
         'success': True,
-        'message': f'续借成功，新的预计归还日期: {device.expected_return_date.strftime("%Y-%m-%d")}' + points_message,
+        'message': f'续借成功，新的预计归还日期: {return_date_msg}' + points_message,
         'points_added': points_change,
         'total_points': total_points
     })
@@ -6470,7 +6478,8 @@ def api_wheel_hidden_titles():
 if __name__ == '__main__':
     print(f"用户服务启动在端口 {USER_SERVICE_PORT}")
     try:
-        app.run(debug=False, host='0.0.0.0', port=USER_SERVICE_PORT)
+        # threaded=True 启用多线程支持高并发
+        app.run(debug=False, host='0.0.0.0', port=USER_SERVICE_PORT, threaded=True)
     finally:
         # 关闭定时任务
         if scheduler:

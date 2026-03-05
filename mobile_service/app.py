@@ -24,6 +24,7 @@ from common.api_client import api_client
 from common.db_store import init_database
 from common.utils import mask_phone
 from common.config import SECRET_KEY, SERVER_URL, MOBILE_SERVICE_PORT
+from common.cache_manager import data_cache
 
 load_dotenv()
 
@@ -50,8 +51,16 @@ def login_required(f):
 
 
 def get_current_user():
-    """获取当前登录用户信息"""
+    """获取当前登录用户信息 - 使用缓存优化"""
     user_id = session.get('user_id', '')
+    
+    # 尝试从缓存获取用户
+    cache_key = f"user:{user_id}"
+    cached_user = data_cache.cache.get(cache_key)
+    if cached_user:
+        return cached_user
+    
+    # 从数据库获取
     user = None
     for u in api_client._users:
         if u.id == user_id:
@@ -63,7 +72,7 @@ def get_current_user():
         user_points = api_client._db.get_user_points(user_id)
         points = user_points.points if user_points else 0
 
-        return {
+        user_data = {
             'user_id': user.id,
             'email': user.email,
             'borrower_name': user.borrower_name,
@@ -71,6 +80,10 @@ def get_current_user():
             'is_admin': user.is_admin,
             'points': points
         }
+        
+        # 缓存用户数据30秒
+        data_cache.cache.set(cache_key, user_data, ttl=30)
+        return user_data
     return None
 
 
@@ -163,7 +176,7 @@ def auth(device_type):
 
 @app.route('/api/login', methods=['POST'])
 def api_login():
-    """登录API"""
+    """登录API - 使用缓存优化用户查询"""
     data = request.get_json()
     email = data.get('email', '').strip().lower()
     password = data.get('password', '')
@@ -172,11 +185,16 @@ def api_login():
     if not email or not password:
         return jsonify({'success': False, 'message': '请输入邮箱和密码'})
 
-    # 验证用户
+    # 验证用户 - 使用缓存的用户列表
+    users = data_cache.get_cached_users()
     user = None
-    for u in api_client._users:
-        if u.email.lower() == email:
-            user = u
+    for u in users:
+        if u.get('email', '').lower() == email:
+            # 获取完整用户对象进行密码验证
+            for full_user in api_client._users:
+                if full_user.email.lower() == email:
+                    user = full_user
+                    break
             break
 
     if not user:
@@ -207,6 +225,10 @@ def api_login():
 @app.route('/logout')
 def logout():
     """退出登录"""
+    # 清除用户缓存
+    user_id = session.get('user_id')
+    if user_id:
+        data_cache.cache.delete(f"user:{user_id}")
     session.clear()
     return redirect(url_for('select_device_type'))
 
@@ -214,28 +236,38 @@ def logout():
 @app.route('/devices')
 @login_required
 def device_list():
-    """设备列表页面"""
+    """设备列表页面 - 使用缓存优化"""
     device_type = session.get('device_type', 'car_machine')
     current_user = get_current_user()
 
-    # 重新加载数据
-    api_client.reload_data()
-
-    # 获取设备数据 - 使用正确的方法
+    # 使用缓存获取设备数据，避免频繁reload_data
     device_type_cn = get_device_type_mapping(device_type)
-    devices = api_client.get_all_devices(device_type_cn)
+    devices_data = data_cache.get_cached_devices(device_type_cn)
 
     # 转换为字典列表
-    device_list_data = [device_to_dict(d) for d in devices]
+    device_list_data = devices_data if isinstance(devices_data[0], dict) else [device_to_dict(d) for d in devices_data]
 
-    # 获取当前用户的借用记录 - 使用正确的方法
-    all_records = api_client.get_records()
-    borrowing_device_ids = []
-    for record in all_records:
-        if (record.borrower == current_user['borrower_name'] and
-            hasattr(record, 'operation_type') and
-            '借出' in str(record.operation_type)):
-            borrowing_device_ids.append(record.device_id)
+    # 获取当前用户的借用记录 - 使用缓存
+    cache_key = f"user_records:{current_user['borrower_name']}"
+    borrowing_device_ids = data_cache.cache.get(cache_key)
+    
+    if borrowing_device_ids is None:
+        borrowing_device_ids = []
+        # 使用数据库直接查询，避免加载所有记录
+        from common.db_store import get_db_connection
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT device_id FROM records 
+                WHERE borrower = %s 
+                AND operation_type IN ('BORROW', 'FORCE_BORROW')
+                ORDER BY operation_time DESC
+                LIMIT 100
+            """, (current_user['borrower_name'],))
+            for row in cursor.fetchall():
+                borrowing_device_ids.append(row['device_id'])
+        # 缓存10秒
+        data_cache.cache.set(cache_key, borrowing_device_ids, ttl=10)
 
     # 标记已借用的设备
     for device in device_list_data:
@@ -264,25 +296,20 @@ def device_list():
 @app.route('/device/<device_id>')
 @login_required
 def device_detail(device_id):
-    """设备详情页面"""
+    """设备详情页面 - 使用缓存优化"""
     device_type = session.get('device_type', 'car_machine')
     current_user = get_current_user()
 
-    # 重新加载数据
-    api_client.reload_data()
-
-    # 获取设备信息 - 使用正确的方法
-    device = api_client.get_device_by_id(device_id)
-    if not device:
+    # 使用缓存获取设备详情
+    device_data = data_cache.get_device_by_id_cached(device_id)
+    
+    if not device_data:
         return render_template('device_detail.html',
                              error='设备不存在',
                              device_type=device_type,
                              current_user=current_user)
 
-    # 转换为字典
-    device_data = device_to_dict(device)
-
-    # 获取设备的借用记录
+    # 获取设备的借用记录 - 使用数据库直接查询
     records = api_client._db.get_records_by_device(device_id)
 
     # 检查当前用户是否正在借用此设备
@@ -313,7 +340,7 @@ def device_detail_simple(device_id):
 @app.route('/api/borrow', methods=['POST'])
 @login_required
 def api_borrow():
-    """借用设备API"""
+    """借用设备API - 优化：使用缓存和直接数据库操作"""
     data = request.get_json()
     device_id = data.get('device_id')
     device_type = data.get('device_type', session.get('device_type', 'car_machine'))
@@ -324,24 +351,25 @@ def api_borrow():
     if not device_id:
         return jsonify({'success': False, 'message': '设备ID不能为空'})
 
-    # 重新加载数据
-    api_client.reload_data()
-
-    # 检查设备是否可借用
-    device = api_client.get_device_by_id(device_id)
-    if not device:
+    # 使用缓存获取设备信息
+    device_data = data_cache.get_device_by_id_cached(device_id)
+    if not device_data:
         return jsonify({'success': False, 'message': '设备不存在'})
 
     # 检查设备状态
-    if device.status not in [DeviceStatus.IN_STOCK, DeviceStatus.IN_CUSTODY]:
+    status = device_data.get('status', '')
+    if status not in ['在库', '保管中', 'IN_STOCK', 'IN_CUSTODY']:
         return jsonify({'success': False, 'message': '设备当前不可借用'})
+
+    # 创建设备类型字符串
+    device_type_value = device_data.get('device_type', '车机')
 
     # 创建借用记录
     record_id = str(uuid.uuid4())
     record_data = {
         'id': record_id,
         'device_id': device_id,
-        'device_type': device.device_type.value if hasattr(device.device_type, 'value') else str(device.device_type),
+        'device_type': device_type_value,
         'borrower_id': current_user['user_id'],
         'borrower_name': current_user['borrower_name'],
         'borrower_email': current_user['email'],
@@ -355,7 +383,12 @@ def api_borrow():
     api_client._db.add_record(record_data)
 
     # 更新设备状态
-    api_client._db.update_device_status(device_id, device.device_type, DeviceStatus.BORROWED)
+    api_client._db.update_device_status(device_id, device_type_value, DeviceStatus.BORROWED)
+
+    # 使相关缓存失效
+    data_cache.invalidate_device_cache(device_id)
+    data_cache.invalidate_records_cache()
+    data_cache.cache.delete(f"user_records:{current_user['borrower_name']}")
 
     return jsonify({
         'success': True,
@@ -367,7 +400,7 @@ def api_borrow():
 @app.route('/api/return', methods=['POST'])
 @login_required
 def api_return():
-    """归还设备API"""
+    """归还设备API - 优化：使用数据库直接查询"""
     data = request.get_json()
     device_id = data.get('device_id')
     device_type = data.get('device_type', session.get('device_type', 'car_machine'))
@@ -377,19 +410,20 @@ def api_return():
     if not device_id:
         return jsonify({'success': False, 'message': '设备ID不能为空'})
 
-    # 重新加载数据
-    api_client.reload_data()
-
-    # 查找借用记录 - 使用正确的方法
-    all_records = api_client.get_records()
-    borrow_record = None
-    for record in all_records:
-        if (record.device_id == device_id and
-            record.borrower == current_user['borrower_name'] and
-            hasattr(record, 'operation_type') and
-            '借出' in str(record.operation_type)):
-            borrow_record = record
-            break
+    # 使用数据库直接查询借用记录
+    from common.db_store import get_db_connection
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id FROM records 
+            WHERE device_id = %s 
+            AND borrower = %s 
+            AND operation_type IN ('BORROW', 'FORCE_BORROW')
+            ORDER BY operation_time DESC
+            LIMIT 1
+        """, (device_id, current_user['borrower_name']))
+        
+        borrow_record = cursor.fetchone()
 
     if not borrow_record:
         return jsonify({'success': False, 'message': '没有找到借用记录'})
@@ -404,10 +438,15 @@ def api_return():
         device_type_value = '仪表'
 
     # 获取设备信息
-    device = api_client.get_device_by_id(device_id)
-    if device:
+    device_data = data_cache.get_device_by_id_cached(device_id)
+    if device_data:
         # 更新设备状态
         api_client._db.update_device_status(device_id, device_type_value, DeviceStatus.IN_STOCK)
+        
+        # 使相关缓存失效
+        data_cache.invalidate_device_cache(device_id)
+        data_cache.invalidate_records_cache()
+        data_cache.cache.delete(f"user_records:{current_user['borrower_name']}")
 
     return jsonify({
         'success': True,
@@ -418,18 +457,15 @@ def api_return():
 @app.route('/api/devices', methods=['GET'])
 @login_required
 def api_devices():
-    """获取设备列表API"""
+    """获取设备列表API - 使用缓存"""
     device_type = request.args.get('device_type', session.get('device_type', 'car_machine'))
-
-    # 重新加载数据
-    api_client.reload_data()
 
     # 获取设备数据
     device_type_cn = get_device_type_mapping(device_type)
-    devices = api_client.get_all_devices(device_type_cn)
+    devices_data = data_cache.get_cached_devices(device_type_cn)
 
     # 转换为字典列表
-    device_list_data = [device_to_dict(d) for d in devices]
+    device_list_data = devices_data if isinstance(devices_data[0], dict) else [device_to_dict(d) for d in devices_data]
 
     return jsonify({'success': True, 'devices': device_list_data})
 
@@ -445,18 +481,23 @@ def api_user_info():
 @app.route('/my-records')
 @login_required
 def my_records():
-    """我的记录页面"""
+    """我的记录页面 - 使用数据库直接查询优化"""
     current_user = get_current_user()
 
-    # 重新加载数据
-    api_client.reload_data()
-
-    # 获取所有记录并筛选当前用户的
-    all_records = api_client.get_records()
-    user_records = []
-    for record in all_records:
-        if current_user['borrower_name'] in record.borrower or record.borrower == current_user['borrower_name']:
-            user_records.append(record)
+    # 使用数据库直接查询，避免加载所有记录
+    from common.db_store import get_db_connection
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM records 
+            WHERE borrower = %s 
+            ORDER BY operation_time DESC
+        """, (current_user['borrower_name'],))
+        
+        rows = cursor.fetchall()
+        user_records = []
+        for row in rows:
+            user_records.append(row)
 
     # 分页
     page = request.args.get('page', 1, type=int)
@@ -479,35 +520,39 @@ def my_records():
 @app.route('/api/user/records', methods=['GET'])
 @login_required
 def api_user_records():
-    """获取用户借用记录API"""
+    """获取用户借用记录API - 使用数据库直接查询优化"""
     current_user = get_current_user()
 
-    # 重新加载数据
-    api_client.reload_data()
-
-    # 获取所有记录并筛选当前用户的
-    all_records = api_client.get_records()
-    user_records = []
-    for record in all_records:
-        if current_user['borrower_name'] in record.borrower or record.borrower == current_user['borrower_name']:
-            user_records.append(record)
-
-    record_list = []
-    for record in user_records:
-        record_data = {
-            'id': record.id,
-            'device_id': record.device_id,
-            'device_name': record.device_name if hasattr(record, 'device_name') else '',
-            'borrow_time': record.operation_time.isoformat() if hasattr(record, 'operation_time') and record.operation_time else None,
-            'return_time': None,
-            'status': str(record.operation_type) if hasattr(record, 'operation_type') else 'unknown',
-            'remark': record.remark if hasattr(record, 'remark') else ''
-        }
-        record_list.append(record_data)
+    # 使用数据库直接查询，避免加载所有记录
+    from common.db_store import get_db_connection
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, device_id, device_name, operation_time, operation_type, remark 
+            FROM records 
+            WHERE borrower = %s 
+            ORDER BY operation_time DESC
+            LIMIT 100
+        """, (current_user['borrower_name'],))
+        
+        rows = cursor.fetchall()
+        record_list = []
+        for row in rows:
+            record_data = {
+                'id': row['id'],
+                'device_id': row['device_id'],
+                'device_name': row.get('device_name', ''),
+                'borrow_time': row['operation_time'].isoformat() if row['operation_time'] else None,
+                'return_time': None,
+                'status': str(row['operation_type']) if row['operation_type'] else 'unknown',
+                'remark': row.get('remark', '')
+            }
+            record_list.append(record_data)
 
     return jsonify({'success': True, 'records': record_list})
 
 
 if __name__ == '__main__':
     print(f"手机端服务启动在端口 {MOBILE_SERVICE_PORT}")
-    app.run(debug=False, host='0.0.0.0', port=MOBILE_SERVICE_PORT)
+    # threaded=True 启用多线程支持高并发
+    app.run(debug=False, host='0.0.0.0', port=MOBILE_SERVICE_PORT, threaded=True)

@@ -4,7 +4,10 @@
 
 {% set active_nav = 'all_records' %}
 
-
+{% block extra_css %}
+<!-- 在 head 中加载 Chart.js，确保在 DOMContentLoaded 之前加载完成 -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}
 
 {% block content %}
 <h1 class="page-title">🌍 全部借用记录</h1>
@@ -312,7 +315,6 @@
 }
 </style>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 // 借出归还折线图实例
 let borrowReturnChart = null;
@@ -648,7 +650,7 @@ document.addEventListener('DOMContentLoaded', function() {
         loadRankings();
     }
     
-    // 加载图表数据
+    // 加载图表数据（Chart.js 已在 head 中加载）
     loadBorrowReturnData('day');
 });
 </script>

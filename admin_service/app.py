@@ -76,22 +76,9 @@ def get_current_admin():
 
 
 def get_overdue_count():
-    """获取逾期设备数量"""
+    """获取逾期设备数量（使用SQL优化查询）"""
     try:
-        all_devices = api_client.get_all_devices()
-        overdue_count = 0
-        for device in all_devices:
-            if device.status == DeviceStatus.BORROWED and device.expected_return_date:
-                try:
-                    expect_time = device.expected_return_date
-                    if isinstance(expect_time, datetime):
-                        now = datetime.now()
-                        time_diff = now - expect_time
-                        if time_diff.total_seconds() > 3600:  # 超过1小时算逾期
-                            overdue_count += 1
-                except Exception:
-                    pass
-        return overdue_count
+        return api_client._db.get_overdue_count()
     except Exception:
         return 0
 
@@ -174,32 +161,14 @@ def admin_mobile_dashboard():
     available_devices = len([d for d in all_devices if d.status in [DeviceStatus.IN_STOCK, DeviceStatus.IN_CUSTODY, DeviceStatus.CIRCULATING, DeviceStatus.NO_CABINET]])
     borrowed_devices = len([d for d in all_devices if d.status == DeviceStatus.BORROWED])
     
-    # 计算逾期设备
-    overdue_devices = 0
-    overdue_devices_list = []
-    for device in all_devices:
-        if device.status == DeviceStatus.BORROWED and device.expected_return_date:
-            try:
-                expect_time = device.expected_return_date
-                # expected_return_date 已经是 datetime 对象
-                if isinstance(expect_time, datetime):
-                    # 超过1小时算逾期
-                    now = datetime.now()
-                    time_diff = now - expect_time
-                    if time_diff.total_seconds() > 3600:  # 超过1小时算逾期
-                        overdue_days = int(time_diff.total_seconds() // (24 * 3600))
-                        overdue_hours = int(time_diff.total_seconds() // 3600)
-                        overdue_devices += 1
-                        overdue_devices_list.append({
-                            'device_name': device.name,
-                            'device_type': device.device_type.value if hasattr(device.device_type, 'value') else device.device_type,
-                            'borrower': device.borrower or '未知',
-                            'overdue_days': overdue_days,
-                            'overdue_hours': overdue_hours
-                        })
-            except Exception as e:
-                print(f"计算逾期设备出错: {e}")
-                pass
+    # 使用SQL优化查询获取逾期设备（替代循环遍历）
+    try:
+        overdue_devices_list = api_client._db.get_overdue_devices(limit=10)
+        overdue_devices = len(overdue_devices_list)
+    except Exception as e:
+        print(f"获取逾期设备出错: {e}")
+        overdue_devices = 0
+        overdue_devices_list = []
 
     # 设备类型分布
     phone_count = len([d for d in all_devices if get_device_type_value(d) == '手机'])
@@ -306,59 +275,27 @@ def admin_pc_login():
 @app.route('/admin/pc/dashboard')
 @admin_required
 def admin_pc_dashboard():
-    """PC端后台仪表盘"""
-    # 获取统计数据
-    all_devices = api_client.get_all_devices()
-    total_devices = len(all_devices)
-    available_devices = len([d for d in all_devices if d.status in [DeviceStatus.IN_STOCK, DeviceStatus.IN_CUSTODY, DeviceStatus.CIRCULATING, DeviceStatus.NO_CABINET]])
-    borrowed_devices = len([d for d in all_devices if d.status == DeviceStatus.BORROWED])
-    damaged_devices = len([d for d in all_devices if d.status == DeviceStatus.DAMAGED])
-    lost_devices = len([d for d in all_devices if d.status == DeviceStatus.LOST])
+    """PC端后台仪表盘 - 使用SQL聚合查询优化"""
+    # 使用优化的统计查询方法
+    stats = api_client._db.get_device_statistics()
     
-    # 计算逾期设备
-    overdue_devices = 0
-    overdue_devices_list = []
-    for device in all_devices:
-        if device.status == DeviceStatus.BORROWED and device.expected_return_date:
-            try:
-                expect_time = device.expected_return_date
-                # expected_return_date 已经是 datetime 对象
-                if isinstance(expect_time, datetime):
-                    # 超过1小时算逾期
-                    now = datetime.now()
-                    time_diff = now - expect_time
-                    if time_diff.total_seconds() > 3600:  # 超过1小时算逾期
-                        overdue_days = int(time_diff.total_seconds() // (24 * 3600))
-                        overdue_hours = int(time_diff.total_seconds() // 3600)
-                        overdue_devices += 1
-                        overdue_devices_list.append({
-                            'device_name': device.name,
-                            'device_type': device.device_type.value if hasattr(device.device_type, 'value') else device.device_type,
-                            'borrower': device.borrower or '未知',
-                            'overdue_days': overdue_days,
-                            'overdue_hours': overdue_hours
-                        })
-            except Exception as e:
-                print(f"计算逾期设备出错: {e}")
-                pass
-
-    # 设备类型分布
-    phone_count = len([d for d in all_devices if get_device_type_value(d) == '手机'])
-    car_device_count = len([d for d in all_devices if get_device_type_value(d) == '车机'])
-    instrument_count = len([d for d in all_devices if get_device_type_value(d) == '仪表'])
-    simcard_count = len([d for d in all_devices if get_device_type_value(d) == '手机卡'])
-    other_device_count = len([d for d in all_devices if get_device_type_value(d) == '其它设备'])
-
-    # 详细状态统计
-    in_stock_count = len([d for d in all_devices if d.status == DeviceStatus.IN_STOCK])  # 在库
-    in_custody_count = len([d for d in all_devices if d.status == DeviceStatus.IN_CUSTODY])  # 保管中
-    no_cabinet_count = len([d for d in all_devices if d.status == DeviceStatus.NO_CABINET])  # 无柜号
-    circulating_count = len([d for d in all_devices if d.status == DeviceStatus.CIRCULATING])  # 流通
-    scrapped_count = len([d for d in all_devices if d.status == DeviceStatus.SCRAPPED])  # 报废
-    shipped_count = len([d for d in all_devices if d.status == DeviceStatus.SHIPPED])  # 寄走
-    sealed_count = len([d for d in all_devices if d.status == DeviceStatus.SEALED])  # 封存
+    # 获取逾期设备列表（使用SQL优化查询）
+    overdue_devices_list = api_client._db.get_overdue_devices(limit=100)
+    overdue_devices = len(overdue_devices_list)
+    
+    # 从统计结果中提取设备类型数量
+    type_stats = stats['by_type']
+    phone_count = type_stats.get('手机', 0)
+    car_device_count = type_stats.get('车机', 0)
+    instrument_count = type_stats.get('仪表', 0)
+    simcard_count = type_stats.get('手机卡', 0)
+    other_device_count = type_stats.get('其它设备', 0)
     
     # 状态分布百分比
+    total_devices = stats['total']
+    available_devices = stats['available']
+    borrowed_devices = stats['borrowed']
+    
     if total_devices > 0:
         available_percent = round(available_devices / total_devices * 100)
         borrowed_percent = round(borrowed_devices / total_devices * 100)
@@ -368,58 +305,40 @@ def admin_pc_dashboard():
         borrowed_percent = 0
         other_percent = 0
     
-    # 获取最近记录
-    all_records = api_client.get_records()
-    recent_records = []
-    for record in all_records[:20]:
-        recent_records.append({
-            'action_type': record.operation_type.value,
-            'device_name': record.device_name,
-            'device_type': record.device_type,
-            'user_name': record.borrower,
-            'time': record.operation_time.strftime('%Y-%m-%d %H:%M')
-        })
+    # 获取最近记录（使用优化查询）
+    recent_records = api_client._db.get_recent_records(limit=20)
     
-    # 计算今日借出和今日归还
-    today = datetime.now().strftime('%Y-%m-%d')
-    today_borrow_count = 0
-    today_return_count = 0
-    for record in all_records:
-        record_date = record.operation_time.strftime('%Y-%m-%d')
-        if record_date == today:
-            if record.operation_type in [OperationType.BORROW, OperationType.FORCE_BORROW]:
-                today_borrow_count += 1
-            elif record.operation_type in [OperationType.RETURN, OperationType.FORCE_RETURN]:
-                today_return_count += 1
+    # 获取今日借出和归还数量（使用SQL优化查询）
+    today_counts = api_client._db.get_today_borrow_return_count()
     
     return render_template('admin/pc/dashboard.html',
                          admin_name=session.get('admin_name', '管理员'),
                          total_devices=total_devices,
                          available_devices=available_devices,
                          borrowed_devices=borrowed_devices,
-                         damaged_devices=damaged_devices,
-                         lost_devices=lost_devices,
+                         damaged_devices=stats['damaged'],
+                         lost_devices=stats['lost'],
                          overdue_devices=overdue_devices,
                          phone_count=phone_count,
                          car_device_count=car_device_count,
                          instrument_count=instrument_count,
                          simcard_count=simcard_count,
                          other_device_count=other_device_count,
-                         in_stock_count=in_stock_count,
-                         in_custody_count=in_custody_count,
-                         no_cabinet_count=no_cabinet_count,
-                         circulating_count=circulating_count,
-                         scrapped_count=scrapped_count,
-                         shipped_count=shipped_count,
-                         sealed_count=sealed_count,
+                         in_stock_count=stats['in_stock'],
+                         in_custody_count=stats['in_custody'],
+                         no_cabinet_count=stats['no_cabinet'],
+                         circulating_count=stats['circulating'],
+                         scrapped_count=stats['scrapped'],
+                         shipped_count=stats['shipped'],
+                         sealed_count=stats['sealed'],
                          available_percent=available_percent,
                          borrowed_percent=borrowed_percent,
                          other_percent=other_percent,
                          overdue_devices_list=overdue_devices_list,
                          recent_records=recent_records,
                          overdue_count=get_overdue_count(),
-                         today_borrow_count=today_borrow_count,
-                         today_return_count=today_return_count)
+                         today_borrow_count=today_counts['borrow'],
+                         today_return_count=today_counts['return'])
 
 
 @app.route('/admin/pc/devices')
@@ -530,25 +449,8 @@ def admin_pc_device_detail(device_id=None):
 @app.route('/admin/pc/users')
 @admin_required
 def admin_pc_users():
-    """PC端用户管理页面"""
-    # 获取所有用户
-    users = api_client.get_all_users()
-    
-    # 分页
-    page = request.args.get('page', 1, type=int)
-    per_page = 20
-    total = len(users)
-    total_pages = (total + per_page - 1) // per_page
-    
-    start = (page - 1) * per_page
-    end = start + per_page
-    paginated_users = users[start:end]
-    
+    """PC端用户管理页面 - 纯前端加载，后端只提供空模板"""
     return render_template('admin/pc/users.html',
-                         users=paginated_users,
-                         page=page,
-                         total_pages=total_pages,
-                         total=total,
                          admin_name=session.get('admin_name', '管理员'),
                          overdue_count=get_overdue_count())
 
@@ -556,22 +458,47 @@ def admin_pc_users():
 @app.route('/admin/pc/records')
 @admin_required
 def admin_pc_records():
-    """PC端记录查询页面"""
-    # 获取所有记录
-    all_records = api_client.get_records()
-    
-    # 分页
+    """PC端记录查询页面 - 使用数据库分页优化"""
+    # 获取分页参数
     page = request.args.get('page', 1, type=int)
     per_page = 20
-    total = len(all_records)
+
+    # 使用优化的分页查询
+    from common.db_store import get_db_connection
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+
+        # 获取总数
+        cursor.execute("SELECT COUNT(*) as total FROM records")
+        total = cursor.fetchone()['total']
+
+        # 获取分页数据
+        offset = (page - 1) * per_page
+        cursor.execute("""
+            SELECT operation_type, device_name, device_type, borrower,
+                   operator, operation_time, remark
+            FROM records
+            ORDER BY operation_time DESC
+            LIMIT %s OFFSET %s
+        """, (per_page, offset))
+
+        rows = cursor.fetchall()
+        records = []
+        for row in rows:
+            records.append({
+                'action_type': row['operation_type'],
+                'device_name': row['device_name'],
+                'device_type': row['device_type'],
+                'user_name': row['borrower'],
+                'operator': row['operator'],
+                'time': row['operation_time'].strftime('%Y-%m-%d %H:%M') if row['operation_time'] else '',
+                'remarks': row['remark']
+            })
+
     total_pages = (total + per_page - 1) // per_page
-    
-    start = (page - 1) * per_page
-    end = start + per_page
-    paginated_records = all_records[start:end]
-    
+
     return render_template('admin/pc/records.html',
-                         records=paginated_records,
+                         records=records,
                          page=page,
                          total_pages=total_pages,
                          total=total,
@@ -594,60 +521,16 @@ def admin_pc_logs():
 @app.route('/admin/pc/overdue')
 @admin_required
 def admin_pc_overdue():
-    """PC端逾期设备页面"""
-    all_devices = api_client.get_all_devices()
+    """PC端逾期设备页面 - 使用SQL优化查询"""
+    # 使用优化的SQL查询获取逾期设备
+    overdue_devices = api_client._db.get_overdue_devices()
     
-    # 获取逾期设备
-    overdue_devices = []
-    phone_overdue = 0
-    car_overdue = 0
-    instrument_overdue = 0
-    simcard_overdue = 0
-    other_overdue = 0
-    
-    for device in all_devices:
-        if device.status == DeviceStatus.BORROWED and device.expected_return_date:
-            try:
-                expect_time = device.expected_return_date
-                # expected_return_date 已经是 datetime 对象
-                if isinstance(expect_time, datetime):
-                    # 超过1小时算逾期
-                    now = datetime.now()
-                    time_diff = now - expect_time
-                    if time_diff.total_seconds() > 3600:  # 超过1小时算逾期
-                        overdue_days = int(time_diff.total_seconds() // (24 * 3600))
-                        overdue_hours = int(time_diff.total_seconds() // 3600)
-                        
-                        # 获取设备类型
-                        device_type = get_device_type_str(device)
-                        if device_type == '手机':
-                            phone_overdue += 1
-                        elif device_type == '车机':
-                            car_overdue += 1
-                        elif device_type == '仪表':
-                            instrument_overdue += 1
-                        elif device_type == '手机卡':
-                            simcard_overdue += 1
-                        elif device_type == '其它设备':
-                            other_overdue += 1
-                        
-                        overdue_devices.append({
-                            'id': device.id,
-                            'device_name': device.name,
-                            'device_type': device_type,
-                            'borrower': device.borrower,
-                            'borrow_time': device.borrow_time.strftime('%Y-%m-%d') if device.borrow_time else '',
-                            'expect_return_time': expect_time.strftime('%Y-%m-%d'),
-                            'overdue_days': overdue_days,
-                            'overdue_hours': overdue_hours,
-                            'phone': device.phone
-                        })
-            except Exception as e:
-                print(f"处理逾期设备出错: {e}")
-                pass
-
-    # 按逾期天数排序
-    overdue_devices.sort(key=lambda x: x['overdue_days'], reverse=True)
+    # 统计各类型逾期设备数量
+    phone_overdue = sum(1 for d in overdue_devices if d['device_type'] == '手机')
+    car_overdue = sum(1 for d in overdue_devices if d['device_type'] == '车机')
+    instrument_overdue = sum(1 for d in overdue_devices if d['device_type'] == '仪表')
+    simcard_overdue = sum(1 for d in overdue_devices if d['device_type'] == '手机卡')
+    other_overdue = sum(1 for d in overdue_devices if d['device_type'] == '其它设备')
     
     return render_template('admin/pc/overdue.html',
                          overdue_devices=overdue_devices,
@@ -780,42 +663,9 @@ def admin_pc_remarks():
 @app.route('/api/devices/overdue', methods=['GET'])
 @admin_required
 def api_devices_overdue():
-    """获取逾期设备列表API"""
-    all_devices = api_client.get_all_devices()
-    
-    overdue_devices = []
-    for device in all_devices:
-        if device.status == DeviceStatus.BORROWED and device.expected_return_date:
-            try:
-                expect_time = device.expected_return_date
-                if isinstance(expect_time, datetime):
-                    now = datetime.now()
-                    time_diff = now - expect_time
-                    if time_diff.total_seconds() > 3600:  # 超过1小时算逾期
-                        overdue_days = int(time_diff.total_seconds() // (24 * 3600))
-                        overdue_hours = int(time_diff.total_seconds() // 3600)
-                        
-                        # 获取设备类型
-                        device_type = get_device_type_str(device)
-                        
-                        overdue_devices.append({
-                            'id': device.id,
-                            'device_name': device.name,
-                            'device_type': device_type,
-                            'borrower': device.borrower,
-                            'borrow_time': device.borrow_time.strftime('%Y-%m-%d') if device.borrow_time else '',
-                            'expect_return_time': expect_time.strftime('%Y-%m-%d'),
-                            'overdue_days': overdue_days,
-                            'overdue_hours': overdue_hours,
-                            'phone': device.phone
-                        })
-            except Exception as e:
-                print(f"处理逾期设备出错: {e}")
-                pass
-    
-    # 按逾期天数排序
-    overdue_devices.sort(key=lambda x: x['overdue_days'], reverse=True)
-    
+    """获取逾期设备列表API - 使用SQL优化查询"""
+    # 使用优化的SQL查询获取逾期设备
+    overdue_devices = api_client._db.get_overdue_devices()
     return jsonify({'devices': overdue_devices, 'count': len(overdue_devices)})
 
 
@@ -871,49 +721,32 @@ def api_device_remind(device_id):
 @app.route('/api/overdue/remind_all', methods=['POST'])
 @admin_required
 def api_overdue_remind_all():
-    """批量提醒所有逾期用户API"""
-    all_devices = api_client.get_all_devices()
+    """批量提醒所有逾期用户API - 使用SQL优化查询"""
+    # 使用优化的SQL查询获取逾期设备
+    overdue_devices = api_client._db.get_overdue_devices()
     
     remind_count = 0
     reminded_borrowers = set()  # 记录已提醒的借用人，避免重复提醒
     
-    for device in all_devices:
-        if device.status == DeviceStatus.BORROWED and device.expected_return_date:
-            try:
-                expect_time = device.expected_return_date
-                if isinstance(expect_time, datetime):
-                    now = datetime.now()
-                    time_diff = now - expect_time
-                    if time_diff.total_seconds() > 3600:
-                        # 发送通知给借用人
-                        api_client.notify_overdue_reminder(
-                            device_id=device.id,
-                            device_name=device.name,
-                            borrower=device.borrower,
-                            operator=session.get('admin_name', '管理员')
-                        )
-                        # 通知保管人（如果存在且不是借用人）
-                        if device.cabinet_number and device.cabinet_number != device.borrower:
-                            custodian_user = None
-                            for u in api_client._users:
-                                if u.borrower_name == device.cabinet_number:
-                                    custodian_user = u
-                                    break
-                            if custodian_user:
-                                api_client.add_notification(
-                                    user_id=custodian_user.id,
-                                    user_name=custodian_user.borrower_name,
-                                    title="设备逾期归还提醒",
-                                    content=f"您保管的设备「{device.name}」已被借用人 {device.borrower} 逾期，请协助催促归还。",
-                                    device_name=device.name,
-                                    device_id=device.id,
-                                    notification_type="warning"
-                                )
-                        remind_count += 1
-                        reminded_borrowers.add(device.borrower)
-                        api_client.add_operation_log(f"批量提醒: {device.borrower}", device.name)
-            except Exception:
-                pass
+    for device_data in overdue_devices:
+        try:
+            borrower = device_data['borrower']
+            if borrower in reminded_borrowers:
+                continue
+                
+            # 发送通知给借用人
+            api_client.notify_overdue_reminder(
+                device_id=device_data['id'],
+                device_name=device_data['device_name'],
+                borrower=borrower,
+                operator=session.get('admin_name', '管理员')
+            )
+            
+            remind_count += 1
+            reminded_borrowers.add(borrower)
+            api_client.add_operation_log(f"批量提醒: {borrower}", device_data['device_name'])
+        except Exception:
+            pass
     
     # 记录批量提醒日志
     if remind_count > 0:
@@ -1375,24 +1208,29 @@ def api_admin_login():
 @app.route('/api/admin/users', methods=['GET', 'POST'])
 @admin_required
 def api_admin_users():
-    """用户列表 / 新增用户API (后台管理)"""
+    """用户列表 / 新增用户API (后台管理) - 使用缓存和分页优化"""
     if request.method == 'GET':
-        users = api_client.get_all_users()
-        users_data = []
-        for user in users:
-            if not user.is_deleted:
-                users_data.append({
-                    'id': user.id,
-                    'name': user.borrower_name,
-                    'email': user.email,
-                    'borrow_count': user.borrow_count,
-                    'is_admin': user.is_admin,
-                    'is_frozen': user.is_frozen,
-                    'is_first_login': user.is_first_login,
-                    'register_time': user.create_time.strftime('%Y-%m-%d') if hasattr(user, 'create_time') and user.create_time else '-'
-                })
-        return jsonify(users_data)
-    
+        # 获取分页和搜索参数
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
+        search = request.args.get('search', '').strip() or None
+
+        # 使用缓存的分页查询
+        from common.cache_manager import data_cache
+        result = data_cache.get_cached_users_paginated(
+            page=page,
+            per_page=per_page,
+            search=search
+        )
+
+        return jsonify({
+            'users': result['users'],
+            'total': result['total'],
+            'page': result['page'],
+            'per_page': result['per_page'],
+            'total_pages': result['total_pages']
+        })
+
     else:  # POST
         data = request.get_json()
         try:
@@ -1402,6 +1240,9 @@ def api_admin_users():
                 password=data.get('password'),
                 is_admin=data.get('is_admin', False)
             )
+            # 创建用户后使缓存失效
+            from common.cache_manager import data_cache
+            data_cache.invalidate_users_cache()
             return jsonify({'success': True, 'user_id': user.id})
         except Exception as e:
             return jsonify({'success': False, 'message': str(e)})
@@ -1415,12 +1256,18 @@ def api_user_detail(user_id):
         data = request.get_json()
         try:
             api_client.update_user(user_id, data)
+            # 更新用户后使缓存失效
+            from common.cache_manager import data_cache
+            data_cache.invalidate_users_cache()
             return jsonify({'success': True})
         except Exception as e:
             return jsonify({'success': False, 'message': str(e)})
     else:  # DELETE
         try:
             success, message = api_client.delete_user(user_id)
+            # 删除用户后使缓存失效
+            from common.cache_manager import data_cache
+            data_cache.invalidate_users_cache()
             return jsonify({'success': success, 'message': message})
         except Exception as e:
             return jsonify({'success': False, 'message': str(e)})
@@ -1432,6 +1279,9 @@ def api_user_freeze(user_id):
     """冻结用户API"""
     try:
         api_client.freeze_user(user_id)
+        # 冻结用户后使缓存失效
+        from common.cache_manager import data_cache
+        data_cache.invalidate_users_cache()
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
@@ -1443,6 +1293,9 @@ def api_user_unfreeze(user_id):
     """解冻用户API"""
     try:
         api_client.unfreeze_user(user_id)
+        # 解冻用户后使缓存失效
+        from common.cache_manager import data_cache
+        data_cache.invalidate_users_cache()
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
@@ -2848,4 +2701,5 @@ def internal_error(error):
 
 if __name__ == '__main__':
     print(f"管理服务启动在端口 {ADMIN_SERVICE_PORT}")
-    app.run(debug=False, host='0.0.0.0', port=ADMIN_SERVICE_PORT)
+    # threaded=True 启用多线程支持高并发
+    app.run(debug=False, host='0.0.0.0', port=ADMIN_SERVICE_PORT, threaded=True)

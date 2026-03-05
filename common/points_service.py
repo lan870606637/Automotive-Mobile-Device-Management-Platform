@@ -142,113 +142,43 @@ class PointsService:
         return [record.to_dict() for record in records]
     
     def get_points_rankings(self, limit: int = 100) -> List[Dict[str, Any]]:
-        """获取积分排行榜（按累计积分排序）"""
-        from .api_client import api_client
-
-        # 获取所有用户
-        all_users = api_client._users
-
-        # 获取所有已有积分的用户
-        all_points = self.db.get_all_user_points()
-        points_dict = {p.user_id: p for p in all_points}
-
-        # 为所有用户创建积分数据（如果没有则初始化为0）
-        all_user_points = []
-        for user in all_users:
-            if user.id in points_dict:
-                all_user_points.append(points_dict[user.id])
-            else:
-                # 创建初始积分记录（不保存到数据库，仅用于显示）
-                all_user_points.append(UserPoints(
-                    id='',
-                    user_id=user.id,
-                    points=0,
-                    total_earned=0,
-                    total_spent=0
-                ))
-
-        # 按累计积分排序
-        sorted_points = sorted(all_user_points, key=lambda x: x.total_earned, reverse=True)
+        """
+        获取积分排行榜（按累计积分排序）
+        使用SQL优化查询，避免加载所有用户数据到内存
+        """
+        # 使用优化的SQL查询获取排行榜数据
+        rankings_data = self.db.get_points_rankings_optimized(limit)
         
         rankings = []
-        for i, user_points in enumerate(sorted_points[:limit]):
-            rank = i + 1  # 从上到下排序，没有并列
+        for i, row in enumerate(rankings_data):
+            rank = i + 1
             
-            # 获取用户信息
-            user = None
-            for u in api_client._users:
-                if u.id == user_points.user_id:
-                    user = u
-                    break
+            # 前10名添加称号
+            title = None
+            if rank <= 10:
+                title = self.POINTS_TITLES[i] if i < len(self.POINTS_TITLES) else self.POINTS_TITLES[-1]
             
-            if user:
-                # 前10名添加称号
-                title = None
-                if rank <= 10:
-                    title = self.POINTS_TITLES[i] if i < len(self.POINTS_TITLES) else self.POINTS_TITLES[-1]
-                
-                rankings.append({
-                    'rank': rank,
-                    'user_id': user_points.user_id,
-                    'user_name': user.borrower_name,
-                    'points': user_points.total_earned,  # 显示累计积分
-                    'current_points': user_points.points,  # 当前剩余积分（备用）
-                    'total_earned': user_points.total_earned,
-                    'avatar': user.avatar,
-                    'signature': user.signature,
-                    'title': title
-                })
+            rankings.append({
+                'rank': rank,
+                'user_id': row['user_id'],
+                'user_name': row['borrower_name'],
+                'points': row['total_earned'],  # 显示累计积分
+                'current_points': row['points'],  # 当前剩余积分（备用）
+                'total_earned': row['total_earned'],
+                'avatar': row.get('avatar'),
+                'signature': row.get('signature'),
+                'title': title
+            })
         
         return rankings
     
     def get_user_points_rank(self, user_id: str) -> Dict[str, Any]:
-        """获取用户累计积分排名"""
-        from .api_client import api_client
-
-        # 获取所有用户
-        all_users = api_client._users
-
-        # 获取所有已有积分的用户
-        all_points = self.db.get_all_user_points()
-        points_dict = {p.user_id: p for p in all_points}
-
-        # 为所有用户创建积分数据（如果没有则初始化为0）- 与 get_points_rankings 保持一致
-        all_user_points = []
-        for user in all_users:
-            if user.id in points_dict:
-                all_user_points.append(points_dict[user.id])
-            else:
-                # 创建初始积分记录（不保存到数据库，仅用于显示）
-                all_user_points.append(UserPoints(
-                    id='',
-                    user_id=user.id,
-                    points=0,
-                    total_earned=0,
-                    total_spent=0
-                ))
-
-        # 按累计积分排序
-        sorted_points = sorted(all_user_points, key=lambda x: x.total_earned, reverse=True)
-
-        # 查找用户排名
-        rank = None
-        user_points_data = None
-        for i, up in enumerate(sorted_points):
-            if up.user_id == user_id:
-                rank = i + 1
-                user_points_data = up
-                break
-
-        if not user_points_data:
-            return {'rank': None, 'points': 0, 'total_earned': 0}
-
-        return {
-            'rank': rank,
-            'points': user_points_data.total_earned,  # 返回累计积分用于显示
-            'current_points': user_points_data.points,  # 当前剩余积分
-            'total_earned': user_points_data.total_earned,
-            'total_users': len(sorted_points)
-        }
+        """
+        获取用户累计积分排名
+        使用SQL窗口函数优化，避免加载所有数据
+        """
+        # 使用优化的SQL查询获取用户排名
+        return self.db.get_user_points_rank_optimized(user_id)
     
     # ========== 业务场景积分操作 ==========
     
@@ -277,14 +207,21 @@ class PointsService:
     
     def borrow_reward(self, user_id: str, device_name: str, device_id: str) -> Dict[str, Any]:
         """借用设备奖励（每天最多5次）"""
-        # 检查今天借用次数
+        # 检查今天借用次数（使用SQL优化查询）
+        from .db_store import get_db_connection
         today = datetime.now().strftime('%Y-%m-%d')
-        records = self.db.get_points_records(user_id)
-        borrow_count = 0
-        for record in records:
-            if record.transaction_type == PointsTransactionType.BORROW:
-                if record.create_time and record.create_time.strftime('%Y-%m-%d') == today:
-                    borrow_count += 1
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT COUNT(*) as count 
+                FROM points_records 
+                WHERE user_id = %s 
+                AND transaction_type = 'BORROW'
+                AND DATE(create_time) = %s
+            """, (user_id, today))
+            row = cursor.fetchone()
+            borrow_count = row['count'] if row else 0
 
         if borrow_count >= 5:
             return {'success': False, 'message': '今天借用设备积分已达上限（5次）'}
@@ -299,14 +236,21 @@ class PointsService:
 
     def return_reward(self, user_id: str, device_name: str, device_id: str) -> Dict[str, Any]:
         """归还设备奖励（每天最多5次）"""
-        # 检查今天归还次数
+        # 检查今天归还次数（使用SQL优化查询）
+        from .db_store import get_db_connection
         today = datetime.now().strftime('%Y-%m-%d')
-        records = self.db.get_points_records(user_id)
-        return_count = 0
-        for record in records:
-            if record.transaction_type == PointsTransactionType.RETURN:
-                if record.create_time and record.create_time.strftime('%Y-%m-%d') == today:
-                    return_count += 1
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT COUNT(*) as count 
+                FROM points_records 
+                WHERE user_id = %s 
+                AND transaction_type = 'RETURN'
+                AND DATE(create_time) = %s
+            """, (user_id, today))
+            row = cursor.fetchone()
+            return_count = row['count'] if row else 0
 
         if return_count >= 5:
             return {'success': False, 'message': '今天归还设备积分已达上限（5次）'}

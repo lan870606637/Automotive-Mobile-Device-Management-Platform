@@ -2,6 +2,7 @@
 """
 数据库操作模块
 仅支持MySQL数据库
+使用连接池优化性能
 """
 import os
 import threading
@@ -16,8 +17,19 @@ from .models import DeviceStatus, DeviceType, OperationType, ReservationStatus, 
 # 导入配置
 from .config import MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE
 
-# 全局线程锁，用于写操作同步
-db_write_lock = threading.Lock()
+# 全局线程锁，用于写操作同步（细粒度锁，按表分锁）
+_db_locks = {
+    'devices': threading.Lock(),
+    'users': threading.Lock(),
+    'records': threading.Lock(),
+    'reservations': threading.Lock(),
+    'points': threading.Lock(),
+    'default': threading.Lock()
+}
+
+# 数据库初始化标志，确保只执行一次
+_db_initialized = False
+_db_init_lock = threading.Lock()
 
 # 导入pymysql
 import pymysql
@@ -25,47 +37,26 @@ from pymysql.cursors import DictCursor
 # 让pymysql兼容MySQLdb接口
 pymysql.install_as_MySQLdb()
 
-# 使用简单的连接缓存（pymysql没有内置连接池）
-_connection_cache = {}
+# 导入连接池
+from dbutils.pooled_db import PooledDB
 
-def get_mysql_connection():
-    """获取MySQL连接（带简单缓存）"""
-    import threading
-    tid = threading.current_thread().ident
-    
-    if tid in _connection_cache:
-        conn = _connection_cache[tid]
-        try:
-            # 测试连接是否有效
-            conn.ping(reconnect=True)
-            return conn
-        except:
-            # 连接已失效，创建新连接
-            pass
-    
-    # 创建新连接
-    conn = pymysql.connect(
-        host=MYSQL_HOST,
-        port=MYSQL_PORT,
-        user=MYSQL_USER,
-        password=MYSQL_PASSWORD,
-        database=MYSQL_DATABASE,
-        charset='utf8mb4',
-        cursorclass=DictCursor,
-        autocommit=False,
-        use_unicode=True
-    )
-    _connection_cache[tid] = conn
-    return conn
+# 创建连接池（应用启动时初始化）
+_db_pool = None
 
-
-@contextmanager
-def get_db_connection():
-    """获取数据库连接的上下文管理器"""
-    conn = None
-    try:
-        # MySQL: 创建新连接，不缓存
-        conn = pymysql.connect(
+def init_db_pool():
+    """初始化数据库连接池"""
+    global _db_pool
+    if _db_pool is None:
+        _db_pool = PooledDB(
+            creator=pymysql,
+            maxconnections=100,     # 最大连接数（支持100并发）
+            mincached=10,           # 最小空闲连接
+            maxcached=20,           # 最大空闲连接
+            maxshared=0,            # 最大共享连接数（0表示不共享）
+            blocking=True,          # 连接池满时阻塞等待
+            maxusage=None,          # 连接最大使用次数（None表示无限制）
+            setsession=[],          # 会话设置
+            ping=1,                 # 检查连接是否有效（1表示每次获取时检查）
             host=MYSQL_HOST,
             port=MYSQL_PORT,
             user=MYSQL_USER,
@@ -76,20 +67,41 @@ def get_db_connection():
             autocommit=False,
             use_unicode=True
         )
-        
-        yield conn
-    finally:
-        if conn:
-            conn.close()
+        print("✓ 数据库连接池已初始化")
+    return _db_pool
+
+def get_db_pool():
+    """获取连接池实例"""
+    global _db_pool
+    if _db_pool is None:
+        return init_db_pool()
+    return _db_pool
+
+
+def get_mysql_connection():
+    """获取MySQL连接（从连接池）"""
+    pool = get_db_pool()
+    return pool.connection()
 
 
 @contextmanager
-def get_db_transaction():
-    """获取数据库事务上下文管理器（带锁保护）"""
-    with db_write_lock:
-        # 使用连接缓存
+def get_db_connection():
+    """获取数据库连接的上下文管理器（从连接池）"""
+    conn = None
+    try:
         conn = get_mysql_connection()
-        
+        yield conn
+    finally:
+        if conn:
+            conn.close()  # 连接池的close实际上是归还连接到池
+
+
+@contextmanager
+def get_db_transaction(table_name='default'):
+    """获取数据库事务上下文管理器（带细粒度锁保护）"""
+    lock = _db_locks.get(table_name, _db_locks['default'])
+    with lock:
+        conn = get_mysql_connection()
         try:
             yield conn
             conn.commit()
@@ -148,42 +160,51 @@ def escape_percent(val):
 
 
 def init_database():
-    """初始化数据库，创建必要的表（MySQL下不需要，表已预先创建）"""
-    # MySQL表已经通过init_mysql.py创建
-    # 检查并添加 borrower_id 列（如果不存在）
-    _migrate_mysql_add_borrower_id()
-    # 检查并添加 avatar 列（如果不存在）
-    _migrate_mysql_add_avatar()
-    # 检查并添加 signature 列（如果不存在）
-    _migrate_mysql_add_signature()
-    # 检查并添加 phone 列（如果不存在）
-    _migrate_mysql_add_phone()
-    # 检查并添加 asset_number 和 purchase_amount 列（如果不存在）
-    _migrate_mysql_add_asset_fields()
-    # 检查并添加 custodian_id 列（如果不存在）
-    _migrate_mysql_add_custodian_id()
-    # 检查并添加 previous_status 列（如果不存在）
-    _migrate_mysql_add_previous_status()
-    # 创建 reservations 表
-    _migrate_mysql_create_reservations()
-    # 创建邮件发送记录表
-    _migrate_mysql_create_email_logs()
-    # 创建积分相关表
-    _migrate_mysql_create_points_tables()
-    # 创建悬赏表
-    _migrate_mysql_create_bounties_table()
-    # 创建积分商城相关表
-    _migrate_mysql_create_shop_tables()
-    # 添加用户装扮字段
-    _migrate_mysql_add_user_equip_fields()
-    # 添加用户鼠标皮肤字段
-    _migrate_mysql_add_user_cursor_field()
-    # 创建每日转盘相关表
-    _migrate_mysql_create_wheel_tables()
-    # 检查并添加 operation_logs 表的 source 列
-    _migrate_mysql_add_operation_log_source()
-    # 创建后台管理操作日志表
-    _migrate_mysql_create_admin_operation_logs_table()
+    """初始化数据库，创建必要的表（只执行一次）"""
+    global _db_initialized
+
+    with _db_init_lock:
+        if _db_initialized:
+            return
+
+        # MySQL表已经通过init_mysql.py创建
+        # 检查并添加 borrower_id 列（如果不存在）
+        _migrate_mysql_add_borrower_id()
+        # 检查并添加 avatar 列（如果不存在）
+        _migrate_mysql_add_avatar()
+        # 检查并添加 signature 列（如果不存在）
+        _migrate_mysql_add_signature()
+        # 检查并添加 phone 列（如果不存在）
+        _migrate_mysql_add_phone()
+        # 检查并添加 asset_number 和 purchase_amount 列（如果不存在）
+        _migrate_mysql_add_asset_fields()
+        # 检查并添加 custodian_id 列（如果不存在）
+        _migrate_mysql_add_custodian_id()
+        # 检查并添加 previous_status 列（如果不存在）
+        _migrate_mysql_add_previous_status()
+        # 创建 reservations 表
+        _migrate_mysql_create_reservations()
+        # 创建邮件发送记录表
+        _migrate_mysql_create_email_logs()
+        # 创建积分相关表
+        _migrate_mysql_create_points_tables()
+        # 创建悬赏表
+        _migrate_mysql_create_bounties_table()
+        # 创建积分商城相关表
+        _migrate_mysql_create_shop_tables()
+        # 添加用户装扮字段
+        _migrate_mysql_add_user_equip_fields()
+        # 添加用户鼠标皮肤字段
+        _migrate_mysql_add_user_cursor_field()
+        # 创建每日转盘相关表
+        _migrate_mysql_create_wheel_tables()
+        # 检查并添加 operation_logs 表的 source 列
+        _migrate_mysql_add_operation_log_source()
+        # 创建后台管理操作日志表
+        _migrate_mysql_create_admin_operation_logs_table()
+
+        _db_initialized = True
+        print("✓ 数据库初始化完成")
 
 
 def _migrate_mysql_add_borrower_id():
@@ -424,7 +445,7 @@ class DatabaseStore:
     def save_device(self, device: Device) -> bool:
         """保存设备"""
         import traceback
-        with get_db_transaction() as conn:
+        with get_db_transaction('devices') as conn:
             cursor = conn.cursor()
 
             # 检查设备是否存在
@@ -585,16 +606,178 @@ class DatabaseStore:
     
     def delete_device(self, device_id: str) -> bool:
         """软删除设备"""
-        with get_db_transaction() as conn:
+        with get_db_transaction('devices') as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "UPDATE devices SET is_deleted = 1 WHERE id = %s",
                 (device_id,)
             )
             return True
-    
+
+    # ========== 优化的统计查询方法 ==========
+
+    def get_device_statistics(self) -> Dict[str, Any]:
+        """获取设备统计信息（使用SQL聚合查询优化）"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+
+            # 总体统计
+            cursor.execute("""
+                SELECT 
+                    COUNT(*) as total,
+                    SUM(CASE WHEN status IN ('IN_STOCK', 'IN_CUSTODY', 'CIRCULATING', 'NO_CABINET') THEN 1 ELSE 0 END) as available,
+                    SUM(CASE WHEN status = 'BORROWED' THEN 1 ELSE 0 END) as borrowed,
+                    SUM(CASE WHEN status = 'DAMAGED' THEN 1 ELSE 0 END) as damaged,
+                    SUM(CASE WHEN status = 'LOST' THEN 1 ELSE 0 END) as lost,
+                    SUM(CASE WHEN status = 'IN_STOCK' THEN 1 ELSE 0 END) as in_stock,
+                    SUM(CASE WHEN status = 'IN_CUSTODY' THEN 1 ELSE 0 END) as in_custody,
+                    SUM(CASE WHEN status = 'NO_CABINET' THEN 1 ELSE 0 END) as no_cabinet,
+                    SUM(CASE WHEN status = 'CIRCULATING' THEN 1 ELSE 0 END) as circulating,
+                    SUM(CASE WHEN status = 'SCRAPPED' THEN 1 ELSE 0 END) as scrapped,
+                    SUM(CASE WHEN status = 'SHIPPED' THEN 1 ELSE 0 END) as shipped,
+                    SUM(CASE WHEN status = 'SEALED' THEN 1 ELSE 0 END) as sealed
+                FROM devices 
+                WHERE is_deleted = 0
+            """)
+            overall_stats = cursor.fetchone()
+
+            # 设备类型统计
+            cursor.execute("""
+                SELECT 
+                    device_type,
+                    COUNT(*) as count
+                FROM devices 
+                WHERE is_deleted = 0
+                GROUP BY device_type
+            """)
+            type_stats = {row['device_type']: row['count'] for row in cursor.fetchall()}
+
+            return {
+                'total': overall_stats['total'] or 0,
+                'available': overall_stats['available'] or 0,
+                'borrowed': overall_stats['borrowed'] or 0,
+                'damaged': overall_stats['damaged'] or 0,
+                'lost': overall_stats['lost'] or 0,
+                'in_stock': overall_stats['in_stock'] or 0,
+                'in_custody': overall_stats['in_custody'] or 0,
+                'no_cabinet': overall_stats['no_cabinet'] or 0,
+                'circulating': overall_stats['circulating'] or 0,
+                'scrapped': overall_stats['scrapped'] or 0,
+                'shipped': overall_stats['shipped'] or 0,
+                'sealed': overall_stats['sealed'] or 0,
+                'by_type': type_stats
+            }
+
+    def get_overdue_devices(self, limit: int = None) -> List[Dict[str, Any]]:
+        """获取逾期设备列表（使用SQL优化查询）"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            sql = """
+                SELECT 
+                    id,
+                    name as device_name,
+                    device_type,
+                    borrower,
+                    borrow_time,
+                    expected_return_date,
+                    phone,
+                    TIMESTAMPDIFF(HOUR, expected_return_date, NOW()) as overdue_hours,
+                    TIMESTAMPDIFF(DAY, expected_return_date, NOW()) as overdue_days
+                FROM devices 
+                WHERE status = 'BORROWED' 
+                AND is_deleted = 0
+                AND expected_return_date IS NOT NULL
+                AND expected_return_date < DATE_SUB(NOW(), INTERVAL 1 HOUR)
+                ORDER BY expected_return_date ASC
+            """
+            if limit:
+                sql += f" LIMIT {limit}"
+
+            cursor.execute(sql)
+            rows = cursor.fetchall()
+
+            overdue_devices = []
+            for row in rows:
+                overdue_devices.append({
+                    'id': row['id'],
+                    'device_name': row['device_name'],
+                    'device_type': row['device_type'],
+                    'borrower': row['borrower'] or '未知',
+                    'borrow_time': row['borrow_time'].strftime('%Y-%m-%d') if row['borrow_time'] else '',
+                    'expect_return_time': row['expected_return_date'].strftime('%Y-%m-%d') if row['expected_return_date'] else '',
+                    'overdue_days': row['overdue_days'] or 0,
+                    'overdue_hours': row['overdue_hours'] or 0,
+                    'phone': row['phone']
+                })
+
+            return overdue_devices
+
+    def get_overdue_count(self) -> int:
+        """获取逾期设备数量（使用SQL优化查询）"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT COUNT(*) as count 
+                FROM devices 
+                WHERE status = 'BORROWED' 
+                AND is_deleted = 0
+                AND expected_return_date IS NOT NULL
+                AND expected_return_date < DATE_SUB(NOW(), INTERVAL 1 HOUR)
+            """)
+            row = cursor.fetchone()
+            return row['count'] if row else 0
+
+    def get_today_borrow_return_count(self) -> Dict[str, int]:
+        """获取今日借出和归还数量"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT 
+                    SUM(CASE WHEN operation_type IN ('BORROW', 'FORCE_BORROW') THEN 1 ELSE 0 END) as borrow_count,
+                    SUM(CASE WHEN operation_type IN ('RETURN', 'FORCE_RETURN') THEN 1 ELSE 0 END) as return_count
+                FROM records 
+                WHERE DATE(operation_time) = CURDATE()
+            """)
+            row = cursor.fetchone()
+            return {
+                'borrow': row['borrow_count'] or 0,
+                'return': row['return_count'] or 0
+            }
+
+    def get_recent_records(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """获取最近的记录（优化版）"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT 
+                    operation_type,
+                    device_name,
+                    device_type,
+                    borrower,
+                    operator,
+                    operation_time,
+                    remark
+                FROM records 
+                ORDER BY operation_time DESC
+                LIMIT %s
+            """, (limit,))
+
+            rows = cursor.fetchall()
+            records = []
+            for row in rows:
+                records.append({
+                    'action_type': row['operation_type'],
+                    'device_name': row['device_name'],
+                    'device_type': row['device_type'],
+                    'user_name': row['borrower'],
+                    'operator': row['operator'],
+                    'time': row['operation_time'].strftime('%Y-%m-%d %H:%M') if row['operation_time'] else '',
+                    'remarks': row['remark']
+                })
+            return records
+
     # ========== 用户相关操作 ==========
-    
+
     def get_all_users(self) -> List[User]:
         """获取所有用户"""
         with get_db_connection() as conn:
@@ -602,7 +785,64 @@ class DatabaseStore:
             cursor.execute("SELECT * FROM users WHERE is_deleted = 0")
             rows = cursor.fetchall()
             return [User.from_dict(row_to_dict(row)) for row in rows]
-    
+
+    def get_users_paginated(self, page: int = 1, per_page: int = 20, search: str = None) -> Dict[str, Any]:
+        """获取分页用户列表（优化版）"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+
+            # 构建查询条件
+            where_clause = "WHERE is_deleted = 0"
+            params = []
+            if search:
+                where_clause += " AND (borrower_name LIKE %s OR email LIKE %s)"
+                search_pattern = f"%{search}%"
+                params = [search_pattern, search_pattern]
+
+            # 获取总数
+            count_sql = f"SELECT COUNT(*) as total FROM users {where_clause}"
+            cursor.execute(count_sql, params)
+            total = cursor.fetchone()['total']
+
+            # 获取分页数据
+            offset = (page - 1) * per_page
+            sql = f"""
+                SELECT id, email, borrower_name, avatar, signature,
+                       borrow_count, return_count, is_frozen, is_admin,
+                       is_first_login, create_time, phone
+                FROM users
+                {where_clause}
+                ORDER BY create_time DESC
+                LIMIT %s OFFSET %s
+            """
+            cursor.execute(sql, params + [per_page, offset])
+            rows = cursor.fetchall()
+
+            users_data = []
+            for row in rows:
+                users_data.append({
+                    'id': row['id'],
+                    'name': row['borrower_name'],
+                    'email': row['email'],
+                    'avatar': row['avatar'],
+                    'signature': row['signature'],
+                    'borrow_count': row['borrow_count'],
+                    'return_count': row['return_count'],
+                    'is_admin': bool(row['is_admin']),
+                    'is_frozen': bool(row['is_frozen']),
+                    'is_first_login': bool(row['is_first_login']),
+                    'register_time': row['create_time'].strftime('%Y-%m-%d') if row['create_time'] else '-',
+                    'phone': row['phone']
+                })
+
+            return {
+                'users': users_data,
+                'total': total,
+                'page': page,
+                'per_page': per_page,
+                'total_pages': (total + per_page - 1) // per_page
+            }
+
     def get_user_by_id(self, user_id: str) -> Optional[User]:
         """根据ID获取用户"""
         with get_db_connection() as conn:
@@ -631,7 +871,7 @@ class DatabaseStore:
     
     def save_user(self, user: User) -> bool:
         """保存用户"""
-        with get_db_transaction() as conn:
+        with get_db_transaction('users') as conn:
             cursor = conn.cursor()
             
             cursor.execute(
@@ -712,7 +952,7 @@ class DatabaseStore:
     
     def save_record(self, record: Record) -> bool:
         """保存记录"""
-        with get_db_transaction() as conn:
+        with get_db_transaction('records') as conn:
             cursor = conn.cursor()
             sql = """INSERT INTO records (
                 id, device_id, device_name, device_type, operation_type, operator,
@@ -755,7 +995,7 @@ class DatabaseStore:
     
     def save_remark(self, remark: UserRemark) -> bool:
         """保存备注"""
-        with get_db_transaction() as conn:
+        with get_db_transaction('default') as conn:
             cursor = conn.cursor()
             sql = """INSERT INTO user_remarks (
                 id, device_id, device_type, content, creator, create_time, is_inappropriate
@@ -799,7 +1039,7 @@ class DatabaseStore:
     
     def save_notification(self, notification: Notification) -> bool:
         """保存通知"""
-        with get_db_transaction() as conn:
+        with get_db_transaction('default') as conn:
             cursor = conn.cursor()
             sql = """INSERT INTO notifications (
                 id, user_id, user_name, title, content, device_name, device_id,
@@ -814,10 +1054,10 @@ class DatabaseStore:
             )
             cursor.execute(sql, params)
             return True
-    
+
     def mark_notification_as_read(self, notification_id: str) -> bool:
         """将通知标记为已读"""
-        with get_db_transaction() as conn:
+        with get_db_transaction('default') as conn:
             cursor = conn.cursor()
             sql = "UPDATE notifications SET is_read = 1 WHERE id = %s"
             params = (notification_id,)
@@ -843,7 +1083,7 @@ class DatabaseStore:
 
     def add_operation_log(self, operation: str, device_name: str, operator: str, source: str = "admin") -> bool:
         """添加操作日志"""
-        with get_db_transaction() as conn:
+        with get_db_transaction('records') as conn:
             cursor = conn.cursor()
             import uuid
             sql = """INSERT INTO operation_logs (
@@ -864,7 +1104,7 @@ class DatabaseStore:
     
     def save_operation_log(self, log: OperationLog) -> bool:
         """保存操作日志"""
-        with get_db_transaction() as conn:
+        with get_db_transaction('records') as conn:
             cursor = conn.cursor()
             sql = """INSERT INTO operation_logs (
                 id, operation_time, operator, operation_content, device_info, source
@@ -885,7 +1125,7 @@ class DatabaseStore:
 
     def save_admin_operation_log(self, log: AdminOperationLog) -> bool:
         """保存后台管理操作日志"""
-        with get_db_transaction() as conn:
+        with get_db_transaction('records') as conn:
             cursor = conn.cursor()
             sql = """INSERT INTO admin_operation_logs (
                 id, operation_time, admin_id, admin_name, action_type, action_name,
@@ -1001,7 +1241,7 @@ class DatabaseStore:
     def clear_admin_operation_logs(self, days: int = 90) -> int:
         """清理指定天数之前的后台管理操作日志"""
         from datetime import timedelta
-        with get_db_transaction() as conn:
+        with get_db_transaction('records') as conn:
             cursor = conn.cursor()
             cutoff_date = datetime.now() - timedelta(days=days)
 
@@ -1027,7 +1267,7 @@ class DatabaseStore:
 
     def save_view_record(self, device_id: str, device_type: str, viewer: str) -> bool:
         """添加查看记录"""
-        with get_db_transaction() as conn:
+        with get_db_transaction('default') as conn:
             cursor = conn.cursor()
             import uuid
             sql = """INSERT INTO view_records (
@@ -1068,7 +1308,7 @@ class DatabaseStore:
     
     def save_user_like(self, like: UserLike) -> bool:
         """保存用户点赞"""
-        with get_db_transaction() as conn:
+        with get_db_transaction('default') as conn:
             cursor = conn.cursor()
             sql = """INSERT INTO user_likes (
                 id, from_user_id, to_user_id, create_date, create_time
@@ -1135,7 +1375,7 @@ class DatabaseStore:
                        related_id: str = None, related_type: str = None,
                        status: str = 'sent', content: str = None) -> bool:
         """保存邮件发送记录"""
-        with get_db_transaction() as conn:
+        with get_db_transaction('default') as conn:
             cursor = conn.cursor()
             email_id = str(uuid.uuid4())
             sent_at = format_datetime(datetime.now())
@@ -1271,7 +1511,7 @@ class DatabaseStore:
     
     def save_reservation(self, reservation: Reservation) -> bool:
         """保存预约"""
-        with get_db_transaction() as conn:
+        with get_db_transaction('reservations') as conn:
             cursor = conn.cursor()
             
             # 检查是否存在
@@ -1349,7 +1589,7 @@ class DatabaseStore:
     
     def delete_reservation(self, reservation_id: str) -> bool:
         """删除预约"""
-        with get_db_transaction() as conn:
+        with get_db_transaction('reservations') as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "DELETE FROM reservations WHERE id = %s",
@@ -1428,7 +1668,7 @@ class DatabaseStore:
     
     def save_user_points(self, user_points: UserPoints) -> bool:
         """保存用户积分"""
-        with get_db_transaction() as conn:
+        with get_db_transaction('points') as conn:
             cursor = conn.cursor()
             
             # 检查是否存在
@@ -1462,7 +1702,7 @@ class DatabaseStore:
     
     def add_points_record(self, record: PointsRecord) -> bool:
         """添加积分记录"""
-        with get_db_transaction() as conn:
+        with get_db_transaction('points') as conn:
             cursor = conn.cursor()
             sql = """INSERT INTO points_records (
                 id, user_id, transaction_type, points_change, points_after,
@@ -1502,6 +1742,72 @@ class DatabaseStore:
             cursor.execute("SELECT * FROM user_points ORDER BY points DESC")
             rows = cursor.fetchall()
             return [UserPoints.from_dict(row_to_dict(row)) for row in rows]
+
+    def get_points_rankings_optimized(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        获取积分排行榜（SQL优化版本）
+        使用JOIN和SQL排序替代Python内存排序，大幅提升性能
+        """
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT 
+                    u.id as user_id,
+                    u.borrower_name,
+                    u.avatar,
+                    u.signature,
+                    u.is_frozen,
+                    u.is_deleted,
+                    COALESCE(up.points, 0) as points,
+                    COALESCE(up.total_earned, 0) as total_earned,
+                    COALESCE(up.total_spent, 0) as total_spent
+                FROM users u
+                LEFT JOIN user_points up ON u.id = up.user_id
+                WHERE u.is_frozen = 0 AND u.is_deleted = 0
+                ORDER BY up.total_earned DESC
+                LIMIT %s
+            """, (limit,))
+            rows = cursor.fetchall()
+            return [row_to_dict(row) for row in rows]
+
+    def get_user_points_rank_optimized(self, user_id: str) -> Dict[str, Any]:
+        """
+        获取用户积分排名（SQL优化版本）
+        使用窗口函数计算排名，避免加载所有数据
+        """
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            # 获取用户排名和总分
+            cursor.execute("""
+                SELECT 
+                    user_rank,
+                    total_earned,
+                    points,
+                    total_users
+                FROM (
+                    SELECT 
+                        u.id,
+                        COALESCE(up.total_earned, 0) as total_earned,
+                        COALESCE(up.points, 0) as points,
+                        RANK() OVER (ORDER BY up.total_earned DESC) as user_rank,
+                        COUNT(*) OVER () as total_users
+                    FROM users u
+                    LEFT JOIN user_points up ON u.id = up.user_id
+                    WHERE u.is_frozen = 0 AND u.is_deleted = 0
+                ) ranked
+                WHERE id = %s
+            """, (user_id,))
+            row = cursor.fetchone()
+            if row:
+                result = row_to_dict(row)
+                return {
+                    'rank': result.get('user_rank'),
+                    'points': result.get('total_earned', 0),
+                    'current_points': result.get('points', 0),
+                    'total_earned': result.get('total_earned', 0),
+                    'total_users': result.get('total_users', 0)
+                }
+            return {'rank': None, 'points': 0, 'total_earned': 0, 'total_users': 0}
     
     # ========== 悬赏相关操作 ==========
     
@@ -1564,7 +1870,7 @@ class DatabaseStore:
     
     def save_bounty(self, bounty: Bounty) -> bool:
         """保存悬赏"""
-        with get_db_transaction() as conn:
+        with get_db_transaction('default') as conn:
             cursor = conn.cursor()
             
             # 检查是否存在
@@ -1619,7 +1925,7 @@ class DatabaseStore:
     
     def delete_bounty(self, bounty_id: str) -> bool:
         """删除悬赏"""
-        with get_db_transaction() as conn:
+        with get_db_transaction('default') as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "DELETE FROM bounties WHERE id = %s",
@@ -1690,7 +1996,7 @@ class DatabaseStore:
     
     def save_shop_item(self, item: ShopItem) -> bool:
         """保存商品"""
-        with get_db_transaction() as conn:
+        with get_db_transaction('default') as conn:
             cursor = conn.cursor()
             
             cursor.execute(
@@ -1729,7 +2035,7 @@ class DatabaseStore:
     
     def delete_shop_item(self, item_id: str) -> bool:
         """删除商品"""
-        with get_db_transaction() as conn:
+        with get_db_transaction('default') as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "DELETE FROM shop_items WHERE id = %s",
@@ -1772,7 +2078,7 @@ class DatabaseStore:
     
     def add_to_inventory(self, item: UserInventory) -> bool:
         """添加物品到背包"""
-        with get_db_transaction() as conn:
+        with get_db_transaction('default') as conn:
             cursor = conn.cursor()
             sql = """INSERT INTO user_inventory (
                 id, user_id, item_id, item_type, item_name, item_icon, item_color,
@@ -1793,7 +2099,7 @@ class DatabaseStore:
     
     def update_inventory_item_status(self, inventory_id: str, is_used: bool, use_time: datetime = None) -> bool:
         """更新背包物品使用状态"""
-        with get_db_transaction() as conn:
+        with get_db_transaction('default') as conn:
             cursor = conn.cursor()
             sql = """UPDATE user_inventory SET
                 is_used = %s, use_time = %s
@@ -1821,7 +2127,7 @@ class DatabaseStore:
 
     def add_wheel_record(self, user_id: str, prize_id: str, prize_name: str, prize_points: int, cost: int) -> bool:
         """添加转盘抽奖记录"""
-        with get_db_transaction() as conn:
+        with get_db_transaction('default') as conn:
             cursor = conn.cursor()
             sql = """INSERT INTO wheel_records (
                 id, user_id, prize_id, prize_name, prize_points, cost, create_time
@@ -1869,7 +2175,7 @@ class DatabaseStore:
 
     def add_hidden_title(self, user_id: str, title_id: str, title_name: str, title_color: str) -> bool:
         """添加用户隐藏称号"""
-        with get_db_transaction() as conn:
+        with get_db_transaction('default') as conn:
             cursor = conn.cursor()
             sql = """INSERT INTO user_hidden_titles (
                 id, user_id, title_id, title_name, title_color, acquire_time
