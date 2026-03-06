@@ -3098,16 +3098,26 @@ class APIClient:
                             email_type = 'overdue_10min'
                             email_content = f"设备 {device.name} 将在10分钟内逾期"
 
-                    # 逾期后每24小时提醒
+                    # 逾期后提醒
                     elif overdue_hours > 0:
-                        # 检查是否是24小时的整数倍（允许5分钟误差）
-                        hours_mod = overdue_hours % 24
-                        if hours_mod <= 0.5 or hours_mod >= 23.5:
-                            if not self._db.has_email_sent_today(
-                                user.id, 'overdue_daily', device.id):
-                                should_send = True
-                                email_type = 'overdue_daily'
-                                email_content = f"设备 {device.name} 已逾期{int(overdue_hours)}小时"
+                        # 检查是否从未发送过逾期提醒（首次逾期）
+                        last_sent = self._db.get_last_email_sent_time(
+                            user.id, 'overdue_daily', device.id)
+                        
+                        if not last_sent:
+                            # 首次逾期，立即发送提醒
+                            should_send = True
+                            email_type = 'overdue_daily'
+                            email_content = f"设备 {device.name} 已逾期{int(overdue_hours)}小时"
+                        else:
+                            # 非首次逾期，检查是否是24小时的整数倍（允许5分钟误差）
+                            hours_mod = overdue_hours % 24
+                            if hours_mod <= 0.5 or hours_mod >= 23.5:
+                                if not self._db.has_email_sent_today(
+                                    user.id, 'overdue_daily', device.id):
+                                    should_send = True
+                                    email_type = 'overdue_daily'
+                                    email_content = f"设备 {device.name} 已逾期{int(overdue_hours)}小时"
 
                 if should_send and email_type:
                     self._send_overdue_email_async(

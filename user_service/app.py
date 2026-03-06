@@ -1021,7 +1021,6 @@ def pc_dashboard():
             else:
                 # 未逾期，剩余时间小于24小时才能续借
                 device.can_renew = True
-            else:
                 # 剩余时间（向上取整）
                 device.remaining_days = int(total_seconds // (24 * 3600))
                 # remaining_hours 表示总剩余小时数（向上取整），用于模板判断 remaining_hours < 24
@@ -2321,6 +2320,7 @@ def api_borrow():
     # 更新设备信息
     device.status = DeviceStatus.BORROWED
     device.borrower = user['borrower_name']
+    device.borrower_id = user['user_id']  # 设置借用人ID
     device.borrow_time = datetime.now()
     device.location = location
     device.reason = reason
@@ -5864,62 +5864,62 @@ def auto_deduct_overdue_points_job():
                 if now > device.expected_return_date:
                     time_diff = now - device.expected_return_date
                     # 只要过了预期归还时间就算逾期
-                        # 查找借用人
-                        borrower_user = None
-                        for u in api_client._users:
-                            if u.borrower_name == device.borrower:
-                                borrower_user = u
-                                break
+                    # 查找借用人
+                    borrower_user = None
+                    for u in api_client._users:
+                        if u.borrower_name == device.borrower:
+                            borrower_user = u
+                            break
 
-                        if borrower_user:
-                            # 检查今天是否已经扣除过该设备的逾期积分
-                            today = now.strftime('%Y-%m-%d')
-                            records = api_client._db.get_points_records(borrower_user.id)
-                            already_deducted_today = False
+                    if borrower_user:
+                        # 检查今天是否已经扣除过该设备的逾期积分
+                        today = now.strftime('%Y-%m-%d')
+                        records = api_client._db.get_points_records(borrower_user.id)
+                        already_deducted_today = False
 
-                            for record in records:
-                                if record.transaction_type == PointsTransactionType.OVERDUE:
-                                    # 检查是否是今天扣除的，并且是否是同一设备
-                                    if record.create_time and record.create_time.strftime('%Y-%m-%d') == today:
-                                        if record.related_id == device.id:
-                                            already_deducted_today = True
-                                            break
+                        for record in records:
+                            if record.transaction_type == PointsTransactionType.OVERDUE:
+                                # 检查是否是今天扣除的，并且是否是同一设备
+                                if record.create_time and record.create_time.strftime('%Y-%m-%d') == today:
+                                    if record.related_id == device.id:
+                                        already_deducted_today = True
+                                        break
 
-                            if not already_deducted_today:
-                                # 扣除逾期积分
-                                points_result = points_service.overdue_penalty(borrower_user.id, device.name, device.id)
-                                if points_result['success']:
-                                    deducted_count += 1
-                                    print(f"  ✓ 已扣除 {borrower_user.borrower_name} 的逾期积分 -15分 (设备: {device.name})")
+                        if not already_deducted_today:
+                            # 扣除逾期积分
+                            points_result = points_service.overdue_penalty(borrower_user.id, device.name, device.id)
+                            if points_result['success']:
+                                deducted_count += 1
+                                print(f"  ✓ 已扣除 {borrower_user.borrower_name} 的逾期积分 -15分 (设备: {device.name})")
 
-                                    # 发送通知给借用人
-                                    api_client.add_notification(
-                                        user_id=borrower_user.id,
-                                        user_name=borrower_user.borrower_name,
-                                        title="逾期积分扣除通知",
-                                        content=f"您借用的设备「{device.name}」已逾期，已自动扣除15积分",
-                                        device_name=device.name,
-                                        device_id=device.id,
-                                        notification_type="error"
-                                    )
+                                # 发送通知给借用人
+                                api_client.add_notification(
+                                    user_id=borrower_user.id,
+                                    user_name=borrower_user.borrower_name,
+                                    title="逾期积分扣除通知",
+                                    content=f"您借用的设备「{device.name}」已逾期，已自动扣除15积分",
+                                    device_name=device.name,
+                                    device_id=device.id,
+                                    notification_type="error"
+                                )
 
-                                    # 发送邮件通知
-                                    try:
-                                        from common.tasks.email_tasks import send_overdue_reminder_async
-                                        if borrower_user.email:
-                                            # 计算逾期天数
-                                            days_overdue = time_diff.days
-                                            if days_overdue < 1:
-                                                days_overdue = 1
-                                            send_overdue_reminder_async.delay(
-                                                user_id=borrower_user.id,
-                                                user_email=borrower_user.email,
-                                                device_name=device.name,
-                                                days_overdue=days_overdue
-                                            )
-                                            print(f"  ✓ 已发送逾期提醒邮件给 {borrower_user.borrower_name}: {borrower_user.email}")
-                                    except Exception as e:
-                                        print(f"  ✗ 发送逾期提醒邮件失败: {e}")
+                                # 发送邮件通知
+                                try:
+                                    from common.tasks.email_tasks import send_overdue_reminder_async
+                                    if borrower_user.email:
+                                        # 计算逾期天数
+                                        days_overdue = time_diff.days
+                                        if days_overdue < 1:
+                                            days_overdue = 1
+                                        send_overdue_reminder_async.delay(
+                                            user_id=borrower_user.id,
+                                            user_email=borrower_user.email,
+                                            device_name=device.name,
+                                            days_overdue=days_overdue
+                                        )
+                                        print(f"  ✓ 已发送逾期提醒邮件给 {borrower_user.borrower_name}: {borrower_user.email}")
+                                except Exception as e:
+                                    print(f"  ✗ 发送逾期提醒邮件失败: {e}")
 
             print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 逾期积分扣除完成，共处理 {deducted_count} 个设备")
 

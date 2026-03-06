@@ -808,10 +808,14 @@ def api_overdue_export():
     
     # 创建响应
     from flask import Response
+    from urllib.parse import quote
+    filename = f'逾期设备_{datetime.now().strftime("%Y%m%d")}.csv'
+    # 对中文文件名进行 RFC 5987 编码
+    encoded_filename = quote(filename, safe='')
     response = Response(
         output.getvalue().encode('utf-8-sig'),
         mimetype='text/csv',
-        headers={'Content-Disposition': f'attachment; filename=逾期设备_{datetime.now().strftime("%Y%m%d")}.csv'}
+        headers={'Content-Disposition': f"attachment; filename*=UTF-8''{encoded_filename}"}
     )
     return response
 
