@@ -78,8 +78,7 @@ def send_overdue_reminder_async(self, user_id: str, user_email: str, device_name
         result = email_sender.send_email(
             to_email=user_email,
             subject=subject,
-            content=content,
-            content_type='html'
+            html_content=content
         )
 
         if result:

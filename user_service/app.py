@@ -5922,6 +5922,24 @@ def auto_deduct_overdue_points_job():
                                         notification_type="error"
                                     )
 
+                                    # 发送邮件通知
+                                    try:
+                                        from common.tasks.email_tasks import send_overdue_reminder_async
+                                        if borrower_user.email:
+                                            # 计算逾期天数
+                                            days_overdue = time_diff.days
+                                            if days_overdue < 1:
+                                                days_overdue = 1
+                                            send_overdue_reminder_async.delay(
+                                                user_id=borrower_user.id,
+                                                user_email=borrower_user.email,
+                                                device_name=device.name,
+                                                days_overdue=days_overdue
+                                            )
+                                            print(f"  ✓ 已发送逾期提醒邮件给 {borrower_user.borrower_name}: {borrower_user.email}")
+                                    except Exception as e:
+                                        print(f"  ✗ 发送逾期提醒邮件失败: {e}")
+
             print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 逾期积分扣除完成，共处理 {deducted_count} 个设备")
 
     except Exception as e:
