@@ -705,16 +705,12 @@ def home():
             time_diff = device.expected_return_date - datetime.now()
             total_seconds = time_diff.total_seconds()
 
-            if total_seconds < -60:
-                # 已逾期超过1分钟
+            if total_seconds < 0:
+                # 已逾期（只要过了预期归还时间就算逾期）
                 device.is_overdue = True
                 device.overdue_days = int(abs(total_seconds) // (24 * 3600))
                 if device.overdue_days <= 3:
                     device.can_renew = True
-            elif total_seconds < 0:
-                # 逾期1分钟内
-                device.remaining_time_display = '0 分钟'
-                device.can_renew = True
             else:
                 # 剩余时间
                 remaining_days = int(total_seconds // (24 * 3600))
@@ -1010,8 +1006,8 @@ def pc_dashboard():
             time_diff = device.expected_return_date - datetime.now()
             total_seconds = time_diff.total_seconds()
 
-            if total_seconds < -60:
-                # 已逾期超过1分钟
+            if total_seconds < 0:
+                # 已逾期（只要过了预期归还时间就算逾期）
                 device.is_overdue = True
                 device.overdue_hours = int(abs(total_seconds) // 3600)
                 device.overdue_days = int(abs(total_seconds) // (24 * 3600))
@@ -1022,14 +1018,8 @@ def pc_dashboard():
                     device.renew_disabled_reason = '逾期超过3天，不能续借，需要归还后才能再次借用'
                 else:
                     device.can_renew = True
-            elif total_seconds < 0:
-                # 逾期1分钟内，不算逾期，显示剩余0分钟
-                device.is_overdue = False
-                device.remaining_days = 0
-                device.remaining_hours = 0
-                device.remaining_minutes = 0
-                device.remaining_time_display = '0 分钟'
-                # 剩余时间小于24小时才能续借
+            else:
+                # 未逾期，剩余时间小于24小时才能续借
                 device.can_renew = True
             else:
                 # 剩余时间（向上取整）
@@ -1893,18 +1883,12 @@ def pc_device_detail(device_id):
     if device.expected_return_date:
         time_diff = datetime.now() - device.expected_return_date
         total_seconds = time_diff.total_seconds()
-        if total_seconds > 60:  # 已逾期超过1分钟才算逾期
+        if total_seconds > 0:  # 已逾期（只要过了预期归还时间就算逾期）
             is_overdue = True
             overdue_days = int(total_seconds // (24 * 3600))
             overdue_hours = int(total_seconds // 3600)
             remaining_hours = -overdue_hours
             remaining_days = -overdue_days
-            remaining_minutes = 0
-        elif total_seconds > 0:  # 逾期1分钟内，显示剩余0分钟
-            is_overdue = False
-            remaining_seconds = 0
-            remaining_hours = 0
-            remaining_days = 0
             remaining_minutes = 0
         else:  # 未逾期
             remaining_seconds = abs(total_seconds)
@@ -2524,10 +2508,8 @@ def api_return():
             from datetime import datetime as dt
             now = dt.now()
             if now > device.expected_return_date:
-                # 逾期超过1分钟才算逾期
-                time_diff = now - device.expected_return_date
-                if time_diff.total_seconds() > 60:
-                    is_overdue = True
+                # 只要过了预期归还时间就算逾期
+                is_overdue = True
         
         if is_overdue:
             # 逾期扣15分
@@ -5881,8 +5863,7 @@ def auto_deduct_overdue_points_job():
                 now = datetime.now()
                 if now > device.expected_return_date:
                     time_diff = now - device.expected_return_date
-                    # 逾期超过1分钟才算逾期
-                    if time_diff.total_seconds() > 60:
+                    # 只要过了预期归还时间就算逾期
                         # 查找借用人
                         borrower_user = None
                         for u in api_client._users:

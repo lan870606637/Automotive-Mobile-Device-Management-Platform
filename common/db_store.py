@@ -625,17 +625,17 @@ class DatabaseStore:
             cursor.execute("""
                 SELECT 
                     COUNT(*) as total,
-                    SUM(CASE WHEN status IN ('IN_STOCK', 'IN_CUSTODY', 'CIRCULATING', 'NO_CABINET') THEN 1 ELSE 0 END) as available,
-                    SUM(CASE WHEN status = 'BORROWED' THEN 1 ELSE 0 END) as borrowed,
-                    SUM(CASE WHEN status = 'DAMAGED' THEN 1 ELSE 0 END) as damaged,
-                    SUM(CASE WHEN status = 'LOST' THEN 1 ELSE 0 END) as lost,
-                    SUM(CASE WHEN status = 'IN_STOCK' THEN 1 ELSE 0 END) as in_stock,
-                    SUM(CASE WHEN status = 'IN_CUSTODY' THEN 1 ELSE 0 END) as in_custody,
-                    SUM(CASE WHEN status = 'NO_CABINET' THEN 1 ELSE 0 END) as no_cabinet,
-                    SUM(CASE WHEN status = 'CIRCULATING' THEN 1 ELSE 0 END) as circulating,
-                    SUM(CASE WHEN status = 'SCRAPPED' THEN 1 ELSE 0 END) as scrapped,
-                    SUM(CASE WHEN status = 'SHIPPED' THEN 1 ELSE 0 END) as shipped,
-                    SUM(CASE WHEN status = 'SEALED' THEN 1 ELSE 0 END) as sealed
+                    SUM(CASE WHEN status IN ('在库', '保管中', '流通', '无柜号') THEN 1 ELSE 0 END) as available,
+                    SUM(CASE WHEN status = '借出' THEN 1 ELSE 0 END) as borrowed,
+                    SUM(CASE WHEN status = '损坏' THEN 1 ELSE 0 END) as damaged,
+                    SUM(CASE WHEN status = '丢失' THEN 1 ELSE 0 END) as lost,
+                    SUM(CASE WHEN status = '在库' THEN 1 ELSE 0 END) as in_stock,
+                    SUM(CASE WHEN status = '保管中' THEN 1 ELSE 0 END) as in_custody,
+                    SUM(CASE WHEN status = '无柜号' THEN 1 ELSE 0 END) as no_cabinet,
+                    SUM(CASE WHEN status = '流通' THEN 1 ELSE 0 END) as circulating,
+                    SUM(CASE WHEN status = '报废' THEN 1 ELSE 0 END) as scrapped,
+                    SUM(CASE WHEN status = '已发货' THEN 1 ELSE 0 END) as shipped,
+                    SUM(CASE WHEN status = '封存' THEN 1 ELSE 0 END) as sealed
                 FROM devices 
                 WHERE is_deleted = 0
             """)
@@ -673,7 +673,7 @@ class DatabaseStore:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             sql = """
-                SELECT 
+                SELECT
                     id,
                     name as device_name,
                     device_type,
@@ -683,11 +683,11 @@ class DatabaseStore:
                     phone,
                     TIMESTAMPDIFF(HOUR, expected_return_date, NOW()) as overdue_hours,
                     TIMESTAMPDIFF(DAY, expected_return_date, NOW()) as overdue_days
-                FROM devices 
-                WHERE status = 'BORROWED' 
+                FROM devices
+                WHERE status = '借出'
                 AND is_deleted = 0
                 AND expected_return_date IS NOT NULL
-                AND expected_return_date < DATE_SUB(NOW(), INTERVAL 1 HOUR)
+                AND expected_return_date < NOW()
                 ORDER BY expected_return_date ASC
             """
             if limit:
@@ -717,12 +717,12 @@ class DatabaseStore:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT COUNT(*) as count 
-                FROM devices 
-                WHERE status = 'BORROWED' 
+                SELECT COUNT(*) as count
+                FROM devices
+                WHERE status = '借出'
                 AND is_deleted = 0
                 AND expected_return_date IS NOT NULL
-                AND expected_return_date < DATE_SUB(NOW(), INTERVAL 1 HOUR)
+                AND expected_return_date < NOW()
             """)
             row = cursor.fetchone()
             return row['count'] if row else 0

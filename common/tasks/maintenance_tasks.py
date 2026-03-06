@@ -190,17 +190,17 @@ def send_overdue_reminders_async(self):
 
         print("开始发送逾期提醒...")
 
-        # 获取逾期设备
+        # 获取逾期设备（只要过了预期归还时间就算逾期）
         with db.get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT d.id, d.name, d.borrower_id, d.expected_return_date, u.email
                 FROM devices d
                 JOIN users u ON d.borrower_id = u.id
-                WHERE d.status = 'BORROWED'
+                WHERE d.status = '借出'
                 AND d.is_deleted = 0
                 AND d.expected_return_date IS NOT NULL
-                AND d.expected_return_date < DATE_SUB(NOW(), INTERVAL 1 HOUR)
+                AND d.expected_return_date < NOW()
             """)
             overdue_devices = cursor.fetchall()
 

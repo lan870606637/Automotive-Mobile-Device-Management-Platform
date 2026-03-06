@@ -765,7 +765,7 @@ def api_overdue_remind_all():
 def api_overdue_export():
     """导出逾期设备列表API"""
     all_devices = api_client.get_all_devices()
-    
+
     overdue_devices = []
     for device in all_devices:
         if device.status == DeviceStatus.BORROWED and device.expected_return_date:
@@ -774,13 +774,14 @@ def api_overdue_export():
                 if isinstance(expect_time, datetime):
                     now = datetime.now()
                     time_diff = now - expect_time
-                    if time_diff.total_seconds() > 3600:
+                    # 只要过了预期归还时间就算逾期
+                    if time_diff.total_seconds() > 0:
                         overdue_days = int(time_diff.total_seconds() // (24 * 3600))
                         overdue_hours = int(time_diff.total_seconds() // 3600)
-                        
+
                         # 获取设备类型
                         device_type = get_device_type_str(device)
-                        
+
                         overdue_devices.append({
                             '设备名称': device.name,
                             '设备类型': device_type,
