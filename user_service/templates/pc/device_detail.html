@@ -439,8 +439,8 @@
 
     <!-- 右侧：登记后查看/借用信息 + 借用记录 -->
     <div class="detail-sidebar">
-        {% if device.status.value == '在库' and not is_custodian %}
-        <!-- 在库状态：锁定信息 -->
+        {% if device.status.value in ['在库', '保管中'] and not is_custodian %}
+        <!-- 在库/保管中状态：锁定信息 -->
         <div class="card">
             <div class="card-header">
                 <span class="card-title">🔒 登记后查看</span>
@@ -453,17 +453,46 @@
         </div>
         {% endif %}
 
-        {% if device.status.value == '在库' and is_custodian %}
+        {% if device.status.value in ['在库', '保管中'] and is_custodian %}
         <!-- 保管人查看在库设备：显示完整信息 -->
         <div class="card">
             <div class="card-header">
-                <span class="card-title">📋 设备信息</span>
+                <span class="card-title">🛡️ 保管人信息</span>
             </div>
             <div class="card-body">
-                <div class="info-row">
-                    <span class="info-label">{% if device_type == '车机' or device_type == '仪表' %}柜号{% else %}保管人{% endif %}</span>
-                    <span class="info-value" style="color: #1890ff; font-size: 16px; font-weight: 600;">{{ device.cabinet_number }}</span>
+                <!-- 保管人卡片 -->
+                <div class="user-info-card custodian" style="margin-bottom: 12px;">
+                    <div class="user-info-label">
+                        <span class="user-role-icon">🛡️</span>
+                        保管人
+                    </div>
+                    <div class="user-info-content" style="align-items: center; justify-content: center;">
+                        <div class="user-avatar-section" style="display: flex; flex-direction: column; align-items: center;">
+                            <div class="user-avatar-wrapper" id="custodianAvatarWrapper" style="{% if custodian_info and custodian_info.avatar_frame %}border: 3px solid {{ custodian_info.avatar_frame.color }}; padding: 2px;{% endif %}">
+                                {% if custodian_info and custodian_info.avatar %}
+                                <img src="{{ custodian_info.avatar }}" alt="头像" class="user-avatar-img">
+                                {% else %}
+                                <div class="user-avatar-default">{{ device.cabinet_number[:1] if device.cabinet_number else '?' }}</div>
+                                {% endif %}
+                            </div>
+                            {% if custodian_info and custodian_info.title %}
+                            <div class="user-title-badge" style="margin-top: 6px; font-size: 11px; font-weight: 600; padding: 2px 8px; background: {{ custodian_info.title.color }}; color: #fff; border: 1px solid {{ custodian_info.title.color }}; border-radius: 4px; white-space: nowrap; display: inline-block; text-shadow: 0 1px 2px rgba(0,0,0,0.3);">{{ custodian_info.title.name }}</div>
+                            {% else %}
+                            <div class="user-title-badge" style="margin-top: 6px; font-size: 11px; color: #8c8c8c; font-style: italic; white-space: nowrap; display: inline-block; background: #f5f5f5; padding: 2px 8px; border-radius: 4px;">暂无称号</div>
+                            {% endif %}
+                        </div>
+                        <div class="user-details">
+                            <span class="user-name">{{ device.cabinet_number }}</span>
+                            <span class="user-status-badge custodian">保管中</span>
+                        </div>
+                    </div>
                 </div>
+                {% if device_type == '车机' or device_type == '仪表' %}
+                <div class="info-row" style="background: #f6ffed; padding: 12px; border-radius: 8px; margin-top: 12px;">
+                    <span class="info-label">📍 柜号</span>
+                    <span class="info-value" style="color: #52c41a; font-size: 16px; font-weight: 600;">{{ device.cabinet_number }}</span>
+                </div>
+                {% endif %}
             </div>
         </div>
         {% endif %}

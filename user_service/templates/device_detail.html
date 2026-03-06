@@ -208,7 +208,8 @@
         </a>
     </div>
     {% endif %}
-    
+
+    {% if not is_custodian %}
     <!-- 登记后查看区域 -->
     <div class="hidden-info-section">
         <div class="section-header">
@@ -221,6 +222,7 @@
             <p class="tip">借用成功后可查看完整信息</p>
         </div>
     </div>
+    {% endif %}
     
     {% else %}
     <!-- 设备借出中 -->
