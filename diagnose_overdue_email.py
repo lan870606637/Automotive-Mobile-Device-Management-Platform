@@ -43,7 +43,7 @@ def diagnose_overdue_email():
                     u.borrower_name,
                     u.email
                 FROM devices d
-                LEFT JOIN users u ON d.borrower = u.borrower_name
+                LEFT JOIN users u ON d.borrower_id = u.id
                 WHERE d.status = '借出'
                 AND d.is_deleted = 0
                 AND d.expected_return_date IS NOT NULL

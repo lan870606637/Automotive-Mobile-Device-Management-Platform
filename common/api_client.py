@@ -3069,15 +3069,36 @@ class APIClient:
                 email_type = None
                 email_content = None
 
-                # 情况1：借用时间小于1小时，只在逾期前10分钟发送
+                # 情况1：借用时间小于1小时
                 if borrow_duration_hours < 1:
+                    # 逾期前10分钟提醒
                     if 5 <= minutes_until_overdue <= 10:
                         # 检查是否已经发送过10分钟提醒
                         if not self._db.has_email_sent_within_hours(
-                            user.id, 'overdue_10min', device.id):
+                            user.id, 'overdue_10min', 1, device.id):
                             should_send = True
                             email_type = 'overdue_10min'
                             email_content = f"设备 {device.name} 将在10分钟内逾期"
+                    # 逾期后提醒（借用时长<1小时的设备也需要逾期提醒）
+                    elif overdue_hours > 0:
+                        # 检查是否从未发送过逾期提醒（首次逾期）
+                        last_sent = self._db.get_last_email_sent_time(
+                            user.id, 'overdue_daily', device.id)
+
+                        if not last_sent:
+                            # 首次逾期，立即发送提醒
+                            should_send = True
+                            email_type = 'overdue_daily'
+                            email_content = f"设备 {device.name} 已逾期{int(overdue_hours)}小时"
+                        else:
+                            # 非首次逾期，检查是否是24小时的整数倍（允许5分钟误差）
+                            hours_mod = overdue_hours % 24
+                            if hours_mod <= 0.5 or hours_mod >= 23.5:
+                                if not self._db.has_email_sent_today(
+                                    user.id, 'overdue_daily', device.id):
+                                    should_send = True
+                                    email_type = 'overdue_daily'
+                                    email_content = f"设备 {device.name} 已逾期{int(overdue_hours)}小时"
 
                 else:
                     # 情况2：借用时间大于等于1小时
@@ -3085,7 +3106,7 @@ class APIClient:
                     # 逾期前1小时提醒
                     if 55 <= minutes_until_overdue <= 60:
                         if not self._db.has_email_sent_within_hours(
-                            user.id, 'overdue_1hour', device.id):
+                            user.id, 'overdue_1hour', 2, device.id):
                             should_send = True
                             email_type = 'overdue_1hour'
                             email_content = f"设备 {device.name} 将在1小时内逾期"
@@ -3093,7 +3114,7 @@ class APIClient:
                     # 逾期前10分钟提醒
                     elif 5 <= minutes_until_overdue <= 10:
                         if not self._db.has_email_sent_within_hours(
-                            user.id, 'overdue_10min', device.id):
+                            user.id, 'overdue_10min', 1, device.id):
                             should_send = True
                             email_type = 'overdue_10min'
                             email_content = f"设备 {device.name} 将在10分钟内逾期"

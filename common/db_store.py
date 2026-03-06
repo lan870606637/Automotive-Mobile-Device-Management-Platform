@@ -733,8 +733,8 @@ class DatabaseStore:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT 
-                    SUM(CASE WHEN operation_type IN ('BORROW', 'FORCE_BORROW') THEN 1 ELSE 0 END) as borrow_count,
-                    SUM(CASE WHEN operation_type IN ('RETURN', 'FORCE_RETURN') THEN 1 ELSE 0 END) as return_count
+                    SUM(CASE WHEN operation_type IN ('借出', '强制借出') THEN 1 ELSE 0 END) as borrow_count,
+                    SUM(CASE WHEN operation_type IN ('归还', '强制归还') THEN 1 ELSE 0 END) as return_count
                 FROM records 
                 WHERE DATE(operation_time) = CURDATE()
             """)

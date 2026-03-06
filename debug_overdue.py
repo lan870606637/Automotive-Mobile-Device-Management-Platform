@@ -26,7 +26,7 @@ with get_db_connection() as conn:
     cursor.execute("""
         SELECT id, name, borrower_id, expected_return_date, status, is_deleted
         FROM devices 
-        WHERE status = 'BORROWED' AND is_deleted = 0
+        WHERE status = '借出' AND is_deleted = 0
         LIMIT 10
     """)
     devices = cursor.fetchall()
@@ -39,7 +39,7 @@ with get_db_connection() as conn:
     cursor.execute("""
         SELECT id, name, borrower_id, expected_return_date, status
         FROM devices 
-        WHERE status = 'BORROWED' 
+        WHERE status = '借出' 
         AND is_deleted = 0
         AND expected_return_date IS NOT NULL
         LIMIT 10
@@ -54,7 +54,7 @@ with get_db_connection() as conn:
     cursor.execute("""
         SELECT id, name, borrower_id, expected_return_date, status
         FROM devices 
-        WHERE status = 'BORROWED' 
+        WHERE status = '借出' 
         AND is_deleted = 0
         AND expected_return_date IS NOT NULL
         AND expected_return_date < NOW()
@@ -76,7 +76,7 @@ with get_db_connection() as conn:
         cursor.execute("""
             SELECT expected_return_date 
             FROM devices 
-            WHERE status = 'BORROWED' AND expected_return_date IS NOT NULL
+            WHERE status = '借出' AND expected_return_date IS NOT NULL
             ORDER BY expected_return_date DESC
             LIMIT 1
         """)
@@ -85,13 +85,13 @@ with get_db_connection() as conn:
         print(f"   是否逾期: {latest['expected_return_date'] < now_result['now_time']}")
     print()
     
-    # 5. 查看所有预期归还时间（不管是否逾期）
+    # 5. 查看所有借用设备的预期归还时间（不管是否逾期）
     print("5. 所有借用设备的预期归还时间（前20个）:")
     cursor.execute("""
         SELECT id, name, expected_return_date, 
                CASE WHEN expected_return_date < NOW() THEN '已逾期' ELSE '未逾期' END as overdue_status
         FROM devices 
-        WHERE status = 'BORROWED' 
+        WHERE status = '借出' 
         AND is_deleted = 0
         AND expected_return_date IS NOT NULL
         ORDER BY expected_return_date

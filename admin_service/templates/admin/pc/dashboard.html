@@ -125,41 +125,84 @@
             <!-- 设备类型统计 -->
             <div class="stats-row">
                 <div class="stat-card-half">
-                    <h3>设备类型分布</h3>
-                    <div class="type-cards">
-                        <a href="/admin/pc/devices?type=phone" class="type-card phone">
-                            <div class="type-card-icon">📱</div>
-                            <div class="type-card-info">
-                                <span class="type-card-count">{{ phone_count }}</span>
-                                <span class="type-card-label">手机</span>
+                    <div class="type-distribution-header">
+                        <h3>设备类型分布</h3>
+                        <span class="total-devices-badge">共 {{ total_devices }} 台</span>
+                    </div>
+                    <div class="type-distribution-list">
+                        <a href="/admin/pc/devices?type=phone" class="type-distribution-item">
+                            <div class="type-icon-wrapper phone">
+                                <span class="type-icon">📱</span>
+                            </div>
+                            <div class="type-info">
+                                <div class="type-header">
+                                    <span class="type-name">手机</span>
+                                    <span class="type-count">{{ phone_count }} 台</span>
+                                </div>
+                                <div class="type-progress-bar">
+                                    <div class="type-progress-fill phone" style="width: {{ (phone_count / total_devices * 100) if total_devices > 0 else 0 }}%"></div>
+                                </div>
+                                <span class="type-percent">{{ "%.1f"|format(phone_count / total_devices * 100) if total_devices > 0 else 0 }}%</span>
                             </div>
                         </a>
-                        <a href="/admin/pc/devices?type=car" class="type-card car">
-                            <div class="type-card-icon">🚗</div>
-                            <div class="type-card-info">
-                                <span class="type-card-count">{{ car_device_count }}</span>
-                                <span class="type-card-label">车机</span>
+                        <a href="/admin/pc/devices?type=car" class="type-distribution-item">
+                            <div class="type-icon-wrapper car">
+                                <span class="type-icon">🚗</span>
+                            </div>
+                            <div class="type-info">
+                                <div class="type-header">
+                                    <span class="type-name">车机</span>
+                                    <span class="type-count">{{ car_device_count }} 台</span>
+                                </div>
+                                <div class="type-progress-bar">
+                                    <div class="type-progress-fill car" style="width: {{ (car_device_count / total_devices * 100) if total_devices > 0 else 0 }}%"></div>
+                                </div>
+                                <span class="type-percent">{{ "%.1f"|format(car_device_count / total_devices * 100) if total_devices > 0 else 0 }}%</span>
                             </div>
                         </a>
-                        <a href="/admin/pc/devices?type=instrument" class="type-card instrument">
-                            <div class="type-card-icon">📊</div>
-                            <div class="type-card-info">
-                                <span class="type-card-count">{{ instrument_count }}</span>
-                                <span class="type-card-label">仪表</span>
+                        <a href="/admin/pc/devices?type=instrument" class="type-distribution-item">
+                            <div class="type-icon-wrapper instrument">
+                                <span class="type-icon">📊</span>
+                            </div>
+                            <div class="type-info">
+                                <div class="type-header">
+                                    <span class="type-name">仪表</span>
+                                    <span class="type-count">{{ instrument_count }} 台</span>
+                                </div>
+                                <div class="type-progress-bar">
+                                    <div class="type-progress-fill instrument" style="width: {{ (instrument_count / total_devices * 100) if total_devices > 0 else 0 }}%"></div>
+                                </div>
+                                <span class="type-percent">{{ "%.1f"|format(instrument_count / total_devices * 100) if total_devices > 0 else 0 }}%</span>
                             </div>
                         </a>
-                        <a href="/admin/pc/devices?type=sim" class="type-card simcard">
-                            <div class="type-card-icon">📲</div>
-                            <div class="type-card-info">
-                                <span class="type-card-count">{{ simcard_count }}</span>
-                                <span class="type-card-label">手机卡</span>
+                        <a href="/admin/pc/devices?type=sim" class="type-distribution-item">
+                            <div class="type-icon-wrapper simcard">
+                                <span class="type-icon">📲</span>
+                            </div>
+                            <div class="type-info">
+                                <div class="type-header">
+                                    <span class="type-name">手机卡</span>
+                                    <span class="type-count">{{ simcard_count }} 台</span>
+                                </div>
+                                <div class="type-progress-bar">
+                                    <div class="type-progress-fill simcard" style="width: {{ (simcard_count / total_devices * 100) if total_devices > 0 else 0 }}%"></div>
+                                </div>
+                                <span class="type-percent">{{ "%.1f"|format(simcard_count / total_devices * 100) if total_devices > 0 else 0 }}%</span>
                             </div>
                         </a>
-                        <a href="/admin/pc/devices?type=other" class="type-card other">
-                            <div class="type-card-icon">🔧</div>
-                            <div class="type-card-info">
-                                <span class="type-card-count">{{ other_device_count }}</span>
-                                <span class="type-card-label">其它设备</span>
+                        <a href="/admin/pc/devices?type=other" class="type-distribution-item">
+                            <div class="type-icon-wrapper other">
+                                <span class="type-icon">🔧</span>
+                            </div>
+                            <div class="type-info">
+                                <div class="type-header">
+                                    <span class="type-name">其它设备</span>
+                                    <span class="type-count">{{ other_device_count }} 台</span>
+                                </div>
+                                <div class="type-progress-bar">
+                                    <div class="type-progress-fill other" style="width: {{ (other_device_count / total_devices * 100) if total_devices > 0 else 0 }}%"></div>
+                                </div>
+                                <span class="type-percent">{{ "%.1f"|format(other_device_count / total_devices * 100) if total_devices > 0 else 0 }}%</span>
                             </div>
                         </a>
                     </div>

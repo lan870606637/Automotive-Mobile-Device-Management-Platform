@@ -29,7 +29,7 @@ def main():
         
         # 获取逾期设备（按用户分组）- 使用中文状态值'借出'
         # 只要过了预期归还时间就算逾期
-        # 注意：使用 borrower（姓名）而不是 borrower_id 来关联用户
+        # 注意：使用 borrower_id 来关联用户，避免同名用户问题
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -43,7 +43,7 @@ def main():
                     u.borrower_name,
                     u.email
                 FROM devices d
-                LEFT JOIN users u ON d.borrower = u.borrower_name
+                LEFT JOIN users u ON d.borrower_id = u.id
                 WHERE d.status = '借出'
                 AND d.is_deleted = 0
                 AND d.expected_return_date IS NOT NULL
