@@ -968,7 +968,38 @@ class DatabaseStore:
             )
             cursor.execute(sql, params)
             return True
-    
+
+    def add_record(self, record_data: dict) -> bool:
+        """添加记录（兼容mobile_service的调用方式）"""
+        from .models import Record, OperationType
+        from datetime import datetime
+
+        # 创建Record对象
+        record = Record(
+            id=record_data.get('id', ''),
+            device_id=record_data.get('device_id', ''),
+            device_name=record_data.get('device_name', ''),
+            device_type=record_data.get('device_type', ''),
+            operation_type=record_data.get('operation_type', OperationType.BORROW),
+            operator=record_data.get('borrower_name', ''),
+            operation_time=record_data.get('borrow_time', datetime.now()),
+            borrower=record_data.get('borrower_name', ''),
+            phone='',
+            reason='',
+            entry_source=record_data.get('entry_source', ''),
+            remark=record_data.get('remark', '')
+        )
+        return self.save_record(record)
+
+    def update_device_status(self, device_id: str, device_type: str, status: DeviceStatus) -> bool:
+        """更新设备状态（兼容mobile_service的调用方式）"""
+        device = self.get_device_by_id(device_id)
+        if not device:
+            return False
+
+        device.status = status
+        return self.save_device(device)
+
     # ========== 备注相关操作 ==========
     
     def get_remarks(self, device_id: str = None) -> List[UserRemark]:
